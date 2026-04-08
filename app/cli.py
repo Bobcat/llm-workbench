@@ -7,6 +7,7 @@ from pathlib import Path
 from app.core import TranslationCore
 from app.events import load_pc_events
 from app.replay import ReplayRunner, ReplayTrace
+from app.replay_settings import load_replay_settings
 from app.translators import Ct2EuroLlmTranslator, build_translator
 
 
@@ -15,6 +16,16 @@ def _shorten(text: str, *, limit: int = 72) -> str:
     if len(value) <= limit:
         return value
     return value[: limit - 3] + "..."
+
+
+def _visible_target_text(trace: ReplayTrace) -> str:
+    committed = trace.target_state.target_committed_text
+    preview = trace.target_state.target_preview_text
+    if not committed or not preview:
+        return f"{committed}{preview}"
+    if committed.endswith((" ", "\n")) or preview.startswith((" ", "\n")):
+        return f"{committed}{preview}"
+    return f"{committed} {preview}"
 
 
 def _format_trace(trace: ReplayTrace, *, verbose: bool) -> str:
@@ -28,9 +39,10 @@ def _format_trace(trace: ReplayTrace, *, verbose: bool) -> str:
         f"translated={translated}",
     ]
     if trace.decision.triggered:
-        parts.append(f"window_chunks={trace.decision.window_chunks_used}")
+        parts.append(f"source_chunks={trace.decision.source_chunks_used}")
         parts.append(f"window={_shorten(trace.decision.source_window)!r}")
-        parts.append(f"target_tail={_shorten(trace.target_state.target_tail_text)!r}")
+        parts.append(f"target={_shorten(_visible_target_text(trace))!r}")
+        parts.append(f"latency_ms={trace.decision.latency_ms:.1f}")
     elif verbose:
         parts.append(f"preview_text={_shorten(trace.source_state.source_preview_text)!r}")
     return " | ".join(parts)
@@ -45,7 +57,7 @@ def _dump_end_state(runner: ReplayRunner) -> str:
         f"source_preview_text={source_state.source_preview_text!r}",
         f"committed_chunks={source_state.committed_chunks!r}",
         f"target_committed_text={target_state.target_committed_text!r}",
-        f"target_tail_text={target_state.target_tail_text!r}",
+        f"target_preview_text={target_state.target_preview_text!r}",
     ]
     return "\n".join(lines)
 
@@ -73,8 +85,12 @@ def build_parser() -> argparse.ArgumentParser:
     replay_parser.add_argument("path", type=Path, help="Path to a .pc file.")
     replay_parser.add_argument("--verbose", action="store_true", help="Show more trace detail.")
     replay_parser.add_argument("--max-events", type=int, default=None, help="Stop after N events.")
-    replay_parser.add_argument("--window-chunks", type=int, default=2, help="Committed chunks to include in source window.")
-    replay_parser.add_argument("--translator", default="dummy", help="Translator backend to use.")
+    replay_parser.add_argument(
+        "--translator",
+        choices=("dummy", "ct2-eurollm"),
+        default="dummy",
+        help="Translator backend to use.",
+    )
     replay_parser.add_argument(
         "--dummy-mode",
         choices=("marker", "echo"),
@@ -82,6 +98,24 @@ def build_parser() -> argparse.ArgumentParser:
         help="Dummy translator output style.",
     )
     replay_parser.add_argument("--dump-end-state", action="store_true", help="Print final source/target state.")
+
+    replay_web_parser = subparsers.add_parser("replay-web", help="Start a browser UI for replay traces.")
+    replay_web_parser.add_argument("path", type=Path, help="Path to a .pc file.")
+    replay_web_parser.add_argument("--max-events", type=int, default=None, help="Stop after N events.")
+    replay_web_parser.add_argument(
+        "--translator",
+        choices=("dummy", "ct2-eurollm"),
+        default="dummy",
+        help="Translator backend to use.",
+    )
+    replay_web_parser.add_argument(
+        "--dummy-mode",
+        choices=("marker", "echo"),
+        default="marker",
+        help="Dummy translator output style.",
+    )
+    replay_web_parser.add_argument("--host", default="127.0.0.1", help="Bind host for the local web server.")
+    replay_web_parser.add_argument("--port", type=int, default=8000, help="Bind port for the local web server.")
 
     smoke_parser = subparsers.add_parser("smoke", help="Send the first N committed chunks as one request to EuroLLM.")
     smoke_parser.add_argument("path", type=Path, help="Path to a .pc file.")
@@ -94,6 +128,7 @@ def build_parser() -> argparse.ArgumentParser:
     judge_parser.add_argument(
         "--comparison-prompt",
         choices=(
+            "baseline_topk5_temp03",
             "baseline_nl",
             "faithful_nl_compact",
             "natural_nl",
@@ -118,7 +153,12 @@ def build_parser() -> argparse.ArgumentParser:
 
 def run_replay(args: argparse.Namespace) -> int:
     translator = build_translator(args.translator, dummy_mode=args.dummy_mode)
-    core = TranslationCore(translator=translator, window_chunks=args.window_chunks)
+    settings = load_replay_settings()
+    core = TranslationCore(
+        translator=translator,
+        preview_settings=settings.preview_translation,
+        context_committed_chunks=settings.context_committed_chunks,
+    )
     runner = ReplayRunner(core=core)
     traces = runner.run_path(args.path, max_events=args.max_events)
     for trace in traces:
@@ -162,6 +202,20 @@ def run_judge_web(args: argparse.Namespace) -> int:
     return 0
 
 
+def run_replay_web(args: argparse.Namespace) -> int:
+    import uvicorn
+    from app.replay_web import create_replay_app
+
+    app = create_replay_app(
+        path=args.path,
+        translator_name=args.translator,
+        dummy_mode=args.dummy_mode,
+        max_events=args.max_events,
+    )
+    uvicorn.run(app, host=args.host, port=args.port)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -169,6 +223,8 @@ def main(argv: list[str] | None = None) -> int:
         return run_replay(args)
     if args.command == "smoke":
         return run_smoke(args)
+    if args.command == "replay-web":
+        return run_replay_web(args)
     if args.command == "judge-web":
         return run_judge_web(args)
     parser.error(f"unsupported command: {args.command!r}")

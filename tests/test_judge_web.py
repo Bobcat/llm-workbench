@@ -150,6 +150,20 @@ class JudgeWebTests(unittest.TestCase):
 
         self.assertEqual(set(service.render_variants(0)), {"baseline", "syntactic_nl"})
 
+    def test_judge_service_accepts_baseline_topk5_temp03_prompt(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "judge.pc"
+            path.write_text("c,one\n", encoding="utf-8")
+            service = JudgeService(
+                path=path,
+                window_chunks=1,
+                max_items=1,
+                results_path=Path(tmpdir) / "results.jsonl",
+                comparison_prompt_name="baseline_topk5_temp03",
+            )
+
+        self.assertEqual(set(service.render_variants(0)), {"baseline", "baseline_topk5_temp03"})
+
     def test_build_run_export_text_lists_prompt_names_and_item_outputs(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             path = Path(tmpdir) / "results" / "votes.jsonl"
@@ -184,8 +198,10 @@ class JudgeWebTests(unittest.TestCase):
 
         self.assertIn("prompt#1=baseline", text)
         self.assertIn("prompt#1_text=You are a translation engine. Translate the user's text into Dutch. Return only the translation.", text)
+        self.assertIn('prompt#1_decode={"system_prompt": "You are a translation engine. Translate the user\'s text into Dutch. Return only the translation.", "beam_size": 1, "sampling_topk": 1, "sampling_temperature": 0.1}', text)
         self.assertIn("prompt#2=superior_nl", text)
         self.assertIn("prompt#2_text=You are a superior translator. Translate the text into easy to read syntactically correct Dutch. Return only the translation.", text)
+        self.assertIn('prompt#2_decode={"system_prompt": "You are a superior translator. Translate the text into easy to read syntactically correct Dutch. Return only the translation.", "beam_size": 1, "sampling_topk": 1, "sampling_temperature": 0.1}', text)
         self.assertIn("item#=1", text)
         self.assertIn("item input:\nsource one", text)
         self.assertIn("item output prompt#1:\nbaseline one", text)
@@ -228,6 +244,7 @@ class JudgeWebTests(unittest.TestCase):
         self.assertIn("attachment; filename=\"judge-summary.txt\"", response.headers["content-disposition"])
         self.assertIn("prompt#1=baseline", response.text)
         self.assertIn("prompt#1_text=You are a translation engine. Translate the user's text into Dutch. Return only the translation.", response.text)
+        self.assertIn('prompt#1_decode={"system_prompt": "You are a translation engine. Translate the user\'s text into Dutch. Return only the translation.", "beam_size": 1, "sampling_topk": 1, "sampling_temperature": 0.1}', response.text)
         self.assertIn("item input:\nsource one", response.text)
 
 

@@ -18,6 +18,6 @@ class SourceTranscriptState:
         if event.kind == "c":
             self.source_committed_text += event.text
             self.committed_chunks.append(event.text)
+            self.source_preview_text = ""
             return
         raise ValueError(f"unsupported event kind: {event.kind!r}")
-

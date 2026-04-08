@@ -49,7 +49,6 @@ Useful flags:
 
 ```bash
 python -m app replay sample/sample.pc --verbose --dump-end-state
-python -m app replay sample/sample.pc --window-chunks 1
 python -m app replay sample/sample.pc --max-events 4
 python -m app replay sample/sample.pc --translator dummy --dummy-mode echo
 ```
@@ -57,11 +56,15 @@ python -m app replay sample/sample.pc --translator dummy --dummy-mode echo
 Replay behavior:
 
 - `p` updates source preview state only.
-- `c` appends committed source state and triggers translation.
-- the core selects the last `N` committed chunks as the active source window
-- that source window is fully retranslated
-- `target_tail_text` is replaced with the new translator output
-- `target_committed_text` is kept separate for later versions
+- `c` appends committed source state, clears source preview state, and triggers translation.
+- the core keeps an open source block since the last source sentence boundary
+- that open source block is fully retranslated on each committed update
+- the translator can also receive the previous committed source chunk as extra context, without translating that context again
+- selected `p` events can also trigger preview translation when the preview is long enough, stable enough, and has grown enough since the last preview call
+- target state is maintained as `target_committed_text + target_preview_text`
+- target preview is committed only when the latest source chunk ends a sentence (`.`, `?`, `!`)
+- no target overlap heuristic is used
+- replay thresholds and context settings live in `settings.json`
 
 The core does not know whether events come from replay or a live source.
 
@@ -91,7 +94,7 @@ python -m app judge-web sample/live_20260406T165024Z_c3e7a33e.pc --window-chunks
 Then open the printed local URL in your browser.
 
 To compare baseline against one of the built-in alternatives, add `--comparison-prompt ...`.
-Available comparison options are `baseline_nl`, `faithful_nl_compact`, `natural_nl`, `simple_nl`, `spoken_nl`, `superior_nl`, and `syntactic_nl`.
+Available comparison options are `baseline_topk5_temp03`, `baseline_nl`, `faithful_nl_compact`, `natural_nl`, `simple_nl`, `spoken_nl`, `superior_nl`, and `syntactic_nl`.
 
 The judge page shows:
 

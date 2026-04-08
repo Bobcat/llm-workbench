@@ -44,8 +44,7 @@ class ReplayRunner:
             ),
             target_state=TargetTranscriptState(
                 target_committed_text=self.core.target_state.target_committed_text,
-                target_tail_text=self.core.target_state.target_tail_text,
+                target_preview_text=self.core.target_state.target_preview_text,
             ),
             decision=decision,
         )
-

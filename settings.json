@@ -1,0 +1,11 @@
+{
+  "replay": {
+    "context_committed_chunks": 0,
+    "preview_translation": {
+      "enabled": true,
+      "min_chars": 80,
+      "max_distance_ratio": 0.15,
+      "min_growth_chars": 50
+    }
+  }
+}

@@ -5,6 +5,7 @@ import json
 import random
 from collections import Counter
 from collections import defaultdict
+from dataclasses import asdict
 from dataclasses import dataclass
 from datetime import UTC
 from datetime import datetime
@@ -29,31 +30,62 @@ SUPERIOR_PROMPT_NAME = "superior_nl"
 FAITHFUL_NL_COMPACT_PROMPT_NAME = "faithful_nl_compact"
 SPOKEN_NL_PROMPT_NAME = "spoken_nl"
 SYNTACTIC_NL_PROMPT_NAME = "syntactic_nl"
+BASELINE_TOPK5_TEMP03_PROMPT_NAME = "baseline_topk5_temp03"
+
+
+@dataclass(frozen=True)
+class VariantSpec:
+    system_prompt: str
+    beam_size: int = 1
+    sampling_topk: int = 1
+    sampling_temperature: float = 0.1
+
+
 PROMPT_VARIANTS = {
-    BASELINE_PROMPT_NAME: "You are a translation engine. Translate the user's text into Dutch. Return only the translation.",
-    BASELINE_NL_PROMPT_NAME: "Je bent een vertaalsysteem. Vertaal de tekst van de gebruiker naar het Nederlands. Geef alleen de vertaling terug.",
-    NATURAL_PROMPT_NAME: (
+    BASELINE_PROMPT_NAME: VariantSpec(
+        system_prompt="You are a translation engine. Translate the user's text into Dutch. Return only the translation."
+    ),
+    BASELINE_NL_PROMPT_NAME: VariantSpec(
+        system_prompt="Je bent een vertaalsysteem. Vertaal de tekst van de gebruiker naar het Nederlands. Geef alleen de vertaling terug."
+    ),
+    NATURAL_PROMPT_NAME: VariantSpec(
+        system_prompt=(
         "You are a translation engine. Translate the user's text into Dutch. "
         "Use natural Dutch word order. Reorder clauses when needed. Do not mirror the source order. "
         "Split long sentences when needed. Return only the translation."
+        )
     ),
-    SIMPLE_PROMPT_NAME: "Translate the user's text into Dutch.",
-    SUPERIOR_PROMPT_NAME: "You are a superior translator. Translate the text into easy to read syntactically correct Dutch. Return only the translation.",
-    FAITHFUL_NL_COMPACT_PROMPT_NAME: (
+    SIMPLE_PROMPT_NAME: VariantSpec(system_prompt="Translate the user's text into Dutch."),
+    SUPERIOR_PROMPT_NAME: VariantSpec(
+        system_prompt="You are a superior translator. Translate the text into easy to read syntactically correct Dutch. Return only the translation."
+    ),
+    FAITHFUL_NL_COMPACT_PROMPT_NAME: VariantSpec(
+        system_prompt=(
         "Translate the user's text into natural Dutch. "
         "Stay close to the source. "
         "Keep names, product names, and version labels unchanged. "
         "Do not add, explain, or guess. "
         "Return only the translation."
+        )
     ),
-    SPOKEN_NL_PROMPT_NAME: "You are a translation engine. Translate the user's spoken text into natural Dutch. Return only the translation.",
-    SYNTACTIC_NL_PROMPT_NAME: (
+    SPOKEN_NL_PROMPT_NAME: VariantSpec(
+        system_prompt="You are a translation engine. Translate the user's spoken text into natural Dutch. Return only the translation."
+    ),
+    SYNTACTIC_NL_PROMPT_NAME: VariantSpec(
+        system_prompt=(
         "IDENTITY\n"
         "You are a translation engine.\n\n"
         "TASK\n"
         "Translate the user's spoken text into Dutch.\n\n"
         "RULES\n"
         "- Return only the translation."
+    ),
+    ),
+    BASELINE_TOPK5_TEMP03_PROMPT_NAME: VariantSpec(
+        system_prompt="You are a translation engine. Translate the user's text into Dutch. Return only the translation.",
+        beam_size=1,
+        sampling_topk=5,
+        sampling_temperature=0.3,
     ),
 }
 
@@ -201,6 +233,10 @@ def _ordered_summary_variants(summary: dict[str, object]) -> list[str]:
     return variant_names
 
 
+def _variant_spec(name: str) -> VariantSpec:
+    return PROMPT_VARIANTS.get(name, VariantSpec(system_prompt=""))
+
+
 def build_run_export_text(results_path: str | Path) -> str:
     summary = build_run_summary(results_path)
     ordered_variants = _ordered_summary_variants(summary)
@@ -213,9 +249,11 @@ def build_run_export_text(results_path: str | Path) -> str:
     prompt_1 = ordered_variants[0] if ordered_variants else ""
     prompt_2 = ordered_variants[1] if len(ordered_variants) > 1 else ""
     lines.append(f"prompt#1={prompt_1}")
-    lines.append(f"prompt#1_text={PROMPT_VARIANTS.get(prompt_1, '')}")
+    lines.append(f"prompt#1_text={_variant_spec(prompt_1).system_prompt}")
+    lines.append(f"prompt#1_decode={json.dumps(asdict(_variant_spec(prompt_1)), ensure_ascii=True)}")
     lines.append(f"prompt#2={prompt_2}")
-    lines.append(f"prompt#2_text={PROMPT_VARIANTS.get(prompt_2, '')}")
+    lines.append(f"prompt#2_text={_variant_spec(prompt_2).system_prompt}")
+    lines.append(f"prompt#2_decode={json.dumps(asdict(_variant_spec(prompt_2)), ensure_ascii=True)}")
     lines.append("")
 
     for item_index in sorted(latest_by_item):
@@ -294,7 +332,10 @@ class JudgeService:
         item = self.get_item(item_index)
         output = self._get_translator().translate_with_system_prompt(
             item.source_window,
-            system_prompt=PROMPT_VARIANTS[prompt_name],
+            system_prompt=_variant_spec(prompt_name).system_prompt,
+            beam_size=_variant_spec(prompt_name).beam_size,
+            sampling_topk=_variant_spec(prompt_name).sampling_topk,
+            sampling_temperature=_variant_spec(prompt_name).sampling_temperature,
         )
         with self._output_lock:
             self._output_cache[cache_key] = output
@@ -711,7 +752,8 @@ def _render_summary_page(service: JudgeService) -> str:
         prompt_sections.append(
             "<div class=\"prompt\">"
             f"<p><code>{html.escape(variant_name)}</code></p>"
-            f"<pre>{html.escape(PROMPT_VARIANTS.get(variant_name, variant_name))}</pre>"
+            f"<pre>{html.escape(_variant_spec(variant_name).system_prompt)}</pre>"
+            f"<p><code>decode={html.escape(json.dumps(asdict(_variant_spec(variant_name)), ensure_ascii=True))}</code></p>"
             f"<p><code>A={html.escape(variant_name)}</code> on items {_format_item_numbers(summary['a_assignments'].get(variant_name, []))}.</p>"
             f"<p><code>B={html.escape(variant_name)}</code> on items {_format_item_numbers(summary['b_assignments'].get(variant_name, []))}.</p>"
             "</div>"
