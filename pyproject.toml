@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "translation-replay-dev"
+version = "0.1.0"
+description = "Replay and simulation harness for streaming translation."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "ctranslate2",
+    "fastapi",
+    "transformers",
+    "uvicorn",
+]
