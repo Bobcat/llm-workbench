@@ -20,7 +20,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 
 from app.events import load_pc_events
-from app.translators import Ct2EuroLlmTranslator
+from app.translators import LlmResponsesTranslator
 
 BASELINE_PROMPT_NAME = "baseline"
 BASELINE_NL_PROMPT_NAME = "baseline_nl"
@@ -303,7 +303,7 @@ class JudgeService:
             raise ValueError("comparison_prompt_name must differ from baseline")
         self.comparison_prompt_name = comparison_prompt_name
         self.items = build_judge_items(self.path, window_chunks=window_chunks, max_items=max_items)
-        self._translator: Ct2EuroLlmTranslator | None = None
+        self._translator: LlmResponsesTranslator | None = None
         self._translator_lock = Lock()
         self._output_cache: dict[tuple[int, str], str] = {}
         self._output_lock = Lock()
@@ -368,10 +368,10 @@ class JudgeService:
         }
         append_vote(self.results_path, payload)
 
-    def _get_translator(self) -> Ct2EuroLlmTranslator:
+    def _get_translator(self) -> LlmResponsesTranslator:
         with self._translator_lock:
             if self._translator is None:
-                self._translator = Ct2EuroLlmTranslator(max_length=512)
+                self._translator = LlmResponsesTranslator(max_length=512)
             return self._translator
 
 

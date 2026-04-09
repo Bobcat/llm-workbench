@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from dataclasses import field
+from dataclasses import replace
 import time
 
 from app.events import ReplayEvent
 from app.replay_settings import PreviewTranslationSettings
 from app.source_state import SourceTranscriptState
 from app.translators import Translator
+from app.translators import TranslationMetrics
 
 
 @dataclass
@@ -22,7 +25,9 @@ class TranslationDecision:
     source_window: str = ""
     target_preview_text: str = ""
     source_chunks_used: int = 0
-    latency_ms: float = 0.0
+    request_id: str = ""
+    model: str = ""
+    metrics: TranslationMetrics = field(default_factory=TranslationMetrics)
 
 
 class TranslationCore:
@@ -31,11 +36,13 @@ class TranslationCore:
         translator: Translator,
         *,
         preview_settings: PreviewTranslationSettings | None = None,
-        context_committed_chunks: int = 1,
+        commit_correction_enabled: bool = True,
+        commit_correction_prompt: str | None = None,
     ) -> None:
         self.translator = translator
         self.preview_settings = preview_settings or PreviewTranslationSettings()
-        self.context_committed_chunks = max(0, int(context_committed_chunks))
+        self.commit_correction_enabled = commit_correction_enabled
+        self.commit_correction_prompt = commit_correction_prompt
         self.target_state = TargetTranscriptState()
         self.open_source_chunks: list[str] = []
         self.previous_source_preview_text = ""
@@ -52,28 +59,43 @@ class TranslationCore:
         if source_window == "":
             return TranslationDecision(triggered=False, reason="empty_committed_window")
 
-        context_text = self._build_context_text(source_state)
         started = time.perf_counter()
-        translated = self.translator.translate(source_window, context_text=context_text)
-        latency_ms = (time.perf_counter() - started) * 1000.0
+        translation = self.translator.translate(source_window)
+        final_translation = translation
+        replay_request_wall_ms = (time.perf_counter() - started) * 1000.0
         source_chunks_used = len(self.open_source_chunks)
         if _ends_with_sentence_boundary(event.text):
+            if self.commit_correction_enabled:
+                final_translation = self.translator.revise_translation(
+                    source_window,
+                    translation.text,
+                    system_prompt=self.commit_correction_prompt,
+                )
+                replay_request_wall_ms = (time.perf_counter() - started) * 1000.0
             self.target_state.target_committed_text = _append_transcript_text(
                 self.target_state.target_committed_text,
-                translated,
+                final_translation.text,
             )
             self.target_state.target_preview_text = ""
             self.open_source_chunks.clear()
         else:
-            self.target_state.target_preview_text = translated
+            self.target_state.target_preview_text = translation.text
         self._reset_preview_run_state()
+        metrics = replace(
+            final_translation.metrics,
+            replay_request_wall_ms=replay_request_wall_ms,
+            observed_first_text_ms=replay_request_wall_ms,
+            observed_complete_ms=replay_request_wall_ms,
+        )
         return TranslationDecision(
             triggered=True,
             reason="committed_event_translated",
             source_window=source_window,
             target_preview_text=self.target_state.target_preview_text,
             source_chunks_used=source_chunks_used,
-            latency_ms=latency_ms,
+            request_id=final_translation.request_id,
+            model=final_translation.model,
+            metrics=metrics,
         )
 
     def _build_source_window(self) -> str:
@@ -81,20 +103,6 @@ class TranslationCore:
         if not chunks:
             return ""
         return "\n".join(chunks)
-
-    def _build_context_text(self, source_state: SourceTranscriptState) -> str:
-        if self.context_committed_chunks <= 0:
-            return ""
-        preceding_count = max(0, len(source_state.committed_chunks) - len(self.open_source_chunks))
-        if preceding_count == 0:
-            return ""
-        context_chunks = [
-            chunk for chunk in source_state.committed_chunks[:preceding_count][-self.context_committed_chunks :]
-            if chunk
-        ]
-        if not context_chunks:
-            return ""
-        return "\n".join(context_chunks)
 
     def _build_preview_source_window(self, source_preview_text: str) -> str:
         parts = [chunk for chunk in self.open_source_chunks if chunk]
@@ -133,17 +141,25 @@ class TranslationCore:
             return TranslationDecision(triggered=False, reason="empty_preview_window")
 
         started = time.perf_counter()
-        translated = self.translator.translate(source_window)
-        latency_ms = (time.perf_counter() - started) * 1000.0
-        self.target_state.target_preview_text = translated
+        translation = self.translator.translate(source_window)
+        replay_request_wall_ms = (time.perf_counter() - started) * 1000.0
+        self.target_state.target_preview_text = translation.text
         self.last_sent_source_preview_text = preview_text
+        metrics = replace(
+            translation.metrics,
+            replay_request_wall_ms=replay_request_wall_ms,
+            observed_first_text_ms=replay_request_wall_ms,
+            observed_complete_ms=replay_request_wall_ms,
+        )
         return TranslationDecision(
             triggered=True,
             reason="preview_event_translated",
             source_window=source_window,
-            target_preview_text=translated,
+            target_preview_text=translation.text,
             source_chunks_used=len(self.open_source_chunks) + 1,
-            latency_ms=latency_ms,
+            request_id=translation.request_id,
+            model=translation.model,
+            metrics=metrics,
         )
 
     def _reset_preview_run_state(self) -> None:

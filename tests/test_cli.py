@@ -28,7 +28,7 @@ class CliSmokeTests(unittest.TestCase):
 
             output = StringIO()
             fake_translator = FakeSmokeTranslator()
-            with patch("app.cli.Ct2EuroLlmTranslator", return_value=fake_translator):
+            with patch("app.cli.LlmResponsesTranslator", return_value=fake_translator):
                 with redirect_stdout(output):
                     exit_code = run_smoke(argparse.Namespace(path=path, c_count=2))
 

@@ -18,7 +18,9 @@ For local development, install the package in editable mode from the repo root:
 python -m pip install -e .
 ```
 
-For the EuroLLM/CT2 translation path, the environment needs `ctranslate2` and `transformers`. For the browser judge, it also needs `fastapi` and `uvicorn`.
+For the browser judge, the environment needs `fastapi` and `uvicorn`.
+
+For the `ct2-eurollm` translation path, this repo now expects the sibling `llm-responses-api-dev` service to be running on `http://127.0.0.1:8010`.
 
 ## `.pc` Format
 
@@ -59,12 +61,11 @@ Replay behavior:
 - `c` appends committed source state, clears source preview state, and triggers translation.
 - the core keeps an open source block since the last source sentence boundary
 - that open source block is fully retranslated on each committed update
-- the translator can also receive the previous committed source chunk as extra context, without translating that context again
 - selected `p` events can also trigger preview translation when the preview is long enough, stable enough, and has grown enough since the last preview call
 - target state is maintained as `target_committed_text + target_preview_text`
 - target preview is committed only when the latest source chunk ends a sentence (`.`, `?`, `!`)
 - no target overlap heuristic is used
-- replay thresholds and context settings live in `settings.json`
+- replay thresholds live in `settings.json`
 
 The core does not know whether events come from replay or a live source.
 
@@ -80,7 +81,7 @@ The smoke command:
 
 - collects the first `N` committed chunks
 - joins them into one source window
-- sends that window through the EuroLLM/CT2 translator
+- sends that window through the configured `llm-responses-api-dev` service
 - prints source text, target text, and latency
 
 ## Browser Judge

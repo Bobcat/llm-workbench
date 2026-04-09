@@ -1,11 +1,17 @@
 from __future__ import annotations
 
+from dataclasses import asdict
 from dataclasses import dataclass
+import json
+import logging
 from pathlib import Path
 
 from app.core import TargetTranscriptState, TranslationCore, TranslationDecision
 from app.events import ReplayEvent, load_pc_events
 from app.source_state import SourceTranscriptState
+
+
+LOGGER = logging.getLogger("translation_replay.metrics")
 
 
 @dataclass
@@ -34,7 +40,7 @@ class ReplayRunner:
     def process_event(self, event_index: int, event: ReplayEvent) -> ReplayTrace:
         self.source_state.apply_event(event)
         decision = self.core.handle_event(event, self.source_state)
-        return ReplayTrace(
+        trace = ReplayTrace(
             event_index=event_index,
             event=event,
             source_state=SourceTranscriptState(
@@ -48,3 +54,22 @@ class ReplayRunner:
             ),
             decision=decision,
         )
+        if decision.triggered:
+            LOGGER.info(
+                "%s",
+                json.dumps(
+                    {
+                        "event": "translation_replay.inference",
+                        "event_index": event_index,
+                        "event_kind": event.kind,
+                        "line_number": event.line_number,
+                        "reason": decision.reason,
+                        "request_id": decision.request_id,
+                        "model": decision.model,
+                        "metrics": asdict(decision.metrics),
+                    },
+                    ensure_ascii=True,
+                    sort_keys=True,
+                ),
+            )
+        return trace

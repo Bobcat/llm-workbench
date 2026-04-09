@@ -8,7 +8,7 @@ from app.core import TranslationCore
 from app.events import load_pc_events
 from app.replay import ReplayRunner, ReplayTrace
 from app.replay_settings import load_replay_settings
-from app.translators import Ct2EuroLlmTranslator, build_translator
+from app.translators import LlmResponsesTranslator, build_translator
 
 
 def _shorten(text: str, *, limit: int = 72) -> str:
@@ -152,12 +152,20 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def run_replay(args: argparse.Namespace) -> int:
-    translator = build_translator(args.translator, dummy_mode=args.dummy_mode)
     settings = load_replay_settings()
+    translator = build_translator(
+        args.translator,
+        dummy_mode=args.dummy_mode,
+        correction_model=settings.commit_correction.model,
+        first_pass_prompt=settings.first_pass.prompt,
+        first_pass_input_template=settings.first_pass.input_template,
+        correction_input_template=settings.commit_correction.input_template,
+    )
     core = TranslationCore(
         translator=translator,
         preview_settings=settings.preview_translation,
-        context_committed_chunks=settings.context_committed_chunks,
+        commit_correction_enabled=settings.commit_correction.enabled,
+        commit_correction_prompt=settings.commit_correction.prompt,
     )
     runner = ReplayRunner(core=core)
     traces = runner.run_path(args.path, max_events=args.max_events)
@@ -170,7 +178,7 @@ def run_replay(args: argparse.Namespace) -> int:
 
 
 def run_smoke(args: argparse.Namespace) -> int:
-    translator = Ct2EuroLlmTranslator()
+    translator = LlmResponsesTranslator()
     source_text = _collect_first_committed_text(args.path, committed_events=args.c_count)
     started = time.perf_counter()
     target_text = translator.translate(source_text)

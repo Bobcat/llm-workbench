@@ -10,15 +10,27 @@ from app.replay import ReplayRunner
 from app.replay_settings import PreviewTranslationSettings
 from app.source_state import SourceTranscriptState
 from app.translators import Translator
+from app.translators import TranslationResult
 
 
 class RecordingTranslator(Translator):
     def __init__(self) -> None:
         self.calls: list[str] = []
 
-    def translate(self, source_window: str, *, context_text: str = "") -> str:
+    def translate(self, source_window: str) -> TranslationResult:
         self.calls.append(source_window)
-        return f"T::{source_window}"
+        return TranslationResult(text=f"T::{source_window}", model="recording")
+
+    def revise_translation(
+        self,
+        source_window: str,
+        draft_translation: str,
+        *,
+        system_prompt: str | None = None,
+    ) -> TranslationResult:
+        del source_window
+        del system_prompt
+        return TranslationResult(text=draft_translation, model="recording")
 
 
 class WindowTranslator(Translator):
@@ -26,18 +38,40 @@ class WindowTranslator(Translator):
         self.mapping = mapping
         self.calls: list[str] = []
 
-    def translate(self, source_window: str, *, context_text: str = "") -> str:
+    def translate(self, source_window: str) -> TranslationResult:
         self.calls.append(source_window)
-        return self.mapping[source_window]
+        return TranslationResult(text=self.mapping[source_window], model="window")
+
+    def revise_translation(
+        self,
+        source_window: str,
+        draft_translation: str,
+        *,
+        system_prompt: str | None = None,
+    ) -> TranslationResult:
+        del source_window
+        del system_prompt
+        return TranslationResult(text=draft_translation, model="window")
 
 
-class ContextRecordingTranslator(Translator):
+class RevisingTranslator(Translator):
     def __init__(self) -> None:
-        self.calls: list[tuple[str, str]] = []
+        self.translate_calls: list[str] = []
+        self.revise_calls: list[tuple[str, str, str | None]] = []
 
-    def translate(self, source_window: str, *, context_text: str = "") -> str:
-        self.calls.append((source_window, context_text))
-        return f"T::{source_window}"
+    def translate(self, source_window: str) -> TranslationResult:
+        self.translate_calls.append(source_window)
+        return TranslationResult(text=f"DRAFT::{source_window}", model="first-pass")
+
+    def revise_translation(
+        self,
+        source_window: str,
+        draft_translation: str,
+        *,
+        system_prompt: str | None = None,
+    ) -> TranslationResult:
+        self.revise_calls.append((source_window, draft_translation, system_prompt))
+        return TranslationResult(text=f"FINAL::{draft_translation}", model="reviser")
 
 
 class TranslationCoreTests(unittest.TestCase):
@@ -132,23 +166,6 @@ class TranslationCoreTests(unittest.TestCase):
             ["Hello", "Hello\n world.", " How are", " How are\n you?"],
         )
 
-    def test_translation_uses_previous_committed_chunk_as_context(self) -> None:
-        translator = ContextRecordingTranslator()
-        core = TranslationCore(translator=translator, context_committed_chunks=1)
-        source_state = SourceTranscriptState()
-
-        first_event = ReplayEvent(kind="c", text="Hello.", line_number=1)
-        source_state.apply_event(first_event)
-        core.handle_event(first_event, source_state)
-
-        second_event = ReplayEvent(kind="c", text=" How are", line_number=2)
-        source_state.apply_event(second_event)
-        second_decision = core.handle_event(second_event, source_state)
-
-        self.assertTrue(second_decision.triggered)
-        self.assertEqual(translator.calls[0], ("Hello.", ""))
-        self.assertEqual(translator.calls[1], (" How are", "Hello."))
-
     def test_preview_event_translates_when_preview_is_stable_and_long_enough(self) -> None:
         translator = WindowTranslator(
             {
@@ -201,6 +218,54 @@ class TranslationCoreTests(unittest.TestCase):
         self.assertEqual(runner.source_state.source_preview_text, "")
         self.assertEqual(runner.core.target_state.target_committed_text, "T::Hello. T:: How are you?")
         self.assertEqual(runner.core.target_state.target_preview_text, "")
+
+    def test_commit_revision_runs_only_on_sentence_boundary(self) -> None:
+        translator = RevisingTranslator()
+        core = TranslationCore(translator=translator)
+        source_state = SourceTranscriptState()
+
+        first_event = ReplayEvent(kind="c", text="Hello", line_number=1)
+        source_state.apply_event(first_event)
+        first_decision = core.handle_event(first_event, source_state)
+
+        second_event = ReplayEvent(kind="c", text=" world.", line_number=2)
+        source_state.apply_event(second_event)
+        second_decision = core.handle_event(second_event, source_state)
+
+        self.assertEqual(first_decision.target_preview_text, "DRAFT::Hello")
+        self.assertEqual(second_decision.target_preview_text, "")
+        self.assertEqual(
+            translator.translate_calls,
+            ["Hello", "Hello\n world."],
+        )
+        self.assertEqual(
+            translator.revise_calls,
+            [("Hello\n world.", "DRAFT::Hello\n world.", None)],
+        )
+        self.assertEqual(
+            core.target_state.target_committed_text,
+            "FINAL::DRAFT::Hello\n world.",
+        )
+        self.assertEqual(second_decision.model, "reviser")
+
+    def test_commit_revision_can_be_disabled(self) -> None:
+        translator = RevisingTranslator()
+        core = TranslationCore(
+            translator=translator,
+            commit_correction_enabled=False,
+        )
+        source_state = SourceTranscriptState()
+
+        first_event = ReplayEvent(kind="c", text="Hello", line_number=1)
+        source_state.apply_event(first_event)
+        core.handle_event(first_event, source_state)
+
+        second_event = ReplayEvent(kind="c", text=" world.", line_number=2)
+        source_state.apply_event(second_event)
+        second_decision = core.handle_event(second_event, source_state)
+
+        self.assertEqual(translator.revise_calls, [])
+        self.assertEqual(second_decision.model, "first-pass")
 
 
 if __name__ == "__main__":

@@ -4,15 +4,9 @@
       "prompt": "You are a translation engine. Translate the user's text into Dutch. Return only the translation.",
       "input_template": "{{source_window}}"
     },
-    "preview_translation": {
-      "enabled": true,
-      "min_chars": 80,
-      "max_distance_ratio": 0.15,
-      "min_growth_chars": 50
-    },
     "commit_correction": {
-      "enabled": false,
-      "model": "phi-4-ct2-int8",
+      "enabled": true,
+      "model": "eurollm-22b-instruct-2512-ct2-int8f16",
       "prompt": [
         "Role: You are correcting a Dutch translation.",
         "Input: You receive source text and a draft Dutch translation.",

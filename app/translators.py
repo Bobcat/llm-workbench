@@ -2,77 +2,161 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from dataclasses import field
-from pathlib import Path
+import json
+import os
+import time
 from typing import Protocol
+from urllib import error
+from urllib import request
 
 
-EUROLLM_CT2_MODEL_PATH = Path("/home/gunnar/models/EuroLLM-9B-Instruct-ct2-int8")
 EUROLLM_CT2_TARGET_LANGUAGE = "Dutch"
+EUROLLM_SERVICE_MODEL = os.environ.get("LLM_RESPONSES_API_MODEL", "eurollm-9b-ct2-int8")
+DEFAULT_LLM_RESPONSES_API_CORRECTION_MODEL = os.environ.get(
+    "LLM_RESPONSES_API_CORRECTION_MODEL",
+    "phi-4-ct2-int8",
+)
+DEFAULT_LLM_RESPONSES_API_BASE_URL = os.environ.get("LLM_RESPONSES_API_BASE_URL", "http://127.0.0.1:8011")
+
+
 class Translator(Protocol):
-    def translate(self, source_window: str, *, context_text: str = "") -> str:
+    def translate(self, source_window: str) -> "TranslationResult":
         ...
+
+    def revise_translation(
+        self,
+        source_window: str,
+        draft_translation: str,
+        *,
+        system_prompt: str | None = None,
+    ) -> "TranslationResult":
+        ...
+
+
+@dataclass(frozen=True)
+class TranslationMetrics:
+    replay_request_wall_ms: float | None = None
+    observed_first_text_ms: float | None = None
+    observed_complete_ms: float | None = None
+    transport_first_byte_ms: float | None = None
+    transport_first_text_delta_ms: float | None = None
+    transport_completed_ms: float | None = None
+    engine_tokenize_ms: float | None = None
+    gpu_time_to_first_token_ms: float | None = None
+    gpu_generate_total_ms: float | None = None
+    gpu_decode_after_first_token_ms: float | None = None
+    engine_prompt_tokens: int | None = None
+    engine_output_tokens: int | None = None
+    engine_tokens_per_second: float | None = None
+
+
+@dataclass(frozen=True)
+class TranslationResult:
+    text: str
+    request_id: str = ""
+    model: str = ""
+    metrics: TranslationMetrics = field(default_factory=TranslationMetrics)
 
 
 @dataclass
 class DummyTranslator:
     mode: str = "marker"
 
-    def translate(self, source_window: str, *, context_text: str = "") -> str:
+    def translate(self, source_window: str) -> TranslationResult:
         if self.mode == "echo":
-            return source_window
+            return TranslationResult(text=source_window, model="dummy")
         if self.mode == "marker":
-            return f"[TRANSLATED] {source_window}" if source_window else ""
+            return TranslationResult(
+                text=f"[TRANSLATED] {source_window}" if source_window else "",
+                model="dummy",
+            )
         raise ValueError(f"unsupported dummy translator mode: {self.mode!r}")
 
-
-def create_eurollm_ct2_generator(
-    model_path: str | Path = EUROLLM_CT2_MODEL_PATH,
-    *,
-    device: str = "cuda",
-    compute_type: str = "int8",
-):
-    try:
-        import ctranslate2
-    except ImportError as exc:  # pragma: no cover - depends on local environment
-        raise RuntimeError("ctranslate2 is required for the EuroLLM CT2 translator") from exc
-
-    return ctranslate2.Generator(str(model_path), device=device, compute_type=compute_type)
+    def revise_translation(
+        self,
+        source_window: str,
+        draft_translation: str,
+        *,
+        system_prompt: str | None = None,
+    ) -> TranslationResult:
+        del source_window
+        del system_prompt
+        return TranslationResult(text=draft_translation, model="dummy")
 
 
 @dataclass
-class Ct2EuroLlmTranslator:
-    model_path: str | Path = EUROLLM_CT2_MODEL_PATH
-    device: str = "cuda"
-    compute_type: str = "int8"
+class LlmResponsesTranslator:
+    service_base_url: str = DEFAULT_LLM_RESPONSES_API_BASE_URL
+    model: str = EUROLLM_SERVICE_MODEL
+    correction_model: str = DEFAULT_LLM_RESPONSES_API_CORRECTION_MODEL
+    first_pass_prompt: str | None = None
+    first_pass_input_template: str = "{{source_window}}"
+    correction_input_template: str = (
+        "Source text:\n"
+        "{{source_window}}\n\n"
+        "Draft Dutch translation:\n"
+        "{{draft_translation}}"
+    )
     target_language: str = EUROLLM_CT2_TARGET_LANGUAGE
     max_length: int = 256
     sampling_topk: int = 1
     sampling_topp: float = 1.0
     sampling_temperature: float = 0.1
     repetition_penalty: float = 1.0
-    _generator: object = field(init=False, repr=False)
-    _tokenizer: object = field(init=False, repr=False)
-    _prompt_token_cache: dict[str, list[str]] = field(init=False, repr=False)
+    timeout_seconds: float = 120.0
 
-    def __post_init__(self) -> None:
-        self.model_path = Path(self.model_path)
-        self._generator = create_eurollm_ct2_generator(
-            self.model_path,
-            device=self.device,
-            compute_type=self.compute_type,
+    def translate(self, source_window: str) -> TranslationResult:
+        first_pass_prompt = (self.first_pass_prompt or "").strip()
+        if first_pass_prompt == "":
+            first_pass_prompt = self._default_system_prompt()
+        request_input = self._render_template(
+            self.first_pass_input_template,
+            source_window=source_window,
         )
-        self._tokenizer = self._load_tokenizer()
-        self._prompt_token_cache = {}
-        self._get_static_prompt_tokens(self._default_system_prompt())
-
-    def translate(self, source_window: str, *, context_text: str = "") -> str:
-        system_prompt = self._default_system_prompt()
-        if context_text.strip():
-            system_prompt = self._context_system_prompt()
+        if request_input.strip() == "":
+            request_input = source_window
         return self.translate_with_system_prompt(
-            source_window,
-            system_prompt=system_prompt,
-            context_text=context_text,
+            request_input,
+            system_prompt=first_pass_prompt,
+        )
+
+    def revise_translation(
+        self,
+        source_window: str,
+        draft_translation: str,
+        *,
+        system_prompt: str | None = None,
+    ) -> TranslationResult:
+        if draft_translation.strip() == "":
+            return TranslationResult(text=draft_translation, model=self.model)
+        correction_model = self.correction_model.strip()
+        if correction_model == "":
+            return TranslationResult(text=draft_translation, model=self.model)
+        revision_prompt = system_prompt if system_prompt is not None else self._revision_system_prompt()
+        correction_input = self._render_template(
+            self.correction_input_template,
+            source_window=source_window,
+            draft_translation=draft_translation,
+        )
+        if correction_input.strip() == "":
+            correction_input = draft_translation
+        correction_translator = LlmResponsesTranslator(
+            service_base_url=self.service_base_url,
+            model=correction_model,
+            correction_model=correction_model,
+            first_pass_input_template=self.first_pass_input_template,
+            correction_input_template=self.correction_input_template,
+            target_language=self.target_language,
+            max_length=self.max_length,
+            sampling_topk=self.sampling_topk,
+            sampling_topp=self.sampling_topp,
+            sampling_temperature=self.sampling_temperature,
+            repetition_penalty=self.repetition_penalty,
+            timeout_seconds=self.timeout_seconds,
+        )
+        return correction_translator.translate_with_system_prompt(
+            correction_input,
+            system_prompt=revision_prompt,
         )
 
     def translate_with_system_prompt(
@@ -80,36 +164,28 @@ class Ct2EuroLlmTranslator:
         source_window: str,
         *,
         system_prompt: str,
-        context_text: str = "",
         beam_size: int = 1,
         sampling_topk: int | None = None,
         sampling_temperature: float | None = None,
-    ) -> str:
+    ) -> TranslationResult:
         if source_window.strip() == "":
-            return ""
-
-        request_tokens = self._tokenize(
-            self._build_request_text(source_window, context_text=context_text),
-            add_special_tokens=False,
-        )
-        results = self._generator.generate_batch(  # type: ignore[call-arg]
-            [request_tokens],
-            static_prompt=self._get_static_prompt_tokens(system_prompt),
-            cache_static_prompt=True,
-            include_prompt_in_result=False,
-            beam_size=beam_size,
-            max_length=self.max_length,
-            sampling_topk=self.sampling_topk if sampling_topk is None else sampling_topk,
-            sampling_topp=self.sampling_topp,
-            sampling_temperature=(
-                self.sampling_temperature if sampling_temperature is None else sampling_temperature
-            ),
-            repetition_penalty=self.repetition_penalty,
-            end_token="<|im_end|>",
-        )
-        if not results or not results[0].sequences:
-            return ""
-        return self._decode(results[0].sequences[0]).strip()
+            return TranslationResult(text="", model=self.model)
+        payload = {
+            "model": self.model,
+            "input": source_window,
+            "instructions": system_prompt,
+            "stream": True,
+            "decoding": {
+                "beam_size": beam_size,
+                "top_k": self.sampling_topk if sampling_topk is None else sampling_topk,
+                "top_p": self.sampling_topp,
+                "temperature": self.sampling_temperature if sampling_temperature is None else sampling_temperature,
+                "repetition_penalty": self.repetition_penalty,
+                "max_tokens": self.max_length,
+                "stop": ["<|im_end|>"],
+            },
+        }
+        return self._submit_request(payload)
 
     def _default_system_prompt(self) -> str:
         return (
@@ -118,69 +194,221 @@ class Ct2EuroLlmTranslator:
             "Return only the translation."
         )
 
-    def _context_system_prompt(self) -> str:
+    def _revision_system_prompt(self) -> str:
         return (
-            "You are a translation engine. "
-            f"Translate only the current text into {self.target_language}. "
-            "Use the reference context only for disambiguation. "
-            "Do not translate or repeat the reference context. "
-            "Return only the translation of the current text."
+            "You are correcting a Dutch translation. "
+            "You receive source text and a draft Dutch translation. "
+            "Produce clean, idiomatic Dutch and correct clear language errors in the draft. "
+            "If the draft contains malformed or non-Dutch words, replace them with the most likely correct Dutch wording. "
+            "Fix obvious mistranscription effects from the source when the intended meaning is clear. "
+            "Preserve meaning and factual content; do not add new information. "
+            "If genuinely ambiguous, choose the safest natural Dutch wording closest to the source intent. "
+            "Return only the final corrected Dutch translation."
         )
 
-    def _load_tokenizer(self):
+    def _render_template(self, template: str, **variables: str) -> str:
+        rendered = template
+        for name, value in variables.items():
+            rendered = rendered.replace(f"{{{{{name}}}}}", value)
+        return rendered
+
+    def _submit_request(self, payload: dict[str, object]) -> str:
+        body = json.dumps(payload, ensure_ascii=True).encode("utf-8")
+        req = request.Request(
+            url=f"{self.service_base_url.rstrip('/')}/v1/responses",
+            data=body,
+            headers={
+                "Content-Type": "application/json",
+                "Accept": "text/event-stream",
+            },
+            method="POST",
+        )
+        request_started = time.perf_counter()
         try:
-            from transformers import PreTrainedTokenizerFast
-        except ImportError as exc:  # pragma: no cover - depends on local environment
-            raise RuntimeError("transformers is required for the EuroLLM CT2 translator") from exc
+            with request.urlopen(req, timeout=self.timeout_seconds) as response:
+                transport_first_byte_ms = (time.perf_counter() - request_started) * 1000.0
+                return self._read_sse_response(
+                    response,
+                    request_started=request_started,
+                    transport_first_byte_ms=transport_first_byte_ms,
+                )
+        except error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")
+            raise RuntimeError(
+                f"llm-responses API HTTP {exc.code}: {detail.strip() or exc.reason}"
+            ) from exc
+        except error.URLError as exc:
+            raise RuntimeError(f"llm-responses API unavailable: {exc.reason}") from exc
 
-        tokenizer_file = self.model_path / "tokenizer.json"
-        return PreTrainedTokenizerFast(
-            tokenizer_file=str(tokenizer_file),
-            bos_token="<s>",
-            eos_token="<|im_end|>",
-            unk_token="<unk>",
+    def _read_sse_response(
+        self,
+        response: object,
+        *,
+        request_started: float,
+        transport_first_byte_ms: float,
+    ) -> TranslationResult:
+        deltas: list[str] = []
+        event_name = ""
+        data_lines: list[str] = []
+        request_id = ""
+        response_model = self.model
+        response_metrics_payload: dict[str, object] = {}
+        transport_first_text_delta_ms: float | None = None
+
+        for raw_line in response:
+            line = raw_line.decode("utf-8").rstrip("\r\n")
+            if line == "":
+                completed_result = self._handle_sse_event(
+                    event_name,
+                    data_lines,
+                    deltas,
+                    request_started=request_started,
+                    request_id=request_id,
+                    response_model=response_model,
+                    transport_first_byte_ms=transport_first_byte_ms,
+                    transport_first_text_delta_ms=transport_first_text_delta_ms,
+                    response_metrics_payload=response_metrics_payload,
+                )
+                if completed_result is not None:
+                    return completed_result
+                if event_name == "response.created" and data_lines:
+                    payload = json.loads("\n".join(data_lines))
+                    request_id = str(payload.get("id", request_id))
+                    response_model = str(payload.get("model", response_model))
+                elif event_name == "response.output_text.delta" and data_lines and transport_first_text_delta_ms is None:
+                    transport_first_text_delta_ms = (time.perf_counter() - request_started) * 1000.0
+                elif event_name == "response.metrics" and data_lines:
+                    payload = json.loads("\n".join(data_lines))
+                    metrics_payload = payload.get("metrics", {})
+                    if isinstance(metrics_payload, dict):
+                        response_metrics_payload = dict(metrics_payload)
+                event_name = ""
+                data_lines = []
+                continue
+            if line.startswith(":"):
+                continue
+            if line.startswith("event:"):
+                event_name = line.split(":", 1)[1].strip()
+                continue
+            if line.startswith("data:"):
+                data_lines.append(line.split(":", 1)[1].lstrip())
+
+        completed_result = self._handle_sse_event(
+            event_name,
+            data_lines,
+            deltas,
+            request_started=request_started,
+            request_id=request_id,
+            response_model=response_model,
+            transport_first_byte_ms=transport_first_byte_ms,
+            transport_first_text_delta_ms=transport_first_text_delta_ms,
+            response_metrics_payload=response_metrics_payload,
+        )
+        if completed_result is not None:
+            return completed_result
+        return TranslationResult(
+            text="".join(deltas).strip(),
+            request_id=request_id,
+            model=response_model,
+            metrics=self._build_metrics(
+                transport_first_byte_ms=transport_first_byte_ms,
+                transport_first_text_delta_ms=transport_first_text_delta_ms,
+                transport_completed_ms=(time.perf_counter() - request_started) * 1000.0,
+                response_metrics_payload=response_metrics_payload,
+            ),
         )
 
-    def _get_static_prompt_tokens(self, system_prompt: str) -> list[str]:
-        cached = self._prompt_token_cache.get(system_prompt)
-        if cached is not None:
-            return cached
-        tokens = self._tokenize(self._build_static_prompt_text(system_prompt), add_special_tokens=True)
-        self._prompt_token_cache[system_prompt] = tokens
-        return tokens
-
-    def _build_static_prompt_text(self, system_prompt: str) -> str:
-        # This matches the EuroLLM instruct prompt format from the model card.
-        return (
-            "<|im_start|>system\n"
-            f"{system_prompt}<|im_end|>\n"
-            "<|im_start|>user\n"
-        )
-
-    def _build_request_text(self, source_window: str, *, context_text: str = "") -> str:
-        if context_text.strip():
-            return (
-                "Reference context already translated earlier:\n"
-                f"{context_text}\n\n"
-                "Current text to translate now:\n"
-                f"{source_window}<|im_end|>\n<|im_start|>assistant\n"
+    def _handle_sse_event(
+        self,
+        event_name: str,
+        data_lines: list[str],
+        deltas: list[str],
+        *,
+        request_started: float,
+        request_id: str,
+        response_model: str,
+        transport_first_byte_ms: float,
+        transport_first_text_delta_ms: float | None,
+        response_metrics_payload: dict[str, object],
+    ) -> TranslationResult | None:
+        if not event_name or not data_lines:
+            return None
+        payload = json.loads("\n".join(data_lines))
+        if event_name == "response.output_text.delta":
+            deltas.append(str(payload.get("delta", "")))
+            return None
+        if event_name == "response.completed":
+            output_text = str(payload.get("output_text", ""))
+            return TranslationResult(
+                text=output_text.strip() if output_text else "".join(deltas).strip(),
+                request_id=str(payload.get("id", request_id)),
+                model=response_model,
+                metrics=self._build_metrics(
+                    transport_first_byte_ms=transport_first_byte_ms,
+                    transport_first_text_delta_ms=transport_first_text_delta_ms,
+                    transport_completed_ms=(time.perf_counter() - request_started) * 1000.0,
+                    response_metrics_payload=response_metrics_payload,
+                ),
             )
-        return f"{source_window}<|im_end|>\n<|im_start|>assistant\n"
+        return None
 
-    def _tokenize(self, text: str, *, add_special_tokens: bool) -> list[str]:
-        encoded = self._tokenizer(text, add_special_tokens=add_special_tokens)
-        return self._tokenizer.convert_ids_to_tokens(encoded["input_ids"])
+    def _build_metrics(
+        self,
+        *,
+        transport_first_byte_ms: float | None,
+        transport_first_text_delta_ms: float | None,
+        transport_completed_ms: float | None,
+        response_metrics_payload: dict[str, object],
+    ) -> TranslationMetrics:
+        return TranslationMetrics(
+            transport_first_byte_ms=transport_first_byte_ms,
+            transport_first_text_delta_ms=transport_first_text_delta_ms,
+            transport_completed_ms=transport_completed_ms,
+            engine_tokenize_ms=_maybe_float(response_metrics_payload.get("engine_tokenize_ms")),
+            gpu_time_to_first_token_ms=_maybe_float(response_metrics_payload.get("gpu_time_to_first_token_ms")),
+            gpu_generate_total_ms=_maybe_float(response_metrics_payload.get("gpu_generate_total_ms")),
+            gpu_decode_after_first_token_ms=_maybe_float(response_metrics_payload.get("gpu_decode_after_first_token_ms")),
+            engine_prompt_tokens=_maybe_int(response_metrics_payload.get("engine_prompt_tokens")),
+            engine_output_tokens=_maybe_int(response_metrics_payload.get("engine_output_tokens")),
+            engine_tokens_per_second=_maybe_float(response_metrics_payload.get("engine_tokens_per_second")),
+        )
 
-    def _decode(self, tokens: list[str]) -> str:
-        token_ids = self._tokenizer.convert_tokens_to_ids(tokens)
-        if isinstance(token_ids, int):
-            token_ids = [token_ids]
-        return self._tokenizer.decode(token_ids, skip_special_tokens=True)
 
-
-def build_translator(name: str, *, dummy_mode: str = "marker") -> Translator:
+def build_translator(
+    name: str,
+    *,
+    dummy_mode: str = "marker",
+    service_model: str | None = None,
+    correction_model: str | None = None,
+    first_pass_prompt: str | None = None,
+    first_pass_input_template: str | None = None,
+    correction_input_template: str | None = None,
+) -> Translator:
     if name == "dummy":
         return DummyTranslator(mode=dummy_mode)
     if name == "ct2-eurollm":
-        return Ct2EuroLlmTranslator()
+        translator_kwargs: dict[str, str] = {}
+        if service_model:
+            translator_kwargs["model"] = service_model
+        if correction_model is not None:
+            translator_kwargs["correction_model"] = correction_model
+        if first_pass_prompt is not None:
+            translator_kwargs["first_pass_prompt"] = first_pass_prompt
+        if first_pass_input_template is not None:
+            translator_kwargs["first_pass_input_template"] = first_pass_input_template
+        if correction_input_template is not None:
+            translator_kwargs["correction_input_template"] = correction_input_template
+        return LlmResponsesTranslator(**translator_kwargs)
     raise ValueError(f"unsupported translator: {name!r}")
+
+
+def _maybe_float(value: object) -> float | None:
+    if value is None:
+        return None
+    return float(value)
+
+
+def _maybe_int(value: object) -> int | None:
+    if value is None:
+        return None
+    return int(value)

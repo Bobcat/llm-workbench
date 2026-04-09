@@ -1,0 +1,13 @@
+[Unit]
+Description=SSH tunnel to llm-pool on dc2
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/ssh -N -L 127.0.0.1:8011:127.0.0.1:8011 -o BatchMode=yes -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=3 dc2
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=default.target
