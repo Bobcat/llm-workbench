@@ -1,23 +1,21 @@
 from __future__ import annotations
 
-import argparse
 import tempfile
 import unittest
-from contextlib import redirect_stdout
-from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
-from app.cli import run_smoke
+from app.smoke_runner import run_smoke
+from app.translators import TranslationResult
 
 
 class FakeSmokeTranslator:
     def __init__(self) -> None:
         self.calls: list[str] = []
 
-    def translate(self, source_window: str) -> str:
+    def translate(self, source_window: str) -> TranslationResult:
         self.calls.append(source_window)
-        return f"T::{source_window}"
+        return TranslationResult(text=f"T::{source_window}")
 
 
 class CliSmokeTests(unittest.TestCase):
@@ -26,21 +24,14 @@ class CliSmokeTests(unittest.TestCase):
             path = Path(tmpdir) / "smoke.pc"
             path.write_text("p,preview\nc,one\np,again\nc,two\nc,three\n", encoding="utf-8")
 
-            output = StringIO()
             fake_translator = FakeSmokeTranslator()
-            with patch("app.cli.LlmResponsesTranslator", return_value=fake_translator):
-                with redirect_stdout(output):
-                    exit_code = run_smoke(argparse.Namespace(path=path, c_count=2))
+            with patch("app.smoke_runner.LlmResponsesTranslator", return_value=fake_translator):
+                result = run_smoke(path, committed_events=2)
 
-        self.assertEqual(exit_code, 0)
         self.assertEqual(fake_translator.calls, ["onetwo"])
-        text = output.getvalue()
-        self.assertIn("SMOKE RESULT", text)
-        self.assertIn("committed_events=2", text)
-        self.assertIn("SOURCE", text)
-        self.assertIn("onetwo", text)
-        self.assertIn("TARGET", text)
-        self.assertIn("T::onetwo", text)
+        self.assertEqual(result.committed_events, 2)
+        self.assertEqual(result.source_text, "onetwo")
+        self.assertEqual(result.target_text, "T::onetwo")
 
 
 if __name__ == "__main__":

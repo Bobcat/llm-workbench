@@ -6,7 +6,6 @@ The repo has three practical workflows:
 
 - replay a `.pc` transcript file and inspect translation decisions
 - run a single smoke translation on the first committed chunks
-- open a small browser judge to compare prompt variants
 
 ## Requirements
 
@@ -17,8 +16,6 @@ For local development, install the package in editable mode from the repo root:
 ```bash
 python -m pip install -e .
 ```
-
-For the browser judge, the environment needs `fastapi` and `uvicorn`.
 
 For the `ct2-eurollm` translation path, this repo now expects the sibling `llm-responses-api-dev` service to be running on `http://127.0.0.1:8010`.
 
@@ -84,29 +81,6 @@ The smoke command:
 - sends that window through the configured `llm-responses-api-dev` service
 - prints source text, target text, and latency
 
-## Browser Judge
-
-Start the local A/B judge from the repo root:
-
-```bash
-python -m app judge-web sample/live_20260406T165024Z_c3e7a33e.pc --window-chunks 2 --max-items 20 --port 8002
-```
-
-Then open the printed local URL in your browser.
-
-To compare baseline against one of the built-in alternatives, add `--comparison-prompt ...`.
-Available comparison options are `baseline_topk5_temp03`, `baseline_nl`, `faithful_nl_compact`, `natural_nl`, `simple_nl`, `spoken_nl`, `superior_nl`, and `syntactic_nl`.
-
-The judge page shows:
-
-- the source window
-- output A and output B, anonymously
-- a winner choice: `A`, `B`, or `tie`
-- optional `naturalness` and `faithfulness` scores from `1` to `5`
-- a summary page with a downloadable text export of prompt names, inputs, and outputs
-
-Judgments are appended to `tmp/judge-results.jsonl`.
-
 ## Tests
 
 Run:
@@ -122,7 +96,6 @@ python -m unittest discover -s tests
 - `app/core.py`: event-driven translation core and target state
 - `app/translators.py`: EuroLLM/CT2 translator wrapper and dummy translator
 - `app/replay.py`: replay runner that wires parser, source state, and core together
-- `app/judge_web.py`: small FastAPI judge for prompt A/B testing
 - `app/cli.py`: command-line entrypoint
 - `sample/sample.pc`: small replayable example
 - `tests/`: unit tests

@@ -25,6 +25,7 @@ class FirstPassSettings:
         "Return only the translation."
     )
     input_template: str = "{{source_window}}"
+    default_model: str = "phi-4-ct2-int8"
 
 
 @dataclass(frozen=True)
@@ -123,6 +124,9 @@ def load_replay_settings(path: str | Path = DEFAULT_SETTINGS_PATH) -> ReplaySett
             input_template=_coerce_prompt(
                 first_pass_payload.get("input_template"),
                 default=FirstPassSettings.input_template,
+            ),
+            default_model=str(
+                first_pass_payload.get("default_model", FirstPassSettings.default_model)
             ),
         ),
         preview_translation=PreviewTranslationSettings(

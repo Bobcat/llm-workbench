@@ -2,5 +2,9 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .coverage
+.venv/
+*.egg-info/
+*.code-workspace
+static
 tmp/
 docs/

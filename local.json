@@ -5,7 +5,7 @@
       "input_template": "{{source_window}}"
     },
     "commit_correction": {
-      "enabled": true,
+      "enabled": false,
       "model": "eurollm-22b-instruct-2512-ct2-int8f16",
       "prompt": [
         "Role: You are correcting a Dutch translation.",

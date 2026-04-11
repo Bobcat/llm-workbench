@@ -3,9 +3,9 @@ requires = ["setuptools>=69"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "translation-replay-dev"
+name = "llm-workbench"
 version = "0.1.0"
-description = "Replay and simulation harness for streaming translation."
+description = "LLM workbench API for translation workflows."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -13,4 +13,13 @@ dependencies = [
     "fastapi",
     "transformers",
     "uvicorn",
+    "python-multipart",  # For file uploads
+    "pydantic",
 ]
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+exclude = ["tmp*", "deploy*", "sample*", "tests*", "docs*"]
+
+[project.scripts]
+llm-workbench = "app.__main__:main"
