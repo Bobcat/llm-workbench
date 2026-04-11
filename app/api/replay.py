@@ -79,6 +79,9 @@ class ReplaySession:
     # Traces for metrics export
     traces: list[TraceRecord] = field(default_factory=list)
     
+    # Track all models used during session (for export accuracy)
+    models_used: set[str] = field(default_factory=set)
+    
     def init_core(self, translator):
         """Initialize TranslationCore with translator."""
         settings = load_replay_settings()
@@ -108,6 +111,24 @@ class ReplaySession:
     
     def get_model_display(self) -> str:
         return self.model or "(default)"
+    
+    def swap_translator(self):
+        """Swap the translator in the existing core without losing state.
+        
+        This preserves all internal TranslationCore state (target text,
+        open chunks, etc.) while switching to the new model.
+        """
+        if not self.core:
+            return
+        
+        settings = load_replay_settings()
+        translator = build_translator(
+            "ct2-eurollm",
+            dummy_mode="marker",
+            service_model=self.model or settings.first_pass.default_model,
+        )
+        # Swap translator only - preserve all core state
+        self.core.set_translator(translator)
 
 
 class CreateSessionRequest(BaseModel):
@@ -186,7 +207,13 @@ async def set_model(session_id: str, request: ModelRequest):
         return {"error": "Session not found"}
     
     # Empty string becomes None (default)
-    session.model = request.model if request.model else None
+    new_model = request.model if request.model else None
+    
+    # Only swap if model actually changed
+    if new_model != session.model:
+        session.model = new_model
+        # Swap translator in existing core - preserves all state
+        session.swap_translator()
     
     # Notify client via WebSocket if connected
     if session.websocket:
@@ -217,10 +244,21 @@ async def start_replay(session_id: str):
         return {"status": "already_playing"}
     
     if session.status == "completed":
-        # Restart from beginning
+        # Restart from beginning - reset ALL state (same as reset endpoint)
         session.current_event_index = 1
         session.source_committed_text = ""
         session.source_preview_text = ""
+        session.target_committed_text = ""
+        session.target_preview_text = ""
+        session.traces.clear()
+        session.models_used.clear()
+        
+        # Reset TranslationCore state
+        if session.core:
+            session.core.target_state.target_committed_text = ""
+            session.core.target_state.target_preview_text = ""
+            session.core.open_source_chunks.clear()
+            session.core._reset_preview_run_state()
     
     session.status = "playing"
     
@@ -280,6 +318,7 @@ async def reset_replay(session_id: str):
     session.target_committed_text = ""
     session.target_preview_text = ""
     session.traces.clear()  # Clear metrics history
+    session.models_used.clear()  # Clear model tracking
     
     # Reset TranslationCore state if exists
     if session.core:
@@ -367,6 +406,8 @@ async def _playback_loop(session: ReplaySession):
             
             # Store trace record for metrics export (only if translation happened)
             if decision and decision.triggered:
+                # Track model used for this translation
+                session.models_used.add(decision.model)
                 metrics = decision.metrics
                 trace = TraceRecord(
                     event_index=session.current_event_index,
@@ -555,9 +596,15 @@ def _build_metrics_summary(*, session: ReplaySession, traces: list[TraceRecord])
     preview_translations = sum(1 for trace in translated_traces if trace.event_kind == "p")
     commit_translations = sum(1 for trace in translated_traces if trace.event_kind == "c")
     
+    # Determine model display: single model, mixed models, or none
+    if len(session.models_used) > 1:
+        model_display = "<mixed models>"
+    else:
+        model_display = session.model or ""
+    
     return {
         "sample_file": session.file_path,
-        "model": session.model or "",
+        "model": model_display,
         "events_total": len(session.events),
         "translations_total": len(translated_traces),
         "preview_translations": preview_translations,
@@ -661,8 +708,11 @@ async def export_final(session_id: str):
     from datetime import datetime, timezone
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     stem = Path(session.file_path).stem
-    model_slug = session.model or "default"
-    filename = f"{stem}_{model_slug}_{timestamp}_final.txt"
+    if len(session.models_used) > 1:
+        model_slug = "mixed"
+    else:
+        model_slug = session.model or "default"
+    filename = f"{stem}_{model_slug}_{timestamp}.txt"
     
     return PlainTextResponse(
         content,

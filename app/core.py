@@ -48,6 +48,16 @@ class TranslationCore:
         self.previous_source_preview_text = ""
         self.last_sent_source_preview_text = ""
 
+    def set_translator(self, translator: Translator) -> None:
+        """Swap the translator without losing internal state.
+        
+        This allows model switching mid-session while preserving:
+        - target_state (committed and preview text)
+        - open_source_chunks (partial sentences awaiting completion)
+        - preview run state
+        """
+        self.translator = translator
+
     def handle_event(self, event: ReplayEvent, source_state: SourceTranscriptState) -> TranslationDecision:
         if event.kind == "p":
             return self._handle_preview_event(source_state)
