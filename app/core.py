@@ -27,6 +27,8 @@ class TranslationDecision:
     source_chunks_used: int = 0
     request_id: str = ""
     model: str = ""
+    first_pass_model: str = ""
+    correction_model: str = ""
     metrics: TranslationMetrics = field(default_factory=TranslationMetrics)
 
 
@@ -38,11 +40,13 @@ class TranslationCore:
         preview_settings: PreviewTranslationSettings | None = None,
         commit_correction_enabled: bool = True,
         commit_correction_prompt: str | None = None,
+        no_translator_mode: bool = False,
     ) -> None:
         self.translator = translator
         self.preview_settings = preview_settings or PreviewTranslationSettings()
         self.commit_correction_enabled = commit_correction_enabled
         self.commit_correction_prompt = commit_correction_prompt
+        self.no_translator_mode = no_translator_mode
         self.target_state = TargetTranscriptState()
         self.open_source_chunks: list[str] = []
         self.previous_source_preview_text = ""
@@ -59,6 +63,13 @@ class TranslationCore:
         self.translator = translator
 
     def handle_event(self, event: ReplayEvent, source_state: SourceTranscriptState) -> TranslationDecision:
+        if self.no_translator_mode:
+            if event.kind == "p":
+                return self._handle_preview_event_passthrough(source_state)
+            if event.kind != "c":
+                return TranslationDecision(triggered=False, reason="unsupported_event_kind")
+            return self._handle_committed_event_passthrough(event)
+
         if event.kind == "p":
             return self._handle_preview_event(source_state)
         if event.kind != "c":
@@ -71,7 +82,9 @@ class TranslationCore:
 
         started = time.perf_counter()
         translation = self.translator.translate(source_window)
+        first_pass_model = translation.model
         final_translation = translation
+        correction_model = ""
         replay_request_wall_ms = (time.perf_counter() - started) * 1000.0
         source_chunks_used = len(self.open_source_chunks)
         if _ends_with_sentence_boundary(event.text):
@@ -81,6 +94,7 @@ class TranslationCore:
                     translation.text,
                     system_prompt=self.commit_correction_prompt,
                 )
+                correction_model = final_translation.model
                 replay_request_wall_ms = (time.perf_counter() - started) * 1000.0
             self.target_state.target_committed_text = _append_transcript_text(
                 self.target_state.target_committed_text,
@@ -105,6 +119,8 @@ class TranslationCore:
             source_chunks_used=source_chunks_used,
             request_id=final_translation.request_id,
             model=final_translation.model,
+            first_pass_model=first_pass_model,
+            correction_model=correction_model,
             metrics=metrics,
         )
 
@@ -169,7 +185,84 @@ class TranslationCore:
             source_chunks_used=len(self.open_source_chunks) + 1,
             request_id=translation.request_id,
             model=translation.model,
+            first_pass_model=translation.model,
             metrics=metrics,
+        )
+
+    def _handle_committed_event_passthrough(self, event: ReplayEvent) -> TranslationDecision:
+        self.open_source_chunks.append(event.text)
+        source_window = self._build_source_window()
+        if source_window == "":
+            return TranslationDecision(triggered=False, reason="empty_committed_window")
+
+        source_chunks_used = len(self.open_source_chunks)
+        request_id = ""
+        correction_model = ""
+        metrics = TranslationMetrics()
+        if _ends_with_sentence_boundary(event.text):
+            final_text = source_window
+            reason = "committed_event_passthrough"
+            if self.commit_correction_enabled:
+                started = time.perf_counter()
+                revised = self.translator.revise_translation(
+                    source_window,
+                    source_window,
+                    system_prompt=self.commit_correction_prompt,
+                )
+                replay_request_wall_ms = (time.perf_counter() - started) * 1000.0
+                final_text = revised.text
+                request_id = revised.request_id
+                correction_model = revised.model
+                metrics = replace(
+                    revised.metrics,
+                    replay_request_wall_ms=replay_request_wall_ms,
+                    observed_first_text_ms=replay_request_wall_ms,
+                    observed_complete_ms=replay_request_wall_ms,
+                )
+                reason = "committed_event_passthrough_revised"
+            self.target_state.target_committed_text = _append_transcript_text(
+                self.target_state.target_committed_text,
+                final_text,
+            )
+            self.target_state.target_preview_text = ""
+            self.open_source_chunks.clear()
+        else:
+            reason = "committed_event_passthrough_preview"
+            self.target_state.target_preview_text = source_window
+
+        self._reset_preview_run_state()
+        return TranslationDecision(
+            triggered=True,
+            reason=reason,
+            source_window=source_window,
+            target_preview_text=self.target_state.target_preview_text,
+            source_chunks_used=source_chunks_used,
+            request_id=request_id,
+            correction_model=correction_model,
+            metrics=metrics,
+        )
+
+    def _handle_preview_event_passthrough(self, source_state: SourceTranscriptState) -> TranslationDecision:
+        preview_text = source_state.source_preview_text
+        trimmed_preview = preview_text.rstrip()
+        if trimmed_preview == "":
+            self.target_state.target_preview_text = ""
+            self._reset_preview_run_state()
+            return TranslationDecision(triggered=False, reason="empty_preview")
+
+        source_window = self._build_preview_source_window(preview_text)
+        if source_window == "":
+            return TranslationDecision(triggered=False, reason="empty_preview_window")
+
+        self.previous_source_preview_text = preview_text
+        self.last_sent_source_preview_text = preview_text
+        self.target_state.target_preview_text = source_window
+        return TranslationDecision(
+            triggered=True,
+            reason="preview_event_passthrough",
+            source_window=source_window,
+            target_preview_text=source_window,
+            source_chunks_used=len(self.open_source_chunks) + 1,
         )
 
     def _reset_preview_run_state(self) -> None:

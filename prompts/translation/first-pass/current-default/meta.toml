@@ -1,0 +1,9 @@
+schema_version = 1
+title = "Current first-pass default"
+editable = false
+enabled = true
+tags = ["translation", "first-pass", "default"]
+notes = "Mirrors the current replay first-pass prompt and input template."
+
+[sections.translation]
+stage = "first_pass"

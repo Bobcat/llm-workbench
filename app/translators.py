@@ -91,6 +91,8 @@ class LlmResponsesTranslator:
     correction_model: str = DEFAULT_LLM_RESPONSES_API_CORRECTION_MODEL
     first_pass_prompt: str | None = None
     first_pass_input_template: str = "{{source_window}}"
+    first_pass_inline_user_prompt: bool = False
+    correction_inline_user_prompt: bool = False
     correction_input_template: str = (
         "Source text:\n"
         "{{source_window}}\n\n"
@@ -109,6 +111,17 @@ class LlmResponsesTranslator:
         first_pass_prompt = (self.first_pass_prompt or "").strip()
         if first_pass_prompt == "":
             first_pass_prompt = self._default_system_prompt()
+        if self.first_pass_inline_user_prompt:
+            if source_window.strip() == "":
+                return TranslationResult(text="", model=self.model)
+            request_input = self._build_first_pass_inline_user_prompt(
+                prompt=first_pass_prompt,
+                source_window=source_window,
+            )
+            return self.translate_with_system_prompt(
+                request_input,
+                system_prompt=" ",
+            )
         request_input = self._render_template(
             self.first_pass_input_template,
             source_window=source_window,
@@ -145,6 +158,8 @@ class LlmResponsesTranslator:
             model=correction_model,
             correction_model=correction_model,
             first_pass_input_template=self.first_pass_input_template,
+            first_pass_inline_user_prompt=self.first_pass_inline_user_prompt,
+            correction_inline_user_prompt=self.correction_inline_user_prompt,
             correction_input_template=self.correction_input_template,
             target_language=self.target_language,
             max_length=self.max_length,
@@ -154,6 +169,16 @@ class LlmResponsesTranslator:
             repetition_penalty=self.repetition_penalty,
             timeout_seconds=self.timeout_seconds,
         )
+        if self.correction_inline_user_prompt:
+            inline_input = self._build_revision_inline_user_prompt(
+                prompt=revision_prompt,
+                source_window=source_window,
+                draft_translation=draft_translation,
+            )
+            return correction_translator.translate_with_system_prompt(
+                inline_input,
+                system_prompt=" ",
+            )
         return correction_translator.translate_with_system_prompt(
             correction_input,
             system_prompt=revision_prompt,
@@ -211,6 +236,44 @@ class LlmResponsesTranslator:
         for name, value in variables.items():
             rendered = rendered.replace(f"{{{{{name}}}}}", value)
         return rendered
+
+    def _build_first_pass_inline_user_prompt(self, *, prompt: str, source_window: str) -> str:
+        instruction_text = str(prompt or "").rstrip("\n")
+        source_text = str(source_window or "").rstrip("\n")
+        return (
+            f"{instruction_text}\n"
+            f"ATTACHMENTS:\n"
+            f"Name: source.txt\n"
+            f"Contents:\n"
+            f"=====\n"
+            f"{source_text}\n"
+            f"=====\n"
+        )
+
+    def _build_revision_inline_user_prompt(
+        self,
+        *,
+        prompt: str,
+        source_window: str,
+        draft_translation: str,
+    ) -> str:
+        instruction_text = str(prompt or "").rstrip("\n")
+        source_text = str(source_window or "").rstrip("\n")
+        draft_text = str(draft_translation or "").rstrip("\n")
+        return (
+            f"{instruction_text}\n"
+            f"ATTACHMENTS:\n"
+            f"Name: source.txt\n"
+            f"Contents:\n"
+            f"=====\n"
+            f"{source_text}\n"
+            f"=====\n"
+            f"Name: draft_translation.txt\n"
+            f"Contents:\n"
+            f"=====\n"
+            f"{draft_text}\n"
+            f"=====\n"
+        )
 
     def _submit_request(self, payload: dict[str, object]) -> str:
         body = json.dumps(payload, ensure_ascii=True).encode("utf-8")
@@ -382,6 +445,8 @@ def build_translator(
     correction_model: str | None = None,
     first_pass_prompt: str | None = None,
     first_pass_input_template: str | None = None,
+    first_pass_inline_user_prompt: bool = False,
+    correction_inline_user_prompt: bool = False,
     correction_input_template: str | None = None,
 ) -> Translator:
     if name == "dummy":
@@ -396,6 +461,10 @@ def build_translator(
             translator_kwargs["first_pass_prompt"] = first_pass_prompt
         if first_pass_input_template is not None:
             translator_kwargs["first_pass_input_template"] = first_pass_input_template
+        if first_pass_inline_user_prompt:
+            translator_kwargs["first_pass_inline_user_prompt"] = True
+        if correction_inline_user_prompt:
+            translator_kwargs["correction_inline_user_prompt"] = True
         if correction_input_template is not None:
             translator_kwargs["correction_input_template"] = correction_input_template
         return LlmResponsesTranslator(**translator_kwargs)

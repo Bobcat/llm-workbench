@@ -45,3 +45,5 @@ def run_smoke_endpoint(request: SmokeRequest) -> SmokeResponse:
         return SmokeResponse.from_result(result)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=502, detail=str(e))

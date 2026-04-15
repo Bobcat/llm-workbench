@@ -1,0 +1,8 @@
+schema_version = 1
+title = "test"
+enabled = true
+tags = ["test"]
+notes = "test"
+
+[sections.translation]
+stage = "first_pass"

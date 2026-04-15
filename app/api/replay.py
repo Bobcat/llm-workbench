@@ -14,21 +14,25 @@ from pydantic import BaseModel
 
 from app.events import ReplayEvent, load_pc_events
 from app.core import TranslationCore
+from app.promptlib import FilePromptLibraryStore, PromptNotFoundError, PromptRecord
 from app.source_state import SourceTranscriptState
 from app.translators import build_translator
 from app.replay_settings import load_replay_settings
 
 router = APIRouter(prefix="/replay", tags=["replay"])
+DEFAULT_FIRST_PASS_PROMPT_ID = "translation/first-pass/current-default"
 
 # Speed presets (ms delay tussen events)
 SPEED_PRESETS = {
     "slow": 900,
     "normal": 500,
     "fast": 200,
+    "fastest": 1,
 }
 
 # In-memory session storage
 _sessions: Dict[str, "ReplaySession"] = {}
+_prompt_store = FilePromptLibraryStore()
 
 
 @dataclass
@@ -43,6 +47,8 @@ class TraceRecord:
     source_window: str
     request_id: str
     model: str
+    first_pass_model: str
+    correction_model: str
     # Metrics
     replay_request_wall_ms: float | None = None
     observed_first_text_ms: float | None = None
@@ -66,6 +72,10 @@ class ReplaySession:
     status: str = "idle"
     speed: str = "normal"
     model: Optional[str] = None  # Selected model for translations
+    correction_model: str = ""  # Empty string means correction is off
+    first_pass_prompt_id: str = DEFAULT_FIRST_PASS_PROMPT_ID
+    first_pass_system_prompt: str = ""
+    first_pass_user_prompt: str = "{{source_window}}"
     websocket: WebSocket | None = None
     source_committed_text: str = ""
     source_preview_text: str = ""
@@ -81,6 +91,7 @@ class ReplaySession:
     
     # Track all models used during session (for export accuracy)
     models_used: set[str] = field(default_factory=set)
+    correction_models_used: set[str] = field(default_factory=set)
     
     def init_core(self, translator):
         """Initialize TranslationCore with translator."""
@@ -88,8 +99,9 @@ class ReplaySession:
         self.core = TranslationCore(
             translator=translator,
             preview_settings=settings.preview_translation,
-            commit_correction_enabled=settings.commit_correction.enabled,
+            commit_correction_enabled=bool(self.correction_model),
             commit_correction_prompt=settings.commit_correction.prompt,
+            no_translator_mode=self.model is None,
         )
     
     def get_source_state(self) -> SourceTranscriptState:
@@ -110,7 +122,7 @@ class ReplaySession:
         return SPEED_PRESETS.get(self.speed, 500)
     
     def get_model_display(self) -> str:
-        return self.model or "(default)"
+        return self.model or "(none)"
     
     def swap_translator(self):
         """Swap the translator in the existing core without losing state.
@@ -120,15 +132,30 @@ class ReplaySession:
         """
         if not self.core:
             return
-        
-        settings = load_replay_settings()
-        translator = build_translator(
-            "ct2-eurollm",
-            dummy_mode="marker",
-            service_model=self.model or settings.first_pass.default_model,
+
+        if self.model is None:
+            settings = load_replay_settings()
+            translator = _build_replay_translator(
+                service_model=settings.first_pass.default_model,
+                correction_model=self.correction_model,
+                first_pass_prompt=self.first_pass_system_prompt,
+                first_pass_input_template=self.first_pass_user_prompt,
+            )
+            self.core.set_translator(translator)
+            self.core.no_translator_mode = True
+            self.core.commit_correction_enabled = bool(self.correction_model)
+            return
+
+        translator = _build_replay_translator(
+            service_model=self.model,
+            correction_model=self.correction_model,
+            first_pass_prompt=self.first_pass_system_prompt,
+            first_pass_input_template=self.first_pass_user_prompt,
         )
         # Swap translator only - preserve all core state
         self.core.set_translator(translator)
+        self.core.no_translator_mode = False
+        self.core.commit_correction_enabled = bool(self.correction_model)
 
 
 class CreateSessionRequest(BaseModel):
@@ -140,7 +167,63 @@ class SpeedRequest(BaseModel):
 
 
 class ModelRequest(BaseModel):
-    model: str  # Empty string means default
+    model: str  # Empty string means no translator
+
+
+class CorrectionModelRequest(BaseModel):
+    model: str  # Empty string means Off
+
+
+class FirstPassPromptRequest(BaseModel):
+    prompt_id: str
+
+
+def _is_first_pass_prompt(record: PromptRecord) -> bool:
+    translation_section = record.sections.get("translation", {})
+    if not isinstance(translation_section, dict):
+        return False
+    stage = str(translation_section.get("stage", "")).strip().lower()
+    return stage == "first_pass"
+
+
+def _load_first_pass_prompt(prompt_id: str) -> PromptRecord:
+    _prompt_store.reload()
+    try:
+        record = _prompt_store.get_prompt(prompt_id)
+    except PromptNotFoundError as exc:
+        raise ValueError(str(exc)) from exc
+    if not record.enabled:
+        raise ValueError(f"Prompt {prompt_id!r} is disabled.")
+    if not _is_first_pass_prompt(record):
+        raise ValueError(f"Prompt {prompt_id!r} is not a first-pass translation prompt.")
+    return record
+
+
+def _apply_first_pass_prompt(session: ReplaySession, prompt: PromptRecord) -> None:
+    session.first_pass_prompt_id = prompt.id
+    session.first_pass_system_prompt = prompt.system_prompt
+    session.first_pass_user_prompt = prompt.prompt_text
+
+
+def _build_replay_translator(
+    *,
+    service_model: str | None,
+    correction_model: str,
+    first_pass_prompt: str,
+    first_pass_input_template: str,
+):
+    settings = load_replay_settings()
+    return build_translator(
+        "ct2-eurollm",
+        dummy_mode="marker",
+        service_model=service_model,
+        correction_model=correction_model,
+        first_pass_prompt=first_pass_prompt,
+        first_pass_input_template=first_pass_input_template,
+        first_pass_inline_user_prompt=True,
+        correction_inline_user_prompt=True,
+        correction_input_template=settings.commit_correction.input_template,
+    )
 
 
 @router.post("/session")
@@ -156,19 +239,28 @@ async def create_session(request: CreateSessionRequest):
         return {"error": "File not found", "path": str(path.absolute())}
     
     events = load_pc_events(path)
+    settings = load_replay_settings()
+    try:
+        default_prompt = _load_first_pass_prompt(DEFAULT_FIRST_PASS_PROMPT_ID)
+    except ValueError as exc:
+        return {"error": str(exc)}
     
     session = ReplaySession(
         session_id=session_id,
         events=list(events),
         file_path=str(path)
     )
+    session.correction_model = (
+        settings.commit_correction.model if settings.commit_correction.enabled else ""
+    )
+    _apply_first_pass_prompt(session, default_prompt)
     
     # Initialize translator (will be rebuilt when model changes)
-    settings = load_replay_settings()
-    translator = build_translator(
-        "ct2-eurollm",  # Default translator type
-        dummy_mode="marker",
+    translator = _build_replay_translator(
         service_model=settings.first_pass.default_model,
+        correction_model=session.correction_model,
+        first_pass_prompt=session.first_pass_system_prompt,
+        first_pass_input_template=session.first_pass_user_prompt,
     )
     session.init_core(translator)
     
@@ -176,7 +268,8 @@ async def create_session(request: CreateSessionRequest):
     
     return {
         "session_id": session_id,
-        "event_count": len(events)
+        "event_count": len(events),
+        "first_pass_prompt_id": session.first_pass_prompt_id,
     }
 
 
@@ -201,7 +294,7 @@ async def set_speed(session_id: str, request: SpeedRequest):
 
 @router.post("/{session_id}/model")
 async def set_model(session_id: str, request: ModelRequest):
-    """Set model for translations. Empty string = default."""
+    """Set model for translations. Empty string = no translator (passthrough)."""
     session = _sessions.get(session_id)
     if not session:
         return {"error": "Session not found"}
@@ -233,6 +326,48 @@ async def set_model(session_id: str, request: ModelRequest):
     }
 
 
+@router.post("/{session_id}/correction-model")
+async def set_correction_model(session_id: str, request: CorrectionModelRequest):
+    """Set correction model. Empty string means correction is Off."""
+    session = _sessions.get(session_id)
+    if not session:
+        return {"error": "Session not found"}
+
+    new_correction_model = request.model.strip() if request.model else ""
+
+    if new_correction_model != session.correction_model:
+        session.correction_model = new_correction_model
+        session.swap_translator()
+
+    return {
+        "status": "ok",
+        "correction_model": session.correction_model,
+        "correction_enabled": bool(session.correction_model),
+    }
+
+
+@router.post("/{session_id}/first-pass-prompt")
+async def set_first_pass_prompt(session_id: str, request: FirstPassPromptRequest):
+    """Set the first-pass prompt from prompt library."""
+    session = _sessions.get(session_id)
+    if not session:
+        return {"error": "Session not found"}
+
+    try:
+        prompt = _load_first_pass_prompt(request.prompt_id)
+    except ValueError as exc:
+        return {"error": str(exc)}
+
+    _apply_first_pass_prompt(session, prompt)
+    session.swap_translator()
+
+    return {
+        "status": "ok",
+        "prompt_id": prompt.id,
+        "title": prompt.title,
+    }
+
+
 @router.post("/{session_id}/start")
 async def start_replay(session_id: str):
     """Start or resume playback."""
@@ -252,6 +387,7 @@ async def start_replay(session_id: str):
         session.target_preview_text = ""
         session.traces.clear()
         session.models_used.clear()
+        session.correction_models_used.clear()
         
         # Reset TranslationCore state
         if session.core:
@@ -319,6 +455,7 @@ async def reset_replay(session_id: str):
     session.target_preview_text = ""
     session.traces.clear()  # Clear metrics history
     session.models_used.clear()  # Clear model tracking
+    session.correction_models_used.clear()  # Clear correction model tracking
     
     # Reset TranslationCore state if exists
     if session.core:
@@ -383,6 +520,7 @@ async def _playback_loop(session: ReplaySession):
         except Exception:
             pass
     
+    playback_error: str | None = None
     try:
         while session.status == "playing" and session.current_event_index <= len(session.events):
             event = session.events[session.current_event_index - 1]
@@ -397,7 +535,12 @@ async def _playback_loop(session: ReplaySession):
             if session.core:
                 source_state = session.get_source_state()
                 started = time.perf_counter()
-                decision = session.core.handle_event(event, source_state)
+                try:
+                    decision = session.core.handle_event(event, source_state)
+                except Exception as exc:
+                    session.status = "error"
+                    playback_error = str(exc)
+                    break
                 translation_wall_ms = (time.perf_counter() - started) * 1000.0
                 if decision.triggered:
                     translation_triggered = True
@@ -406,8 +549,12 @@ async def _playback_loop(session: ReplaySession):
             
             # Store trace record for metrics export (only if translation happened)
             if decision and decision.triggered:
-                # Track model used for this translation
-                session.models_used.add(decision.model)
+                # Track first-pass model usage; mixed should only reflect first-pass switches.
+                first_pass_model = decision.first_pass_model or decision.model
+                if first_pass_model:
+                    session.models_used.add(first_pass_model)
+                if decision.correction_model:
+                    session.correction_models_used.add(decision.correction_model)
                 metrics = decision.metrics
                 trace = TraceRecord(
                     event_index=session.current_event_index,
@@ -419,6 +566,8 @@ async def _playback_loop(session: ReplaySession):
                     source_window=decision.source_window,
                     request_id=decision.request_id,
                     model=decision.model,
+                    first_pass_model=first_pass_model,
+                    correction_model=decision.correction_model,
                     replay_request_wall_ms=metrics.replay_request_wall_ms,
                     observed_first_text_ms=metrics.observed_first_text_ms,
                     observed_complete_ms=metrics.observed_complete_ms,
@@ -475,17 +624,23 @@ async def _playback_loop(session: ReplaySession):
         pass
     
     # Playback ended - send final state_update
-    final_status = "completed" if session.current_event_index > len(session.events) else "paused"
+    if session.status == "error":
+        final_status = "error"
+    else:
+        final_status = "completed" if session.current_event_index > len(session.events) else "paused"
     session.status = final_status
     
     if session.websocket:
         try:
+            state_payload = {
+                "status": final_status,
+                "event_index": min(session.current_event_index, len(session.events))
+            }
+            if playback_error:
+                state_payload["error"] = playback_error
             await session.websocket.send_json({
                 "type": "state_update",
-                "data": {
-                    "status": final_status,
-                    "event_index": min(session.current_event_index, len(session.events))
-                }
+                "data": state_payload
             })
         except Exception:
             pass
@@ -514,7 +669,9 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
             "data": {
                 "total_events": len(session.events),
                 "file_path": session.file_path,
-                "params": params_label
+                "params": params_label,
+                "correction_model": session.correction_model,
+                "correction_enabled": bool(session.correction_model),
             }
         })
         
@@ -595,16 +752,30 @@ def _build_metrics_summary(*, session: ReplaySession, traces: list[TraceRecord])
     translated_traces = [trace for trace in traces if trace.triggered]
     preview_translations = sum(1 for trace in translated_traces if trace.event_kind == "p")
     commit_translations = sum(1 for trace in translated_traces if trace.event_kind == "c")
+    settings = load_replay_settings()
+    default_first_pass_model = settings.first_pass.default_model
+    configured_correction_model = session.correction_model
     
-    # Determine model display: single model, mixed models, or none
+    # Determine first-pass model display: single model, mixed models, or default.
     if len(session.models_used) > 1:
         model_display = "<mixed models>"
+    elif len(session.models_used) == 1:
+        model_display = next(iter(session.models_used))
     else:
-        model_display = session.model or ""
+        model_display = session.model or default_first_pass_model
+
+    # Determine correction model display independently from first-pass model usage.
+    if len(session.correction_models_used) > 1:
+        correction_model_display = "<mixed correction models>"
+    elif len(session.correction_models_used) == 1:
+        correction_model_display = next(iter(session.correction_models_used))
+    else:
+        correction_model_display = configured_correction_model
     
     return {
         "sample_file": session.file_path,
         "model": model_display,
+        "correction_model": correction_model_display,
         "events_total": len(session.events),
         "translations_total": len(translated_traces),
         "preview_translations": preview_translations,
@@ -634,6 +805,7 @@ def _build_metrics_summary_lines(metrics_summary: dict[str, object]) -> list[str
     lines = [
         f"Sample file: {metrics_summary.get('sample_file', '')}",
         f"Model: {metrics_summary.get('model', '') or '(default)'}",
+        f"Correction model: {metrics_summary.get('correction_model', '') or '(none)'}",
         f"Events total: {metrics_summary.get('events_total', 0)}",
         f"Translations total: {metrics_summary.get('translations_total', 0)}",
         f"Preview translations: {metrics_summary.get('preview_translations', 0)}",
@@ -708,10 +880,14 @@ async def export_final(session_id: str):
     from datetime import datetime, timezone
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     stem = Path(session.file_path).stem
+    first_pass_model = metrics_summary.get("model", "") or "default"
+    correction_model = metrics_summary.get("correction_model", "")
     if len(session.models_used) > 1:
         model_slug = "mixed"
+    elif correction_model and correction_model != first_pass_model:
+        model_slug = f"{first_pass_model}_corr-{correction_model}"
     else:
-        model_slug = session.model or "default"
+        model_slug = str(first_pass_model)
     filename = f"{stem}_{model_slug}_{timestamp}.txt"
     
     return PlainTextResponse(
