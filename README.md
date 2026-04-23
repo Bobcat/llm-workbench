@@ -1,18 +1,36 @@
 # LLM Workbench
 
-Streaming translation workbench for replaying transcript events and inspecting translation decisions in real-time.
+LLM Workbench is the backend for a small personal workbench/playground for trying out LLM-driven workflows.
 
-## Overview
+Some parts are meant to stay as permanent tools, especially:
+- `LLM Pool / Models`
+- `Prompt Testing / Ad hoc prompt`
 
-This tool replays `.pc` transcript files and shows translations as they happen. It connects to an LLM service (llm-responses-api) for actual translations.
+Other parts are more exploratory. `Realtime Translation / Replay & Translate` started here, and parts of that workflow are already being extracted or reused elsewhere.
+
+## What This Repo Contains
+
+- `LLM Pool / Models`
+  Admin tools backed by the llm-pool admin API.
+- `Prompt Testing / Ad hoc prompt`
+  Run prompts against available models without building a dedicated workflow first.
+- `Realtime Translation / Replay & Translate`
+  Replay `.pc` transcript events, inspect first-pass and second-pass behavior, and export session state.
+- `Realtime Translation / Prompt Library`
+  Manage the prompt sets used by the translation workflow.
+
+## Related Repos
+
+- [realtime-translation-engine](https://github.com/Bobcat/realtime-translation-engine)
+  Extracted translation engine package used by the Replay & Translate workflow.
+- [llm-workbench-ui](https://github.com/Bobcat/llm-workbench-ui)
+  Frontend served by this backend in local development through the `static/` symlink.
+- [omniscripta](https://github.com/Bobcat/omniscripta)
+  Turns realtime transcripts into `.pc` replay files for the Replay & Translate workflow.
+- [llm-pool](https://github.com/Bobcat/llm-pool)
+  Provides the LLM and admin APIs used by the workbench for model access and prompt-driven workflows.
 
 ## Local Setup
-
-This backend now depends on the sibling package repo:
-
-- `../realtime-translation-engine`
-
-For a fresh local environment:
 
 ```bash
 python3 -m venv .venv
@@ -20,78 +38,25 @@ python3 -m venv .venv
 ./.venv/bin/python -m pip install -e ../realtime-translation-engine
 ```
 
-## Workflows
+## Run
 
-### Web UI Replay
-
-Interactive browser-based replay with real-time translation display.
-
-**Start the server:**
 ```bash
 python3 -m uvicorn app.main:app --host 127.0.0.1 --port 8002
 ```
 
-**Open in browser:**
-```
-http://127.0.0.1:8002/?#replay
-```
+Open:
 
-**Features:**
-- Play/Pause/Reset controls with speed presets (Slow/Normal/Fast)
-- Model selection from available LLMs via `/v1/models` endpoint
-- Real-time source and target text display
-- Per-event metrics: Event number, Kind (c/p), Translated (yes/no), Translation wall (ms)
-- Export session state with performance statistics
-- Mixed-model detection in exports (when model is switched mid-session)
-
-**Replay semantics:**
-- `p` events update source preview only
-- `c` events append to committed source, clear preview, trigger translation
-- Source chunks since last sentence boundary (`.`, `?`, `!`) form the translation window
-- Preview translations trigger when preview is stable, long enough, and has grown sufficiently
-- Target preview commits only at sentence boundaries
+```text
+http://127.0.0.1:8002/
+```
 
 ## Configuration
 
-**`settings.json`** – Default thresholds and prompts:
-- `replay.first_pass.default_model`: Default LLM for translations
-- `replay.first_pass.prompt`: Translation system prompt
-- `replay.preview_translation`: Preview stability thresholds (min_chars, max_distance_ratio, min_growth_chars)
-- `replay.commit_correction`: Post-translation correction settings
-
-**`local.json`** – Local overrides (gitignored). Set `replay.commit_correction.enabled: false` to disable correction pass.
-
-## Architecture
-
-**Core:**
-- `app/events.py` – `.pc` file parser
-- `app/source_state.py` – Source committed/preview state
-- `app/core.py` – Translation engine with preview/commit logic
-- `app/translators.py` – LLM client wrapper
-
-**API:**
-- `app/api/replay.py` – FastAPI endpoints: session, play/pause/reset, model switch, export
-- `app/main.py` – FastAPI app with WebSocket for real-time updates
-
-**Web UI:**
-- `llm-workbench-web/` – SPA frontend (served via static mount in development)
-
-## API Endpoints
-
-- `POST /api/replay/session` – Create new session from .pc file
-- `POST /api/replay/{id}/start` – Start/resume playback
-- `POST /api/replay/{id}/pause` – Pause playback
-- `POST /api/replay/{id}/reset` – Reset to beginning
-- `POST /api/replay/{id}/model` – Switch model (preserves session state)
-- `GET /api/replay/{id}/export` – Export current state with metrics
-- `WS /ws/replay/{id}` – WebSocket for real-time updates
+- `config/settings.json` contains committed defaults
+- `config/local.json` is for local overrides
 
 ## Tests
 
 ```bash
 python3 -m unittest discover -s tests
 ```
-
-## Dependencies
-
-Requires `llm-responses-api-dev` service running on `http://127.0.0.1:8011` (or as configured).
