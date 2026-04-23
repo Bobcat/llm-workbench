@@ -1,4 +1,4 @@
-# Translation Replay Dev
+# LLM Workbench
 
 Streaming translation workbench for replaying transcript events and inspecting translation decisions in real-time.
 
