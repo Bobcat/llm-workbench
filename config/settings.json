@@ -1,0 +1,36 @@
+{
+  "replay": {
+    "first_pass": {
+      "prompt": "You are a translation engine. Translate the user's text into {{target_lang}}. Return only the translation.",
+      "input_template": "{{source_window}}",
+      "default_model": "phi-4-ct2-int8",
+      "source_language": "English",
+      "target_language": "Dutch"
+    },
+    "preview_translation": {
+      "enabled": true,
+      "min_chars": 80,
+      "max_distance_ratio": 0.15,
+      "min_growth_chars": 50
+    },
+    "commit_correction": {
+      "enabled": false,
+      "model": "phi-4-ct2-int8",
+      "prompt": [
+        "Role: You are correcting a Dutch translation.",
+        "Input: You receive source text and a draft Dutch translation.",
+        "Task: Produce clean, idiomatic Dutch and correct clear language errors in the draft.",
+        "Rule: If the draft contains malformed or non-Dutch words, replace them with the most likely correct Dutch wording.",
+        "Rule: Fix obvious mistranscription effects from the source when the intended meaning is clear.",
+        "Output: Return only the final corrected Dutch translation."
+      ],
+      "input_template": [
+        "Source text:",
+        "{{source_window}}",
+        "",
+        "Draft Dutch translation:",
+        "{{draft_translation}}"
+      ]
+    }
+  }
+}

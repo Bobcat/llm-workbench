@@ -4,13 +4,14 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from app.events import ReplayEvent, load_pc_events, parse_pc_line
+from app.realtime_translation.events import load_pc_events, parse_pc_line
+from realtime_translation_engine import SourceEvent
 
 
 class ParserTests(unittest.TestCase):
     def test_parse_preview_line_allows_empty_payload(self) -> None:
         event = parse_pc_line("p,", line_number=1)
-        self.assertEqual(event, ReplayEvent(kind="p", text="", line_number=1))
+        self.assertEqual(event, SourceEvent(kind="p", text="", line_number=1))
 
     def test_parse_committed_line_keeps_text_after_first_comma(self) -> None:
         event = parse_pc_line("c,hello, world", line_number=2)
@@ -31,4 +32,3 @@ class ParserTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

@@ -1,8 +1,0 @@
-p,Hel
-p,Hello
-c,Hello.
-p,
-p,How are
-p,How are you?
-c, How are you?
-p,

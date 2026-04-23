@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from app.replay_settings import load_replay_settings
+from app.realtime_translation.settings import load_replay_settings
 
 
 class ReplaySettingsTests(unittest.TestCase):
@@ -17,7 +17,9 @@ class ReplaySettingsTests(unittest.TestCase):
                     '  "replay": {\n'
                     '    "first_pass": {\n'
                     '      "prompt": "Translate to Dutch. Return only Dutch.",\n'
-                    '      "input_template": "FIRST: {{source_window}}"\n'
+                    '      "input_template": "FIRST: {{source_window}}",\n'
+                    '      "source_language": "English",\n'
+                    '      "target_language": "Dutch"\n'
                     "    },\n"
                     '    "preview_translation": {\n'
                     '      "enabled": true,\n'
@@ -41,6 +43,8 @@ class ReplaySettingsTests(unittest.TestCase):
 
         self.assertEqual(settings.first_pass.prompt, "Translate to Dutch. Return only Dutch.")
         self.assertEqual(settings.first_pass.input_template, "FIRST: {{source_window}}")
+        self.assertEqual(settings.first_pass.source_language, "English")
+        self.assertEqual(settings.first_pass.target_language, "Dutch")
         self.assertTrue(settings.preview_translation.enabled)
         self.assertEqual(settings.preview_translation.min_chars, 99)
         self.assertEqual(settings.preview_translation.max_distance_ratio, 0.25)
@@ -63,7 +67,9 @@ class ReplaySettingsTests(unittest.TestCase):
                     '  "replay": {\n'
                     '    "first_pass": {\n'
                     '      "prompt": "Base first-pass prompt.",\n'
-                    '      "input_template": "Base input {{source_window}}"\n'
+                    '      "input_template": "Base input {{source_window}}",\n'
+                    '      "source_language": "English",\n'
+                    '      "target_language": "Dutch"\n'
                     "    },\n"
                     '    "preview_translation": {\n'
                     '      "enabled": true,\n'
@@ -88,7 +94,8 @@ class ReplaySettingsTests(unittest.TestCase):
                     '  "replay": {\n'
                     '    "first_pass": {\n'
                     '      "prompt": "Local first-pass prompt.",\n'
-                    '      "input_template": "Local input {{source_window}}"\n'
+                    '      "input_template": "Local input {{source_window}}",\n'
+                    '      "target_language": "German"\n'
                     "    },\n"
                     '    "preview_translation": {\n'
                     '      "min_chars": 120\n'
@@ -115,6 +122,8 @@ class ReplaySettingsTests(unittest.TestCase):
 
         self.assertEqual(settings.first_pass.prompt, "Local first-pass prompt.")
         self.assertEqual(settings.first_pass.input_template, "Local input {{source_window}}")
+        self.assertEqual(settings.first_pass.source_language, "English")
+        self.assertEqual(settings.first_pass.target_language, "German")
         self.assertTrue(settings.preview_translation.enabled)
         self.assertEqual(settings.preview_translation.min_chars, 120)
         self.assertEqual(settings.preview_translation.max_distance_ratio, 0.20)

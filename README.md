@@ -6,6 +6,20 @@ Streaming translation workbench for replaying transcript events and inspecting t
 
 This tool replays `.pc` transcript files and shows translations as they happen. It connects to an LLM service (llm-responses-api) for actual translations.
 
+## Local Setup
+
+This backend now depends on the sibling package repo:
+
+- `../realtime-translation-engine`
+
+For a fresh local environment:
+
+```bash
+python3 -m venv .venv
+./.venv/bin/python -m pip install -e .
+./.venv/bin/python -m pip install -e ../realtime-translation-engine
+```
+
 ## Workflows
 
 ### Web UI Replay
@@ -36,16 +50,6 @@ http://127.0.0.1:8002/?#replay
 - Source chunks since last sentence boundary (`.`, `?`, `!`) form the translation window
 - Preview translations trigger when preview is stable, long enough, and has grown sufficiently
 - Target preview commits only at sentence boundaries
-
-### Smoke Test
-
-Quick single translation check on first N committed chunks.
-
-```bash
-python3 -m app smoke sample/live_20260406T165024Z_c3e7a33e.pc --c-count 2
-```
-
-Collects chunks, joins them, sends to LLM service, prints source/target/latency.
 
 ## Configuration
 

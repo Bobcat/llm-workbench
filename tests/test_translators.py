@@ -4,9 +4,9 @@ import json
 import unittest
 from unittest.mock import patch
 
-from app.translators import LlmResponsesTranslator
-from app.translators import DummyTranslator
-from app.translators import build_translator
+from realtime_translation_engine.translators import build_translator
+from realtime_translation_engine.translators import DummyTranslator
+from realtime_translation_engine.translators import LlmResponsesTranslator
 
 
 class FakeHttpResponse:
@@ -29,22 +29,24 @@ class BuildTranslatorTests(unittest.TestCase):
         self.assertIsInstance(translator, DummyTranslator)
         self.assertEqual(translator.mode, "echo")
 
-    def test_build_translator_ct2_uses_ct2_eurollm_translator(self) -> None:
+    def test_build_translator_llm_responses_uses_llm_responses_translator(self) -> None:
         marker = object()
-        with patch("app.translators.LlmResponsesTranslator", return_value=marker):
-            translator = build_translator("ct2-eurollm")
+        with patch("realtime_translation_engine.translators.LlmResponsesTranslator", return_value=marker):
+            translator = build_translator("llm-responses")
         self.assertIs(translator, marker)
 
-    def test_build_translator_ct2_passes_service_correction_and_templates(self) -> None:
+    def test_build_translator_llm_responses_passes_service_correction_and_templates(self) -> None:
         marker = object()
-        with patch("app.translators.LlmResponsesTranslator", return_value=marker) as ctor:
+        with patch("realtime_translation_engine.translators.LlmResponsesTranslator", return_value=marker) as ctor:
             translator = build_translator(
-                "ct2-eurollm",
+                "llm-responses",
                 service_model="qwen2.5-14b-instruct-ct2-int8",
                 correction_model="phi-4-ct2-int8",
                 first_pass_prompt="Translate to Dutch only.",
                 first_pass_input_template="INPUT={{source_window}}",
                 correction_input_template="SRC={{source_window}} D={{draft_translation}}",
+                source_language="English",
+                target_language="Dutch",
             )
         self.assertIs(translator, marker)
         ctor.assert_called_once_with(
@@ -53,6 +55,8 @@ class BuildTranslatorTests(unittest.TestCase):
             first_pass_prompt="Translate to Dutch only.",
             first_pass_input_template="INPUT={{source_window}}",
             correction_input_template="SRC={{source_window}} D={{draft_translation}}",
+            source_language="English",
+            target_language="Dutch",
         )
 
     def test_build_translator_rejects_unknown_name(self) -> None:
@@ -66,7 +70,7 @@ class BuildTranslatorTests(unittest.TestCase):
         )
 
         with patch(
-            "app.translators.request.urlopen",
+            "realtime_translation_engine.translators.llmpool.request.urlopen",
             return_value=FakeHttpResponse(
                 "event: response.created\n"
                 'data: {"id":"resp_1","model":"eurollm-9b-ct2-int8","object":"response"}\n\n'
@@ -104,11 +108,13 @@ class BuildTranslatorTests(unittest.TestCase):
         translator = LlmResponsesTranslator(
             service_base_url="http://127.0.0.1:8010",
             model="eurollm-9b-ct2-int8",
-            first_pass_prompt="Translate to Dutch only. Return only Dutch.",
+            first_pass_prompt="Translate from {{source_lang}} to {{target_lang}} only. Return only the translation.",
+            source_language="English",
+            target_language="Dutch",
         )
 
         with patch(
-            "app.translators.request.urlopen",
+            "realtime_translation_engine.translators.llmpool.request.urlopen",
             return_value=FakeHttpResponse(
                 "event: response.created\n"
                 'data: {"id":"resp_1b","model":"eurollm-9b-ct2-int8","object":"response"}\n\n'
@@ -122,17 +128,22 @@ class BuildTranslatorTests(unittest.TestCase):
 
         request_obj = mock_urlopen.call_args.args[0]
         payload = json.loads(request_obj.data.decode("utf-8"))
-        self.assertEqual(payload["instructions"], "Translate to Dutch only. Return only Dutch.")
+        self.assertEqual(
+            payload["instructions"],
+            "Translate from English to Dutch only. Return only the translation.",
+        )
 
     def test_translate_uses_first_pass_input_template(self) -> None:
         translator = LlmResponsesTranslator(
             service_base_url="http://127.0.0.1:8010",
             model="eurollm-9b-ct2-int8",
-            first_pass_input_template="INPUT={{source_window}}",
+            first_pass_input_template="INPUT={{source_lang}}>{{target_lang}}:{{source_window}}",
+            source_language="English",
+            target_language="Dutch",
         )
 
         with patch(
-            "app.translators.request.urlopen",
+            "realtime_translation_engine.translators.llmpool.request.urlopen",
             return_value=FakeHttpResponse(
                 "event: response.created\n"
                 'data: {"id":"resp_tpl_1","model":"eurollm-9b-ct2-int8","object":"response"}\n\n'
@@ -144,7 +155,7 @@ class BuildTranslatorTests(unittest.TestCase):
 
         request_obj = mock_urlopen.call_args.args[0]
         payload = json.loads(request_obj.data.decode("utf-8"))
-        self.assertEqual(payload["input"], "INPUT=Hello world")
+        self.assertEqual(payload["input"], "INPUT=English>Dutch:Hello world")
 
     def test_translate_with_system_prompt_posts_custom_decoding_params(self) -> None:
         translator = LlmResponsesTranslator(
@@ -156,7 +167,7 @@ class BuildTranslatorTests(unittest.TestCase):
         )
 
         with patch(
-            "app.translators.request.urlopen",
+            "realtime_translation_engine.translators.llmpool.request.urlopen",
             return_value=FakeHttpResponse(
                 "event: response.created\n"
                 'data: {"id":"resp_2","model":"eurollm-9b-ct2-int8","object":"response"}\n\n'
@@ -192,7 +203,7 @@ class BuildTranslatorTests(unittest.TestCase):
         )
 
         with patch(
-            "app.translators.request.urlopen",
+            "realtime_translation_engine.translators.llmpool.request.urlopen",
             return_value=FakeHttpResponse(
                 "event: response.created\n"
                 'data: {"id":"resp_3","model":"eurollm-9b-ct2-int8","object":"response"}\n\n'
@@ -216,7 +227,7 @@ class BuildTranslatorTests(unittest.TestCase):
         )
 
         with patch(
-            "app.translators.request.urlopen",
+            "realtime_translation_engine.translators.llmpool.request.urlopen",
             return_value=FakeHttpResponse(
                 "event: response.created\n"
                 'data: {"id":"resp_4","model":"eurollm-9b-ct2-int8","object":"response"}\n\n'
@@ -248,7 +259,7 @@ class BuildTranslatorTests(unittest.TestCase):
         )
 
         with patch(
-            "app.translators.request.urlopen",
+            "realtime_translation_engine.translators.llmpool.request.urlopen",
             return_value=FakeHttpResponse(
                 "event: response.created\n"
                 'data: {"id":"resp_tpl_2","model":"eurollm-9b-ct2-int8","object":"response"}\n\n'
@@ -270,7 +281,7 @@ class BuildTranslatorTests(unittest.TestCase):
         )
 
         with patch(
-            "app.translators.request.urlopen",
+            "realtime_translation_engine.translators.llmpool.request.urlopen",
             return_value=FakeHttpResponse(
                 "event: response.created\n"
                 'data: {"id":"resp_5","model":"eurollm-9b-ct2-int8","object":"response"}\n\n'
