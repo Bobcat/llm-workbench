@@ -33,8 +33,8 @@ ALLOWED_TOP_LEVEL_KEYS = {
 
 
 class FilePromptLibraryStore(PromptLibraryStore):
-    def __init__(self, root_dir: Path | str | None = None):
-        self._root_dir = Path(root_dir) if root_dir is not None else _default_root_dir()
+    def __init__(self, root_dir: Path | str):
+        self._root_dir = Path(root_dir)
         self._root_dir.mkdir(parents=True, exist_ok=True)
         self._records: dict[str, PromptRecord] = {}
         self._load_issues: list[PromptLoadIssue] = []
@@ -278,11 +278,6 @@ class FilePromptLibraryStore(PromptLibraryStore):
         _write_text_atomic(meta_path, meta_text)
         _write_text_atomic(system_prompt_path, data.system_prompt)
         _write_text_atomic(user_prompt_path, data.prompt_text)
-
-
-def _default_root_dir() -> Path:
-    return Path(__file__).resolve().parents[1] / "data" / "realtime_translation" / "prompts"
-
 
 def _normalize_or_raise(prompt_id: str) -> str:
     try:

@@ -6,7 +6,7 @@ from fastapi import FastAPI, WebSocket
 from fastapi.staticfiles import StaticFiles
 
 from app.router import api_router
-from app.realtime_translation.api.replay import websocket_endpoint, _sessions
+from app.realtime_translation.replay.replay import websocket_endpoint, _sessions
 
 # Paths
 base_dir = Path(__file__).parent.parent

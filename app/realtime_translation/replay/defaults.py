@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from app.realtime_translation.settings import load_replay_settings
+from app.realtime_translation.replay.settings import load_replay_settings
 
 router = APIRouter(prefix="/config", tags=["config"])
 
@@ -21,8 +21,8 @@ def get_default_model() -> dict[str, object]:
     )
     return {
         "default_model": settings.first_pass.default_model,
-        "commit_correction_enabled": settings.commit_correction.enabled,
-        "commit_correction_model": settings.commit_correction.model,
+        "second_pass_enabled": settings.second_pass.enabled,
+        "second_pass_model": settings.second_pass.model,
         "preview_translation": {
             "enabled": preview.enabled,
             "min_chars": preview.min_chars,

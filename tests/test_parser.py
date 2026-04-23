@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from app.realtime_translation.events import load_pc_events, parse_pc_line
+from app.realtime_translation.replay.events import load_pc_events, parse_pc_line
 from realtime_translation_engine import SourceEvent
 
 

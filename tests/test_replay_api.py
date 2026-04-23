@@ -6,7 +6,7 @@ from unittest import mock
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.realtime_translation.sessions import _sessions
+from app.realtime_translation.replay.sessions import _sessions
 
 
 class ReplayApiTests(unittest.TestCase):
@@ -58,6 +58,26 @@ class ReplayApiTests(unittest.TestCase):
         self.assertEqual(payload.get("status"), "ok")
         self.assertEqual(payload.get("prompt_id"), "translation/second-pass/current-default")
 
+    def test_set_second_pass_model_uses_second_pass_backend_terms(self) -> None:
+        client = TestClient(app)
+        create_response = client.post(
+            "/api/replay/session",
+            json={"file_path": "data/realtime_translation/sample/sample_p_c_120s.pc"},
+        )
+        self.assertEqual(create_response.status_code, 200)
+        session_id = create_response.json()["session_id"]
+
+        response = client.post(
+            f"/api/replay/{session_id}/second-pass-model",
+            json={"model": "google_gemma-4-E4B-it-Q5_K_M-gguf"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload.get("status"), "ok")
+        self.assertEqual(payload.get("second_pass_model"), "google_gemma-4-E4B-it-Q5_K_M-gguf")
+        self.assertTrue(payload.get("second_pass_enabled"))
+
     def test_replay_websocket_uses_delta_transcript_updates(self) -> None:
         client = TestClient(app)
         create_response = client.post(
@@ -76,6 +96,8 @@ class ReplayApiTests(unittest.TestCase):
         with client.websocket_connect(f"/ws/replay/{session_id}") as websocket:
             session_info = websocket.receive_json()
             self.assertEqual(session_info["type"], "session_info")
+            self.assertIn("second_pass_model", session_info["data"])
+            self.assertIn("second_pass_enabled", session_info["data"])
 
             source_update = websocket.receive_json()
             self.assertEqual(source_update["type"], "source_update")
@@ -124,7 +146,7 @@ class ReplayApiTests(unittest.TestCase):
         session.target_committed_text = "target text"
 
         with mock.patch(
-            "app.realtime_translation.api.replay._llm_pool_request_json",
+            "app.realtime_translation.replay.export_runtime._llm_pool_request_json",
             return_value={
                 "models": [
                     {

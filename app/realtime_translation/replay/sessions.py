@@ -2,23 +2,31 @@ from __future__ import annotations
 
 import asyncio
 import time
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from typing import Dict, Optional
 from pathlib import Path
 
 
-from app.realtime_translation.events import load_pc_events
+from app.realtime_translation.replay.live_dispatch import execute_live_dispatch_request
+from app.realtime_translation.replay.events import load_pc_events
+from app.realtime_translation.replay.prompt_selection import _apply_first_pass_prompt
+from app.realtime_translation.replay.prompt_selection import _apply_second_pass_prompt
+from app.realtime_translation.replay.prompt_selection import _load_first_pass_prompt
+from app.realtime_translation.replay.prompt_selection import _load_second_pass_prompt
+from app.realtime_translation.replay.transport import _send_source_update
+from app.realtime_translation.replay.transport import _send_state_update
+from app.realtime_translation.replay.transport import _send_target_update
+from app.realtime_translation.replay.transport import _send_translation_outcome
 from realtime_translation_engine import LiveDispatchRequest
 from realtime_translation_engine import LiveRunner
 from realtime_translation_engine import SourceEvent
 from realtime_translation_engine import SourceTranscriptState
-from promptlib import FilePromptLibraryStore, PromptNotFoundError, PromptRecord
+from promptlib import PromptRecord
 from realtime_translation_engine import ReplayRunner
-from realtime_translation_engine import TranslationMetrics
 from realtime_translation_engine import TranslationCore
 from realtime_translation_engine import TranslationDecision
 from realtime_translation_engine.translators import build_translator
-from app.realtime_translation.settings import load_replay_settings
+from app.realtime_translation.replay.settings import load_replay_settings
 
 DEFAULT_FIRST_PASS_PROMPT_ID = "translation/first-pass/current-default"
 DEFAULT_SECOND_PASS_PROMPT_ID = "translation/second-pass/current-default"
@@ -40,7 +48,6 @@ REPLAY_POLICIES = {"replay", "live"}
 
 # In-memory session storage
 _sessions: Dict[str, "ReplaySession"] = {}
-_prompt_store = FilePromptLibraryStore()
 
 
 @dataclass
@@ -56,7 +63,7 @@ class TraceRecord:
     request_id: str
     model: str
     first_pass_model: str
-    correction_model: str
+    second_pass_model: str
     # Metrics
     replay_request_wall_ms: float | None = None
     observed_first_text_ms: float | None = None
@@ -83,7 +90,7 @@ class ReplaySession:
     speed: str = "normal"
     policy: str = "replay"
     model: Optional[str] = None  # Selected model for translations
-    correction_model: str = ""  # Empty string means correction is off
+    second_pass_model: str = ""  # Empty string means second pass is off
     first_pass_prompt_id: str = DEFAULT_FIRST_PASS_PROMPT_ID
     first_pass_system_prompt: str = ""
     first_pass_user_prompt: str = "{{source_window}}"
@@ -110,14 +117,14 @@ class ReplaySession:
     
     # Track all models used during session (for export accuracy)
     models_used: set[str] = field(default_factory=set)
-    correction_models_used: set[str] = field(default_factory=set)
+    second_pass_models_used: set[str] = field(default_factory=set)
     
     def build_translator(self):
         settings = load_replay_settings()
         service_model = self.model if self.model is not None else settings.first_pass.default_model
         return _build_replay_translator(
             service_model=service_model,
-            correction_model=self.correction_model,
+            second_pass_model=self.second_pass_model,
             first_pass_prompt=self.first_pass_system_prompt,
             first_pass_input_template=self.first_pass_user_prompt,
             second_pass_input_template=self.second_pass_user_prompt,
@@ -135,8 +142,8 @@ class ReplaySession:
         self.runner = ReplayRunner(
             translator=self.build_translator(),
             core=core,
-            commit_correction_enabled=bool(self.correction_model),
-            commit_correction_prompt=self.second_pass_system_prompt,
+            second_pass_enabled=bool(self.second_pass_model),
+            second_pass_prompt=self.second_pass_system_prompt,
             no_translator_mode=self.model is None,
         )
     
@@ -175,8 +182,8 @@ class ReplaySession:
             events=events,
             file_path=str(file_path),
         )
-        session.correction_model = (
-            settings.commit_correction.model if settings.commit_correction.enabled else ""
+        session.second_pass_model = (
+            settings.second_pass.model if settings.second_pass.enabled else ""
         )
         session.source_language = settings.first_pass.source_language
         session.target_language = settings.first_pass.target_language
@@ -201,75 +208,20 @@ class ReplaySession:
         if self.model is None:
             self.runner.set_translator(translator)
             self.runner.no_translator_mode = True
-            self.runner.commit_correction_enabled = bool(self.correction_model)
-            self.runner.commit_correction_prompt = self.second_pass_system_prompt
+            self.runner.second_pass_enabled = bool(self.second_pass_model)
+            self.runner.second_pass_prompt = self.second_pass_system_prompt
             return
 
         # Swap translator only - preserve all translation state
         self.runner.set_translator(translator)
         self.runner.no_translator_mode = False
-        self.runner.commit_correction_enabled = bool(self.correction_model)
-        self.runner.commit_correction_prompt = self.second_pass_system_prompt
-
-
-def _is_translation_stage_prompt(record: PromptRecord, stage_name: str) -> bool:
-    translation_section = record.sections.get("translation", {})
-    if not isinstance(translation_section, dict):
-        return False
-    stage = str(translation_section.get("stage", "")).strip().lower()
-    return stage == str(stage_name or "").strip().lower()
-
-
-def _is_first_pass_prompt(record: PromptRecord) -> bool:
-    return _is_translation_stage_prompt(record, "first_pass")
-
-
-def _is_second_pass_prompt(record: PromptRecord) -> bool:
-    return _is_translation_stage_prompt(record, "second_pass")
-
-
-def _load_first_pass_prompt(prompt_id: str) -> PromptRecord:
-    _prompt_store.reload()
-    try:
-        record = _prompt_store.get_prompt(prompt_id)
-    except PromptNotFoundError as exc:
-        raise ValueError(str(exc)) from exc
-    if not record.enabled:
-        raise ValueError(f"Prompt {prompt_id!r} is disabled.")
-    if not _is_first_pass_prompt(record):
-        raise ValueError(f"Prompt {prompt_id!r} is not a first-pass translation prompt.")
-    return record
-
-
-def _load_second_pass_prompt(prompt_id: str) -> PromptRecord:
-    _prompt_store.reload()
-    try:
-        record = _prompt_store.get_prompt(prompt_id)
-    except PromptNotFoundError as exc:
-        raise ValueError(str(exc)) from exc
-    if not record.enabled:
-        raise ValueError(f"Prompt {prompt_id!r} is disabled.")
-    if not _is_second_pass_prompt(record):
-        raise ValueError(f"Prompt {prompt_id!r} is not a second-pass translation prompt.")
-    return record
-
-
-def _apply_first_pass_prompt(session: ReplaySession, prompt: PromptRecord) -> None:
-    session.first_pass_prompt_id = prompt.id
-    session.first_pass_system_prompt = prompt.system_prompt
-    session.first_pass_user_prompt = prompt.prompt_text
-
-
-def _apply_second_pass_prompt(session: ReplaySession, prompt: PromptRecord) -> None:
-    session.second_pass_prompt_id = prompt.id
-    session.second_pass_system_prompt = prompt.system_prompt
-    session.second_pass_user_prompt = prompt.prompt_text
-
+        self.runner.second_pass_enabled = bool(self.second_pass_model)
+        self.runner.second_pass_prompt = self.second_pass_system_prompt
 
 def _build_replay_translator(
     *,
     service_model: str | None,
-    correction_model: str,
+    second_pass_model: str,
     first_pass_prompt: str,
     first_pass_input_template: str,
     second_pass_input_template: str,
@@ -280,10 +232,10 @@ def _build_replay_translator(
         "llm-responses",
         dummy_mode="marker",
         service_model=service_model,
-        correction_model=correction_model,
+        second_pass_model=second_pass_model,
         first_pass_prompt=first_pass_prompt,
         first_pass_input_template=first_pass_input_template,
-        correction_input_template=second_pass_input_template,
+        second_pass_input_template=second_pass_input_template,
         source_language=source_language,
         target_language=target_language,
     )
@@ -476,8 +428,8 @@ def _record_translation_trace(
     first_pass_model = decision.first_pass_model or decision.model
     if first_pass_model:
         session.models_used.add(first_pass_model)
-    if decision.correction_model:
-        session.correction_models_used.add(decision.correction_model)
+    if decision.second_pass_model:
+        session.second_pass_models_used.add(decision.second_pass_model)
     metrics = decision.metrics
     session.traces.append(
         TraceRecord(
@@ -491,7 +443,7 @@ def _record_translation_trace(
             request_id=decision.request_id,
             model=decision.model,
             first_pass_model=first_pass_model,
-            correction_model=decision.correction_model,
+            second_pass_model=decision.second_pass_model,
             replay_request_wall_ms=metrics.replay_request_wall_ms,
             observed_first_text_ms=metrics.observed_first_text_ms,
             observed_complete_ms=metrics.observed_complete_ms,
@@ -505,128 +457,6 @@ def _record_translation_trace(
             engine_tokens_per_second=metrics.engine_tokens_per_second,
         )
     )
-
-
-async def _send_state_update(session: ReplaySession, status: str, *, error: str | None = None) -> None:
-    if not session.websocket:
-        return
-    try:
-        payload = {
-            "status": status,
-            "event_index": min(session.current_event_index, len(session.events)),
-        }
-        if error:
-            payload["error"] = error
-        await session.websocket.send_json({
-            "type": "state_update",
-            "data": payload,
-        })
-    except Exception:
-        session.websocket = None
-
-
-def _build_committed_delta(
-    current_committed_text: str,
-    last_sent_committed_text: str,
-    *,
-    force_reset: bool,
-) -> tuple[bool, str]:
-    if force_reset or not current_committed_text.startswith(last_sent_committed_text):
-        return True, current_committed_text
-    return False, current_committed_text[len(last_sent_committed_text):]
-
-
-async def _send_source_update(
-    session: ReplaySession,
-    *,
-    event_index: int,
-    line_number: int,
-    kind: str,
-    status: str,
-    force_reset: bool = False,
-) -> None:
-    if not session.websocket:
-        return
-    reset, committed_append = _build_committed_delta(
-        session.source_committed_text,
-        session.last_sent_source_committed_text,
-        force_reset=force_reset,
-    )
-    try:
-        await session.websocket.send_json({
-            "type": "source_update",
-            "data": {
-                "reset": reset,
-                "committed_append": committed_append,
-                "preview": session.source_preview_text,
-                "event_index": event_index,
-                "source_revision": session.source_revision,
-                "line_number": line_number,
-                "kind": kind,
-                "model": session.get_model_display(),
-                "status": status,
-            },
-        })
-        session.last_sent_source_committed_text = session.source_committed_text
-    except Exception:
-        session.websocket = None
-
-
-async def _send_target_update(
-    session: ReplaySession,
-    *,
-    event_index: int,
-    triggered: bool,
-    reason: str,
-    wall_ms: float,
-    force_reset: bool = False,
-) -> None:
-    if not session.websocket:
-        return
-    reset, committed_append = _build_committed_delta(
-        session.target_committed_text,
-        session.last_sent_target_committed_text,
-        force_reset=force_reset,
-    )
-    try:
-        await session.websocket.send_json({
-            "type": "target_update",
-            "data": {
-                "reset": reset,
-                "committed_append": committed_append,
-                "preview": session.target_preview_text,
-                "event_index": event_index,
-                "target_revision": session.target_revision,
-                "triggered": triggered,
-                "reason": reason,
-                "wall_ms": round(wall_ms, 1) if triggered else 0.0,
-            }
-        })
-        session.last_sent_target_committed_text = session.target_committed_text
-    except Exception:
-        session.websocket = None
-
-
-async def _send_translation_outcome(
-    session: ReplaySession,
-    *,
-    translated: bool,
-    wall_ms: float = 0.0,
-    llm_gen_ms: float | None = None,
-) -> None:
-    if not session.websocket:
-        return
-    try:
-        await session.websocket.send_json({
-            "type": "translation_outcome",
-            "data": {
-                "translated": translated,
-                "wall_ms": round(wall_ms, 1) if translated else 0.0,
-                "llm_gen_ms": round(llm_gen_ms, 1) if translated and llm_gen_ms is not None else None,
-            },
-        })
-    except Exception:
-        session.websocket = None
 
 
 def _is_definitive_live_skip_reason(reason: str) -> bool:
@@ -662,8 +492,8 @@ def _schedule_live_request(session: ReplaySession, request: LiveDispatchRequest)
             request,
             translator=translator,
             no_translator_mode=session.model is None,
-            commit_correction_enabled=bool(session.correction_model),
-            commit_correction_prompt=session.second_pass_system_prompt,
+            second_pass_enabled=bool(session.second_pass_model),
+            second_pass_prompt=session.second_pass_system_prompt,
         )
     )
 
@@ -674,17 +504,17 @@ async def _run_live_request_task(
     *,
     translator,
     no_translator_mode: bool,
-    commit_correction_enabled: bool,
-    commit_correction_prompt: str | None,
+    second_pass_enabled: bool,
+    second_pass_prompt: str | None,
 ) -> None:
     try:
         decision, translated_text = await asyncio.to_thread(
-            _execute_live_dispatch_request,
+            execute_live_dispatch_request,
             request=request,
             translator=translator,
             no_translator_mode=no_translator_mode,
-            commit_correction_enabled=commit_correction_enabled,
-            commit_correction_prompt=commit_correction_prompt,
+            second_pass_enabled=second_pass_enabled,
+            second_pass_prompt=second_pass_prompt,
         )
     except asyncio.CancelledError:
         return
@@ -742,217 +572,3 @@ async def _maybe_finish_live_playback(session: ReplaySession) -> None:
         return
     session.status = "completed"
     await _send_state_update(session, "completed")
-
-
-def _execute_live_dispatch_request(
-    *,
-    request: LiveDispatchRequest,
-    translator,
-    no_translator_mode: bool,
-    commit_correction_enabled: bool,
-    commit_correction_prompt: str | None,
-) -> tuple[TranslationDecision, str]:
-    opportunity = request.opportunity
-
-    if no_translator_mode:
-        request_id = ""
-        correction_model = ""
-        metrics = TranslationMetrics()
-        output_text = opportunity.source_window
-        if opportunity.lane == "preview":
-            reason = "preview_event_passthrough"
-        elif not opportunity.commits_target:
-            reason = "committed_event_passthrough_preview"
-        elif commit_correction_enabled:
-            started = time.perf_counter()
-            revised = translator.revise_translation(
-                opportunity.source_window,
-                opportunity.source_window,
-                system_prompt=commit_correction_prompt,
-            )
-            output_text = revised.text
-            request_id = revised.request_id
-            correction_model = revised.model
-            replay_request_wall_ms = (time.perf_counter() - started) * 1000.0
-            metrics = replace(
-                revised.metrics,
-                replay_request_wall_ms=replay_request_wall_ms,
-                observed_first_text_ms=replay_request_wall_ms,
-                observed_complete_ms=replay_request_wall_ms,
-            )
-            reason = "committed_event_passthrough_revised"
-        else:
-            reason = "committed_event_passthrough"
-        return (
-            TranslationDecision(
-                triggered=True,
-                reason=reason,
-                source_window=opportunity.source_window,
-                source_chunks_used=opportunity.source_chunks_used,
-                request_id=request_id,
-                correction_model=correction_model,
-                metrics=metrics,
-            ),
-            output_text,
-        )
-
-    started = time.perf_counter()
-    translation = translator.translate(opportunity.source_window)
-    first_pass_model = translation.model
-    final_translation = translation
-    correction_model = ""
-    if opportunity.lane == "commit" and opportunity.commits_target and commit_correction_enabled:
-        final_translation = translator.revise_translation(
-            opportunity.source_window,
-            translation.text,
-            system_prompt=commit_correction_prompt,
-        )
-        correction_model = final_translation.model
-    replay_request_wall_ms = (time.perf_counter() - started) * 1000.0
-    metrics = replace(
-        final_translation.metrics,
-        replay_request_wall_ms=replay_request_wall_ms,
-        observed_first_text_ms=replay_request_wall_ms,
-        observed_complete_ms=replay_request_wall_ms,
-    )
-    return (
-        TranslationDecision(
-            triggered=True,
-            reason=(
-                "preview_event_translated"
-                if opportunity.lane == "preview"
-                else "committed_event_translated"
-            ),
-            source_window=opportunity.source_window,
-            source_chunks_used=opportunity.source_chunks_used,
-            request_id=final_translation.request_id,
-            model=final_translation.model,
-            first_pass_model=first_pass_model,
-            correction_model=correction_model,
-            metrics=metrics,
-        ),
-        final_translation.text,
-    )
-
-
-def _metric_values(traces: list[TraceRecord], name: str) -> list[float]:
-    """Extract metric values from traces."""
-    values: list[float] = []
-    for trace in traces:
-        value = getattr(trace, name)
-        if value is not None:
-            values.append(float(value))
-    return values
-
-
-def _percentile(values: list[float], fraction: float) -> float:
-    """Calculate percentile from sorted values."""
-    if not values:
-        return 0.0
-    if len(values) == 1:
-        return values[0]
-    ordered = sorted(values)
-    index = max(0, min(len(ordered) - 1, round((len(ordered) - 1) * fraction)))
-    return ordered[index]
-
-
-def _summarize_metric(values: list[float]) -> dict[str, float | int] | None:
-    """Calculate summary statistics for a metric."""
-    if not values:
-        return None
-    ordered = sorted(values)
-    return {
-        "count": len(ordered),
-        "avg": sum(ordered) / len(ordered),
-        "p50": _percentile(ordered, 0.50),
-        "p95": _percentile(ordered, 0.95),
-    }
-
-
-def _build_metrics_summary(*, session: ReplaySession, traces: list[TraceRecord]) -> dict[str, object]:
-    """Build metrics summary exactly like the original."""
-    translated_traces = [trace for trace in traces if trace.triggered]
-    preview_translations = sum(1 for trace in translated_traces if trace.event_kind == "p")
-    commit_translations = sum(1 for trace in translated_traces if trace.event_kind == "c")
-    settings = load_replay_settings()
-    default_first_pass_model = settings.first_pass.default_model
-    configured_correction_model = session.correction_model
-    
-    # Determine first-pass model display: single model, mixed models, or default.
-    if len(session.models_used) > 1:
-        model_display = "<mixed models>"
-    elif len(session.models_used) == 1:
-        model_display = next(iter(session.models_used))
-    else:
-        model_display = session.model or default_first_pass_model
-
-    # Determine correction model display independently from first-pass model usage.
-    if len(session.correction_models_used) > 1:
-        correction_model_display = "<mixed correction models>"
-    elif len(session.correction_models_used) == 1:
-        correction_model_display = next(iter(session.correction_models_used))
-    else:
-        correction_model_display = configured_correction_model
-    
-    return {
-        "sample_file": session.file_path,
-        "model": model_display,
-        "correction_model": correction_model_display,
-        "events_total": len(session.events),
-        "translations_total": len(translated_traces),
-        "preview_translations": preview_translations,
-        "commit_translations": commit_translations,
-        "metrics": {
-            "replay_request_wall_ms": _summarize_metric(_metric_values(translated_traces, "replay_request_wall_ms")),
-            "observed_first_text_ms": _summarize_metric(_metric_values(translated_traces, "observed_first_text_ms")),
-            "observed_complete_ms": _summarize_metric(_metric_values(translated_traces, "observed_complete_ms")),
-            "transport_first_byte_ms": _summarize_metric(_metric_values(translated_traces, "transport_first_byte_ms")),
-            "transport_first_text_delta_ms": _summarize_metric(_metric_values(translated_traces, "transport_first_text_delta_ms")),
-            "transport_completed_ms": _summarize_metric(_metric_values(translated_traces, "transport_completed_ms")),
-            "engine_tokenize_ms": _summarize_metric(_metric_values(translated_traces, "engine_tokenize_ms")),
-            "gpu_time_to_first_token_ms": _summarize_metric(_metric_values(translated_traces, "gpu_time_to_first_token_ms")),
-            "gpu_generate_total_ms": _summarize_metric(_metric_values(translated_traces, "gpu_generate_total_ms")),
-            "gpu_decode_after_first_token_ms": _summarize_metric(_metric_values(translated_traces, "gpu_decode_after_first_token_ms")),
-            "engine_tokens_per_second": _summarize_metric(_metric_values(translated_traces, "engine_tokens_per_second")),
-        },
-    }
-
-
-def _build_metrics_summary_lines(metrics_summary: dict[str, object]) -> list[str]:
-    """Build metrics summary lines exactly like the original."""
-    metrics_payload = metrics_summary.get("metrics", {})
-    if not isinstance(metrics_payload, dict):
-        metrics_payload = {}
-    
-    lines = [
-        f"Sample file: {metrics_summary.get('sample_file', '')}",
-        f"Model: {metrics_summary.get('model', '') or '(default)'}",
-        f"Correction model: {metrics_summary.get('correction_model', '') or '(none)'}",
-        f"Events total: {metrics_summary.get('events_total', 0)}",
-        f"Translations total: {metrics_summary.get('translations_total', 0)}",
-        f"Preview translations: {metrics_summary.get('preview_translations', 0)}",
-        f"Commit translations: {metrics_summary.get('commit_translations', 0)}",
-    ]
-    
-    for metric_name in (
-        "replay_request_wall_ms",
-        "observed_first_text_ms",
-        "observed_complete_ms",
-        "transport_completed_ms",
-        "gpu_time_to_first_token_ms",
-        "gpu_generate_total_ms",
-        "engine_tokens_per_second",
-    ):
-        summary = metrics_payload.get(metric_name)
-        if not isinstance(summary, dict) or not summary:
-            continue
-        avg_value = summary.get("avg")
-        p50_value = summary.get("p50")
-        p95_value = summary.get("p95")
-        if avg_value is None or p50_value is None or p95_value is None:
-            continue
-        lines.append(
-            f"{metric_name}: avg={avg_value:.1f} p50={p50_value:.1f} p95={p95_value:.1f}"
-        )
-    
-    return lines

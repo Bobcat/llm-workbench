@@ -1,5 +1,5 @@
-Source text:
+Source text ({{source_lang}}):
 {{source_window}}
 
-Draft Dutch translation:
+Draft {{target_lang}} translation:
 {{draft_translation}}

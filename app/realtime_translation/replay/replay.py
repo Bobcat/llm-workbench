@@ -3,31 +3,33 @@ from __future__ import annotations
 import asyncio
 import json
 import uuid
+from collections.abc import Callable
 from pathlib import Path
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
 
-from app.llm_pool.api.models import _request_json as _llm_pool_request_json
-from app.realtime_translation.sessions import DEFAULT_FIRST_PASS_PROMPT_ID
-from app.realtime_translation.sessions import DEFAULT_SECOND_PASS_PROMPT_ID
-from app.realtime_translation.sessions import REPLAY_POLICIES
-from app.realtime_translation.sessions import SPEED_PRESETS
-from app.realtime_translation.sessions import ReplaySession
-from app.realtime_translation.sessions import _apply_first_pass_prompt
-from app.realtime_translation.sessions import _apply_second_pass_prompt
-from app.realtime_translation.sessions import _build_metrics_summary
-from app.realtime_translation.sessions import _build_metrics_summary_lines
-from app.realtime_translation.sessions import _cancel_live_request_task
-from app.realtime_translation.sessions import _load_first_pass_prompt
-from app.realtime_translation.sessions import _load_second_pass_prompt
-from app.realtime_translation.sessions import _playback_loop
-from app.realtime_translation.sessions import _send_source_update
-from app.realtime_translation.sessions import _send_target_update
-from app.realtime_translation.sessions import _sessions
-from app.realtime_translation.sessions import _sync_target_state
-from app.realtime_translation.settings import load_replay_settings
+from app.realtime_translation.replay.export_runtime import _build_export_runtime_settings_lines
+from app.realtime_translation.replay.metrics import _build_metrics_summary
+from app.realtime_translation.replay.metrics import _build_metrics_summary_lines
+from app.realtime_translation.replay.prompt_selection import _apply_first_pass_prompt
+from app.realtime_translation.replay.prompt_selection import _apply_second_pass_prompt
+from app.realtime_translation.replay.prompt_selection import _load_first_pass_prompt
+from app.realtime_translation.replay.prompt_selection import _load_second_pass_prompt
+from app.realtime_translation.replay.transport import _send_source_update
+from app.realtime_translation.replay.transport import _send_target_update
+from app.realtime_translation.replay.sessions import DEFAULT_FIRST_PASS_PROMPT_ID
+from app.realtime_translation.replay.sessions import DEFAULT_SECOND_PASS_PROMPT_ID
+from app.realtime_translation.replay.sessions import REPLAY_POLICIES
+from app.realtime_translation.replay.sessions import SPEED_PRESETS
+from app.realtime_translation.replay.sessions import ReplaySession
+from app.realtime_translation.replay.sessions import _cancel_live_request_task
+from app.realtime_translation.replay.sessions import _playback_loop
+from app.realtime_translation.replay.sessions import _sessions
+from app.realtime_translation.replay.sessions import _sync_target_state
+from app.realtime_translation.replay.settings import load_replay_settings
+from promptlib import PromptRecord
 
 router = APIRouter(prefix="/replay", tags=["replay"])
 
@@ -47,138 +49,6 @@ def _sample_file_items() -> list[dict[str, str]]:
     return items
 
 
-def _effective_admin_model_value(model_payload: dict[str, object], key: str):
-    load_override = model_payload.get("load_override")
-    if isinstance(load_override, dict) and key in load_override:
-        return load_override[key]
-    definition = model_payload.get("definition")
-    if isinstance(definition, dict) and key in definition:
-        return definition[key]
-    load_constraints = model_payload.get("load_constraints")
-    if isinstance(load_constraints, dict):
-        constraint = load_constraints.get(key)
-        if isinstance(constraint, dict) and "default" in constraint:
-            return constraint["default"]
-    return None
-
-
-def _format_gguf_flash_attn(value: object) -> str:
-    if isinstance(value, bool):
-        return "on" if value else "off"
-    if value is None:
-        return "auto"
-    text = str(value).strip()
-    return text or "auto"
-
-
-def _resolve_exllama_kv_bits(model_payload: dict[str, object]) -> tuple[str, str]:
-    k_bits = _effective_admin_model_value(model_payload, "exllama_cache_k_bits")
-    v_bits = _effective_admin_model_value(model_payload, "exllama_cache_v_bits")
-    if k_bits is not None or v_bits is not None:
-        return (
-            "fp16" if k_bits in (None, "") else str(k_bits),
-            "fp16" if v_bits in (None, "") else str(v_bits),
-        )
-
-    cache_quant = _effective_admin_model_value(model_payload, "exllama_cache_quant")
-    if cache_quant in (None, ""):
-        return "fp16", "fp16"
-
-    parts = [part.strip() for part in str(cache_quant).split(",") if part.strip()]
-    if len(parts) == 1:
-        return parts[0], parts[0]
-    if len(parts) >= 2:
-        return parts[0], parts[1]
-    return "fp16", "fp16"
-
-
-def _build_runtime_model_settings_lines(prefix: str, model_payload: dict[str, object]) -> list[str]:
-    backend = str(model_payload.get("resolved_backend") or "").strip().lower()
-    if backend == "":
-        return [f"{prefix} settings: unavailable"]
-
-    lines = [f"{prefix} backend: {backend}"]
-
-    if backend == "gguf":
-        lines.extend([
-            f"{prefix} context size: {_effective_admin_model_value(model_payload, 'gguf_n_ctx')}",
-            f"{prefix} flash attn: {_format_gguf_flash_attn(_effective_admin_model_value(model_payload, 'gguf_flash_attn'))}",
-            f"{prefix} K type: {_effective_admin_model_value(model_payload, 'gguf_type_k')}",
-            f"{prefix} V type: {_effective_admin_model_value(model_payload, 'gguf_type_v')}",
-        ])
-        return lines
-
-    if backend == "exllamav3":
-        k_bits, v_bits = _resolve_exllama_kv_bits(model_payload)
-        lines.extend([
-            f"{prefix} cache size: {_effective_admin_model_value(model_payload, 'exllama_cache_size')}",
-            f"{prefix} K bits: {k_bits}",
-            f"{prefix} V bits: {v_bits}",
-        ])
-        return lines
-
-    return lines
-
-
-async def _build_export_runtime_settings_lines(session: ReplaySession) -> list[str]:
-    try:
-        payload = await asyncio.to_thread(
-            _llm_pool_request_json,
-            method="GET",
-            path="/v1/admin/models",
-            timeout=3.0,
-        )
-    except Exception:
-        return []
-
-    models = payload.get("models")
-    if not isinstance(models, list):
-        return []
-
-    admin_models: dict[str, dict[str, object]] = {}
-    for item in models:
-        if not isinstance(item, dict):
-            continue
-        name = str(item.get("name") or "").strip()
-        if name == "":
-            continue
-        admin_models[name] = item
-
-    lines: list[str] = []
-    settings = load_replay_settings()
-
-    if len(session.models_used) > 1:
-        lines.append("Model settings: unavailable (<mixed models>)")
-    else:
-        first_pass_model = (
-            next(iter(session.models_used))
-            if len(session.models_used) == 1
-            else (session.model or settings.first_pass.default_model)
-        )
-        model_payload = admin_models.get(first_pass_model)
-        if model_payload is not None:
-            lines.extend(_build_runtime_model_settings_lines("Model", model_payload))
-        elif first_pass_model:
-            lines.append(f"Model settings: unavailable ({first_pass_model})")
-
-    if len(session.correction_models_used) > 1:
-        lines.append("Correction settings: unavailable (<mixed correction models>)")
-    else:
-        correction_model = (
-            next(iter(session.correction_models_used))
-            if len(session.correction_models_used) == 1
-            else session.correction_model
-        )
-        if correction_model:
-            model_payload = admin_models.get(correction_model)
-            if model_payload is not None:
-                lines.extend(_build_runtime_model_settings_lines("Correction", model_payload))
-            else:
-                lines.append(f"Correction settings: unavailable ({correction_model})")
-
-    return lines
-
-
 class CreateSessionRequest(BaseModel):
     file_path: str
 
@@ -195,7 +65,7 @@ class ModelRequest(BaseModel):
     model: str
 
 
-class CorrectionModelRequest(BaseModel):
+class SecondPassModelRequest(BaseModel):
     model: str
 
 
@@ -206,6 +76,56 @@ class FirstPassPromptRequest(BaseModel):
 class FirstPassLanguagesRequest(BaseModel):
     source_language: str | None = None
     target_language: str | None = None
+
+
+def _reset_session_state(session: ReplaySession) -> None:
+    session.current_event_index = 1
+    session.source_revision = 0
+    session.target_revision = 0
+    session.source_committed_text = ""
+    session.source_preview_text = ""
+    session.target_committed_text = ""
+    session.target_preview_text = ""
+    session.traces.clear()
+    session.models_used.clear()
+    session.second_pass_models_used.clear()
+    if session.runner:
+        session.runner.reset()
+    _sync_target_state(session)
+
+
+async def _safe_send_session_message(
+    session: ReplaySession,
+    message_type: str,
+    data: dict[str, object],
+) -> None:
+    if not session.websocket:
+        return
+    try:
+        await session.websocket.send_json({"type": message_type, "data": data})
+    except Exception:
+        pass
+
+
+def _set_session_prompt(
+    session: ReplaySession,
+    *,
+    prompt_id: str,
+    load_prompt: Callable[[str], PromptRecord],
+    apply_prompt: Callable[[ReplaySession, PromptRecord], None],
+) -> dict[str, str]:
+    try:
+        prompt = load_prompt(prompt_id)
+    except ValueError as exc:
+        return {"error": str(exc)}
+
+    apply_prompt(session, prompt)
+    session.swap_translator()
+    return {
+        "status": "ok",
+        "prompt_id": prompt.id,
+        "title": prompt.title,
+    }
 
 
 @router.get("/samples")
@@ -272,8 +192,7 @@ async def set_speed(session_id: str, request: SpeedRequest):
 @router.post("/{session_id}/policy")
 async def set_policy(session_id: str, request: PolicyRequest):
     """Set replay policy. Only allowed while idle."""
-    session = _sessions.get(session_id)
-    if not session:
+    if not (session := _sessions.get(session_id)):
         return {"error": "Session not found"}
 
     policy = str(request.policy or "").strip().lower()
@@ -287,14 +206,11 @@ async def set_policy(session_id: str, request: PolicyRequest):
         session.init_runner()
         _sync_target_state(session)
 
-    if session.websocket:
-        try:
-            await session.websocket.send_json({
-                "type": "policy_update",
-                "data": {"policy": session.policy},
-            })
-        except Exception:
-            pass
+    await _safe_send_session_message(
+        session,
+        "policy_update",
+        {"policy": session.policy},
+    )
 
     return {
         "status": "ok",
@@ -305,8 +221,7 @@ async def set_policy(session_id: str, request: PolicyRequest):
 @router.post("/{session_id}/model")
 async def set_model(session_id: str, request: ModelRequest):
     """Set model for translations. Empty string = no translator (passthrough)."""
-    session = _sessions.get(session_id)
-    if not session:
+    if not (session := _sessions.get(session_id)):
         return {"error": "Session not found"}
 
     new_model = request.model if request.model else None
@@ -314,14 +229,11 @@ async def set_model(session_id: str, request: ModelRequest):
         session.model = new_model
         session.swap_translator()
 
-    if session.websocket:
-        try:
-            await session.websocket.send_json({
-                "type": "model_update",
-                "data": {"model": session.get_model_display()},
-            })
-        except Exception:
-            pass
+    await _safe_send_session_message(
+        session,
+        "model_update",
+        {"model": session.get_model_display()},
+    )
 
     return {
         "status": "ok",
@@ -329,74 +241,54 @@ async def set_model(session_id: str, request: ModelRequest):
     }
 
 
-@router.post("/{session_id}/correction-model")
-async def set_correction_model(session_id: str, request: CorrectionModelRequest):
-    """Set correction model. Empty string means correction is Off."""
-    session = _sessions.get(session_id)
-    if not session:
+@router.post("/{session_id}/second-pass-model")
+async def set_second_pass_model(session_id: str, request: SecondPassModelRequest):
+    """Set second-pass model. Empty string means second pass is off."""
+    if not (session := _sessions.get(session_id)):
         return {"error": "Session not found"}
 
-    new_correction_model = request.model.strip() if request.model else ""
-    if new_correction_model != session.correction_model:
-        session.correction_model = new_correction_model
+    new_second_pass_model = request.model.strip() if request.model else ""
+    if new_second_pass_model != session.second_pass_model:
+        session.second_pass_model = new_second_pass_model
         session.swap_translator()
 
     return {
         "status": "ok",
-        "correction_model": session.correction_model,
-        "correction_enabled": bool(session.correction_model),
+        "second_pass_model": session.second_pass_model,
+        "second_pass_enabled": bool(session.second_pass_model),
     }
 
 
 @router.post("/{session_id}/first-pass-prompt")
 async def set_first_pass_prompt(session_id: str, request: FirstPassPromptRequest):
     """Set the first-pass prompt from prompt library."""
-    session = _sessions.get(session_id)
-    if not session:
+    if not (session := _sessions.get(session_id)):
         return {"error": "Session not found"}
-
-    try:
-        prompt = _load_first_pass_prompt(request.prompt_id)
-    except ValueError as exc:
-        return {"error": str(exc)}
-
-    _apply_first_pass_prompt(session, prompt)
-    session.swap_translator()
-
-    return {
-        "status": "ok",
-        "prompt_id": prompt.id,
-        "title": prompt.title,
-    }
+    return _set_session_prompt(
+        session,
+        prompt_id=request.prompt_id,
+        load_prompt=_load_first_pass_prompt,
+        apply_prompt=_apply_first_pass_prompt,
+    )
 
 
 @router.post("/{session_id}/second-pass-prompt")
 async def set_second_pass_prompt(session_id: str, request: FirstPassPromptRequest):
     """Set the second-pass prompt from prompt library."""
-    session = _sessions.get(session_id)
-    if not session:
+    if not (session := _sessions.get(session_id)):
         return {"error": "Session not found"}
-
-    try:
-        prompt = _load_second_pass_prompt(request.prompt_id)
-    except ValueError as exc:
-        return {"error": str(exc)}
-
-    _apply_second_pass_prompt(session, prompt)
-    session.swap_translator()
-
-    return {
-        "status": "ok",
-        "prompt_id": prompt.id,
-        "title": prompt.title,
-    }
+    return _set_session_prompt(
+        session,
+        prompt_id=request.prompt_id,
+        load_prompt=_load_second_pass_prompt,
+        apply_prompt=_apply_second_pass_prompt,
+    )
 
 
 @router.post("/{session_id}/first-pass-languages")
 async def set_first_pass_languages(session_id: str, request: FirstPassLanguagesRequest):
     """Set first-pass source/target languages. Works during playback."""
-    session = _sessions.get(session_id)
-    if not session:
+    if not (session := _sessions.get(session_id)):
         return {"error": "Session not found"}
 
     changed = False
@@ -418,17 +310,14 @@ async def set_first_pass_languages(session_id: str, request: FirstPassLanguagesR
 
     if changed:
         session.swap_translator()
-        if session.websocket:
-            try:
-                await session.websocket.send_json({
-                    "type": "first_pass_languages_update",
-                    "data": {
-                        "source_language": session.source_language,
-                        "target_language": session.target_language,
-                    },
-                })
-            except Exception:
-                pass
+        await _safe_send_session_message(
+            session,
+            "first_pass_languages_update",
+            {
+                "source_language": session.source_language,
+                "target_language": session.target_language,
+            },
+        )
 
     return {
         "status": "ok",
@@ -440,8 +329,7 @@ async def set_first_pass_languages(session_id: str, request: FirstPassLanguagesR
 @router.post("/{session_id}/start")
 async def start_replay(session_id: str):
     """Start or resume playback."""
-    session = _sessions.get(session_id)
-    if not session:
+    if not (session := _sessions.get(session_id)):
         return {"error": "Session not found"}
 
     if session.status == "playing":
@@ -449,19 +337,7 @@ async def start_replay(session_id: str):
 
     if session.status == "completed":
         await _cancel_live_request_task(session)
-        session.current_event_index = 1
-        session.source_revision = 0
-        session.target_revision = 0
-        session.source_committed_text = ""
-        session.source_preview_text = ""
-        session.target_committed_text = ""
-        session.target_preview_text = ""
-        session.traces.clear()
-        session.models_used.clear()
-        session.correction_models_used.clear()
-        if session.runner:
-            session.runner.reset()
-        _sync_target_state(session)
+        _reset_session_state(session)
 
     session.status = "playing"
     asyncio.create_task(_playback_loop(session))
@@ -471,25 +347,21 @@ async def start_replay(session_id: str):
 @router.post("/{session_id}/pause")
 async def pause_replay(session_id: str):
     """Pause playback."""
-    session = _sessions.get(session_id)
-    if not session:
+    if not (session := _sessions.get(session_id)):
         return {"error": "Session not found"}
 
     if session.status != "playing":
         return {"status": "not_playing"}
 
     session.status = "paused"
-    if session.websocket:
-        try:
-            await session.websocket.send_json({
-                "type": "state_update",
-                "data": {
-                    "status": "paused",
-                    "event_index": session.current_event_index,
-                },
-            })
-        except Exception:
-            pass
+    await _safe_send_session_message(
+        session,
+        "state_update",
+        {
+            "status": "paused",
+            "event_index": session.current_event_index,
+        },
+    )
 
     return {"status": "paused"}
 
@@ -497,8 +369,7 @@ async def pause_replay(session_id: str):
 @router.post("/{session_id}/reset")
 async def reset_replay(session_id: str):
     """Reset playback to the beginning and stop (go to idle state)."""
-    session = _sessions.get(session_id)
-    if not session:
+    if not (session := _sessions.get(session_id)):
         return {"error": "Session not found"}
 
     if session.status == "playing" and session.current_task:
@@ -510,27 +381,15 @@ async def reset_replay(session_id: str):
     await _cancel_live_request_task(session)
 
     session.status = "idle"
-    session.current_event_index = 1
-    session.source_revision = 0
-    session.target_revision = 0
-    session.source_committed_text = ""
-    session.source_preview_text = ""
-    session.target_committed_text = ""
-    session.target_preview_text = ""
-    session.traces.clear()
-    session.models_used.clear()
-    session.correction_models_used.clear()
-
-    if session.runner:
-        session.runner.reset()
-    _sync_target_state(session)
+    _reset_session_state(session)
 
     if session.websocket:
         try:
-            await session.websocket.send_json({
-                "type": "state_update",
-                "data": {"status": "idle", "event_index": 1},
-            })
+            await _safe_send_session_message(
+                session,
+                "state_update",
+                {"status": "idle", "event_index": 1},
+            )
             await _send_source_update(
                 session,
                 event_index=1,
@@ -557,8 +416,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
     """WebSocket for real-time source updates."""
     await websocket.accept()
 
-    session = _sessions.get(session_id)
-    if not session:
+    if not (session := _sessions.get(session_id)):
         await websocket.close(code=4001, reason="Session not found")
         return
 
@@ -585,8 +443,8 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                 "target_language": session.target_language,
                 "source_revision": session.source_revision,
                 "target_revision": session.target_revision,
-                "correction_model": session.correction_model,
-                "correction_enabled": bool(session.correction_model),
+                "second_pass_model": session.second_pass_model,
+                "second_pass_enabled": bool(session.second_pass_model),
             },
         })
 
@@ -627,8 +485,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
 @router.get("/{session_id}/export")
 async def export_final(session_id: str):
     """Export final snapshot with source, target, and metrics."""
-    session = _sessions.get(session_id)
-    if not session:
+    if not (session := _sessions.get(session_id)):
         return {"error": "Session not found"}
 
     if not session.events:
@@ -665,11 +522,11 @@ async def export_final(session_id: str):
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     stem = Path(session.file_path).stem
     first_pass_model = metrics_summary.get("model", "") or "default"
-    correction_model = metrics_summary.get("correction_model", "")
+    second_pass_model = metrics_summary.get("second_pass_model", "")
     if len(session.models_used) > 1:
         model_slug = "mixed"
-    elif correction_model and correction_model != first_pass_model:
-        model_slug = f"{first_pass_model}_corr-{correction_model}"
+    elif second_pass_model and second_pass_model != first_pass_model:
+        model_slug = f"{first_pass_model}_second-{second_pass_model}"
     else:
         model_slug = str(first_pass_model)
     filename = f"{stem}_{model_slug}_{timestamp}.txt"

@@ -15,12 +15,13 @@ from promptlib import (
     PromptValidationError,
     PromptWrite,
 )
+from app.realtime_translation.replay.settings import PROMPT_LIBRARY_ROOT
 from realtime_translation_engine.translators import LlmResponsesTranslator
 from realtime_translation_engine.translators import render_translation_template
 
 router = APIRouter(prefix="/prompts", tags=["prompts"])
 
-_store = FilePromptLibraryStore()
+_store = FilePromptLibraryStore(PROMPT_LIBRARY_ROOT)
 
 
 class PromptPayload(BaseModel):
@@ -217,7 +218,7 @@ def test_translation_prompt(request: PromptTestRequest) -> PromptTestResponse:
 
     translator = LlmResponsesTranslator(
         model=model,
-        correction_model=model,
+        second_pass_model=model,
     )
     rendered_system_prompt = _render_translation_prompt_template(
         system_prompt,

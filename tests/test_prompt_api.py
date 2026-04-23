@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from app.realtime_translation.api.prompts import _render_translation_prompt_template
+from app.realtime_translation.prompt_library.prompts import _render_translation_prompt_template
 
 
 class PromptApiTemplateRenderTests(unittest.TestCase):
