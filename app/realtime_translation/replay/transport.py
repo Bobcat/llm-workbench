@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from app.realtime_translation.replay.sessions import ReplaySession
+    from realtime_translation_engine import TranslationMetrics
 
 
 async def _send_state_update(session: ReplaySession, status: str, *, error: str | None = None) -> None:
@@ -110,19 +111,42 @@ async def _send_translation_outcome(
     session: ReplaySession,
     *,
     translated: bool,
+    event_kind: str = "",
     wall_ms: float = 0.0,
     llm_gen_ms: float | None = None,
+    metrics: TranslationMetrics | None = None,
 ) -> None:
     if not session.websocket:
         return
+    payload = {
+        "translated": translated,
+        "request_executed": metrics is not None,
+        "event_kind": event_kind,
+        "wall_ms": round(wall_ms, 1) if translated else 0.0,
+        "llm_gen_ms": round(llm_gen_ms, 1) if translated and llm_gen_ms is not None else None,
+    }
+    if metrics is not None:
+        for key in (
+            "replay_request_wall_ms",
+            "transport_first_byte_ms",
+            "transport_first_text_delta_ms",
+            "transport_completed_ms",
+            "engine_queue_wait_ms",
+            "backend_inference_wall_ms",
+            "engine_total_wall_ms",
+            "engine_outside_backend_wall_ms",
+            "pool_total_wall_ms",
+            "engine_tokenize_ms",
+            "gpu_time_to_first_token_ms",
+            "gpu_generate_total_ms",
+            "gpu_decode_after_first_token_ms",
+        ):
+            value = getattr(metrics, key)
+            payload[key] = round(float(value), 1) if value is not None else None
     try:
         await session.websocket.send_json({
             "type": "translation_outcome",
-            "data": {
-                "translated": translated,
-                "wall_ms": round(wall_ms, 1) if translated else 0.0,
-                "llm_gen_ms": round(llm_gen_ms, 1) if translated and llm_gen_ms is not None else None,
-            },
+            "data": payload,
         })
     except Exception:
         session.websocket = None

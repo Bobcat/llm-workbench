@@ -71,6 +71,11 @@ class TraceRecord:
     transport_first_byte_ms: float | None = None
     transport_first_text_delta_ms: float | None = None
     transport_completed_ms: float | None = None
+    engine_queue_wait_ms: float | None = None
+    backend_inference_wall_ms: float | None = None
+    engine_total_wall_ms: float | None = None
+    engine_outside_backend_wall_ms: float | None = None
+    pool_total_wall_ms: float | None = None
     engine_tokenize_ms: float | None = None
     gpu_time_to_first_token_ms: float | None = None
     gpu_generate_total_ms: float | None = None
@@ -311,8 +316,10 @@ async def _playback_loop_replay(session: ReplaySession):
                     await _send_translation_outcome(
                         session,
                         translated=translation_triggered,
+                        event_kind=event.kind,
                         wall_ms=translation_wall_ms if translation_triggered else 0.0,
                         llm_gen_ms=decision.metrics.gpu_generate_total_ms if decision else None,
+                        metrics=decision.metrics if decision and translation_triggered else None,
                     )
                 except Exception:
                     session.websocket = None
@@ -375,6 +382,7 @@ async def _playback_loop_live(session: ReplaySession):
                         await _send_translation_outcome(
                             session,
                             translated=False,
+                            event_kind=event.kind,
                         )
                 except Exception:
                     session.websocket = None
@@ -450,6 +458,11 @@ def _record_translation_trace(
             transport_first_byte_ms=metrics.transport_first_byte_ms,
             transport_first_text_delta_ms=metrics.transport_first_text_delta_ms,
             transport_completed_ms=metrics.transport_completed_ms,
+            engine_queue_wait_ms=metrics.engine_queue_wait_ms,
+            backend_inference_wall_ms=metrics.backend_inference_wall_ms,
+            engine_total_wall_ms=metrics.engine_total_wall_ms,
+            engine_outside_backend_wall_ms=metrics.engine_outside_backend_wall_ms,
+            pool_total_wall_ms=metrics.pool_total_wall_ms,
             engine_tokenize_ms=metrics.engine_tokenize_ms,
             gpu_time_to_first_token_ms=metrics.gpu_time_to_first_token_ms,
             gpu_generate_total_ms=metrics.gpu_generate_total_ms,
@@ -552,8 +565,10 @@ async def _run_live_request_task(
     await _send_translation_outcome(
         session,
         translated=step.result_applied,
+        event_kind="p" if request.opportunity.lane == "preview" else "c",
         wall_ms=decision.metrics.replay_request_wall_ms or 0.0,
         llm_gen_ms=decision.metrics.gpu_generate_total_ms,
+        metrics=decision.metrics,
     )
     if step.dispatch_request is not None:
         _schedule_live_request(session, step.dispatch_request)

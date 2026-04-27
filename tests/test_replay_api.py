@@ -130,6 +130,8 @@ class ReplayApiTests(unittest.TestCase):
             self.assertNotIn("committed", playing_source_update["data"])
             self.assertIsNotNone(translation_outcome)
             self.assertIn("translated", translation_outcome["data"])
+            self.assertIn("request_executed", translation_outcome["data"])
+            self.assertIn("event_kind", translation_outcome["data"])
 
     def test_export_includes_gguf_runtime_settings(self) -> None:
         client = TestClient(app)
