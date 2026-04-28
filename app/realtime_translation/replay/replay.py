@@ -423,8 +423,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
     session.websocket = websocket
 
     try:
-        settings = load_replay_settings()
-        preview = settings.preview_translation
+        preview = session.settings.preview_translation
         params_label = (
             f"sentence_gate=source; preview=min_chars={preview.min_chars}, "
             f"ratio<={preview.max_distance_ratio:.2f}, growth>={preview.min_growth_chars}"

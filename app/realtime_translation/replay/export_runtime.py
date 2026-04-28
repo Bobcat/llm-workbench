@@ -4,7 +4,6 @@ import asyncio
 from typing import TYPE_CHECKING
 
 from app.llm_pool.models import _request_json as _llm_pool_request_json
-from app.realtime_translation.replay.settings import load_replay_settings
 
 if TYPE_CHECKING:
     from app.realtime_translation.replay.sessions import ReplaySession
@@ -108,7 +107,6 @@ async def _build_export_runtime_settings_lines(session: ReplaySession) -> list[s
         admin_models[name] = item
 
     lines: list[str] = []
-    settings = load_replay_settings()
 
     if len(session.models_used) > 1:
         lines.append("Model settings: unavailable (<mixed models>)")
@@ -116,7 +114,7 @@ async def _build_export_runtime_settings_lines(session: ReplaySession) -> list[s
         first_pass_model = (
             next(iter(session.models_used))
             if len(session.models_used) == 1
-            else (session.model or settings.first_pass.default_model)
+            else (session.model or session.settings.first_pass.default_model)
         )
         model_payload = admin_models.get(first_pass_model)
         if model_payload is not None:

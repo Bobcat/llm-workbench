@@ -17,6 +17,7 @@ from app.realtime_translation.replay.transport import _send_source_update
 from app.realtime_translation.replay.transport import _send_state_update
 from app.realtime_translation.replay.transport import _send_target_update
 from app.realtime_translation.replay.transport import _send_translation_outcome
+from app.realtime_translation.replay.settings import ReplaySettings
 from realtime_translation_engine import LiveDispatchRequest
 from realtime_translation_engine import LiveRunner
 from realtime_translation_engine import SourceEvent
@@ -26,7 +27,6 @@ from realtime_translation_engine import ReplayRunner
 from realtime_translation_engine import TranslationCore
 from realtime_translation_engine import TranslationDecision
 from realtime_translation_engine.translators import build_translator
-from app.realtime_translation.replay.settings import load_replay_settings
 
 DEFAULT_FIRST_PASS_PROMPT_ID = "translation/first-pass/current-default"
 DEFAULT_SECOND_PASS_PROMPT_ID = "translation/second-pass/current-default"
@@ -87,6 +87,7 @@ class TraceRecord:
 class ReplaySession:
     session_id: str
     events: list[SourceEvent]
+    settings: ReplaySettings
     file_path: str = ""  # Path to the .pc file
     current_event_index: int = 1
     source_revision: int = 0
@@ -125,8 +126,11 @@ class ReplaySession:
     second_pass_models_used: set[str] = field(default_factory=set)
     
     def build_translator(self):
-        settings = load_replay_settings()
-        service_model = self.model if self.model is not None else settings.first_pass.default_model
+        service_model = (
+            self.model
+            if self.model is not None
+            else self.settings.first_pass.default_model
+        )
         return _build_replay_translator(
             service_model=service_model,
             second_pass_model=self.second_pass_model,
@@ -139,8 +143,7 @@ class ReplaySession:
 
     def init_runner(self):
         """Initialize runner for the selected policy."""
-        settings = load_replay_settings()
-        core = TranslationCore(preview_settings=settings.preview_translation)
+        core = TranslationCore(preview_settings=self.settings.preview_translation)
         if self.policy == "live":
             self.runner = LiveRunner(core=core)
             return
@@ -177,7 +180,7 @@ class ReplaySession:
         *,
         session_id: str,
         file_path: Path,
-        settings,
+        settings: ReplaySettings,
         default_first_pass_prompt: PromptRecord,
         default_second_pass_prompt: PromptRecord,
     ) -> "ReplaySession":
@@ -185,6 +188,7 @@ class ReplaySession:
         session = cls(
             session_id=session_id,
             events=events,
+            settings=settings,
             file_path=str(file_path),
         )
         session.second_pass_model = (

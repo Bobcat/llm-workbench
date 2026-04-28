@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from app.realtime_translation.replay.settings import load_replay_settings
-
 if TYPE_CHECKING:
     from app.realtime_translation.replay.sessions import ReplaySession
     from app.realtime_translation.replay.sessions import TraceRecord
@@ -44,8 +42,7 @@ def _build_metrics_summary(*, session: ReplaySession, traces: list[TraceRecord])
     translated_traces = [trace for trace in traces if trace.triggered]
     preview_translations = sum(1 for trace in translated_traces if trace.event_kind == "p")
     commit_translations = sum(1 for trace in translated_traces if trace.event_kind == "c")
-    settings = load_replay_settings()
-    default_first_pass_model = settings.first_pass.default_model
+    default_first_pass_model = session.settings.first_pass.default_model
     configured_second_pass_model = session.second_pass_model
 
     if len(session.models_used) > 1:
