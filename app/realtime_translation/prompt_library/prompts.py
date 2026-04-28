@@ -7,7 +7,6 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from promptlib import (
-    FilePromptLibraryStore,
     PromptConflictError,
     PromptLoadIssue,
     PromptNotFoundError,
@@ -15,13 +14,11 @@ from promptlib import (
     PromptValidationError,
     PromptWrite,
 )
-from app.realtime_translation.replay.settings import PROMPT_LIBRARY_ROOT
+from app.realtime_translation.prompt_library.store import get_prompt_library_store
 from realtime_translation_engine.translators import LlmResponsesTranslator
 from realtime_translation_engine.translators import render_translation_template
 
 router = APIRouter(prefix="/prompts", tags=["prompts"])
-
-_store = FilePromptLibraryStore(PROMPT_LIBRARY_ROOT)
 
 
 class PromptPayload(BaseModel):
@@ -115,8 +112,8 @@ class PromptTestResponse(BaseModel):
     metrics: dict[str, float | int | None] = Field(default_factory=dict)
 
 
-def _get_store() -> FilePromptLibraryStore:
-    return _store
+def _get_store():
+    return get_prompt_library_store()
 
 
 def _render_translation_prompt_template(

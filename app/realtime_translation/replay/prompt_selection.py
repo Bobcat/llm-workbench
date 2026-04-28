@@ -2,15 +2,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from promptlib import FilePromptLibraryStore, PromptNotFoundError, PromptRecord
+from promptlib import PromptNotFoundError, PromptRecord
 
-from app.realtime_translation.replay.settings import PROMPT_LIBRARY_ROOT
+from app.realtime_translation.prompt_library.store import get_prompt_library_store
 
 if TYPE_CHECKING:
     from app.realtime_translation.replay.sessions import ReplaySession
-
-
-_prompt_store = FilePromptLibraryStore(PROMPT_LIBRARY_ROOT)
 
 
 def _is_translation_stage_prompt(record: PromptRecord, stage_name: str) -> bool:
@@ -22,9 +19,10 @@ def _is_translation_stage_prompt(record: PromptRecord, stage_name: str) -> bool:
 
 
 def _load_stage_prompt(prompt_id: str, *, stage_name: str) -> PromptRecord:
-    _prompt_store.reload()
+    prompt_store = get_prompt_library_store()
+    prompt_store.reload()
     try:
-        record = _prompt_store.get_prompt(prompt_id)
+        record = prompt_store.get_prompt(prompt_id)
     except PromptNotFoundError as exc:
         raise ValueError(str(exc)) from exc
     if not record.enabled:
