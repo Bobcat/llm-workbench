@@ -41,13 +41,13 @@ python3 -m venv .venv
 ## Run
 
 ```bash
-python3 -m uvicorn app.main:app --host 127.0.0.1 --port 8002
+./.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
 Open:
 
 ```text
-http://127.0.0.1:8002/
+http://127.0.0.1:8000/
 ```
 
 ## Configuration
@@ -58,5 +58,5 @@ http://127.0.0.1:8002/
 ## Tests
 
 ```bash
-python3 -m unittest discover -s tests
+./.venv/bin/python -m unittest discover -s tests
 ```

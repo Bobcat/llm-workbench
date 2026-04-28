@@ -2,11 +2,15 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from app.llm_pool.router import router as llm_pool_router
-from app.prompt_testing.router import router as prompt_testing_router
-from app.realtime_translation.router import router as realtime_translation_router
+from app.llm_pool.models import router as llm_pool_router
+from app.prompt_testing.ad_hoc import router as prompt_testing_router
+from app.realtime_translation.prompt_library.prompts import router as prompt_library_router
+from app.realtime_translation.replay.defaults import router as replay_defaults_router
+from app.realtime_translation.replay.replay import router as replay_router
 
 api_router = APIRouter(prefix="/api")
 api_router.include_router(llm_pool_router)
 api_router.include_router(prompt_testing_router)
-api_router.include_router(realtime_translation_router)
+api_router.include_router(replay_defaults_router)
+api_router.include_router(replay_router)
+api_router.include_router(prompt_library_router)

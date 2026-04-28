@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Iterable
 
 from realtime_translation_engine import SourceEvent
 
@@ -28,7 +27,3 @@ def load_pc_events(path: str | Path) -> list[SourceEvent]:
                 raise ValueError(f"line {line_number}: blank lines are not valid events")
             events.append(parse_pc_line(line, line_number=line_number))
     return events
-
-
-def iter_pc_events(path: str | Path) -> Iterable[SourceEvent]:
-    yield from load_pc_events(path)
