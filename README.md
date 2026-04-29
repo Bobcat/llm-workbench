@@ -8,6 +8,20 @@ Some parts are meant to stay as permanent tools, especially:
 
 Other parts are more exploratory. `Realtime Translation / Replay & Translate` started here, and parts of that workflow are already being extracted or reused elsewhere.
 
+## Index
+
+- [What It Does](#what-it-does)
+- [Repository Role](#repository-role)
+- [Related Repositories](#related-repositories)
+- [Code Map](#code-map)
+- [API Surface](#api-surface)
+- [Runtime Model](#runtime-model)
+- [Configuration](#configuration)
+- [Local Development](#local-development)
+- [Tests](#tests)
+- [Screenshots](#screenshots)
+- [License](#license)
+
 ## What It Does
 
 - `LLM Pool / Models`
@@ -22,10 +36,20 @@ Other parts are more exploratory. `Realtime Translation / Replay & Translate` st
 ## Repository Role
 
 - This repo provides the FastAPI API, replay session orchestration, prompt-library storage, and `llm-pool` proxy routes.
-- [llm-workbench-ui](https://github.com/Bobcat/llm-workbench-ui) provides the browser UI and can be served locally through the `static/` symlink.
-- [realtime-translation-engine](https://github.com/Bobcat/realtime-translation-engine) contains the extracted translation runtime used by the replay workflow.
-- [llm-pool](https://github.com/Bobcat/llm-pool) provides the model and admin APIs used by the workbench.
-- [omniscripta](https://github.com/Bobcat/omniscripta) can produce `.pc` replay files from realtime transcript streams.
+- The backend expects the browser UI to be served from `static/` or from another same-origin static deployment.
+- The backend does not run model inference itself; model calls go through `llm-pool`.
+- Replay translation runtime behavior is delegated to the extracted realtime translation engine.
+
+## Related Repositories
+
+- [llm-workbench-ui](https://github.com/Bobcat/llm-workbench-ui)
+  Browser UI for this backend.
+- [realtime-translation-engine](https://github.com/Bobcat/realtime-translation-engine)
+  Extracted translation runtime used by the replay workflow.
+- [llm-pool](https://github.com/Bobcat/llm-pool)
+  Provides the model and admin APIs used by the workbench.
+- [omniscripta](https://github.com/Bobcat/omniscripta)
+  Can produce `.pc` replay files from realtime transcript streams.
 
 ## Code Map
 
@@ -48,7 +72,21 @@ Other parts are more exploratory. `Realtime Translation / Replay & Translate` st
 - `/api/replay*` creates and controls replay sessions.
 - `/ws/replay/{session_id}` streams replay updates to the UI.
 
-## Local Setup
+## Runtime Model
+
+LLM Workbench keeps workflow state in the backend process while a session is active. The browser creates replay sessions, updates model/prompt/language settings over HTTP, and receives replay events over a websocket.
+
+Model inference and model administration are external concerns owned by `llm-pool`. Translation replay orchestration lives in this backend, while reusable translation state and dispatch behavior is implemented in `realtime-translation-engine`.
+
+The optional `static/` directory is only the frontend delivery mechanism. It can be a symlink to `llm-workbench-ui` during development or a copied static deployment in another environment.
+
+## Configuration
+
+- `config/settings.json` contains committed defaults.
+- `config/local.json` is ignored and can be used for local overrides.
+- `deploy/systemd/llm-pool-tunnel.example.service` shows one way to tunnel a remote `llm-pool` API to `127.0.0.1:8011`.
+
+## Local Development
 
 Install the backend and the extracted translation engine in editable mode:
 
@@ -60,8 +98,6 @@ python3 -m venv .venv
 
 The browser UI is developed in the separate `llm-workbench-ui` repo. In local development this backend serves it when a `static/` symlink or directory is present.
 
-## Run
-
 ```bash
 ./.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
@@ -71,12 +107,6 @@ Open:
 ```text
 http://127.0.0.1:8000/
 ```
-
-## Configuration
-
-- `config/settings.json` contains committed defaults.
-- `config/local.json` is ignored and can be used for local overrides.
-- `deploy/systemd/llm-pool-tunnel.example.service` shows one way to tunnel a remote `llm-pool` API to `127.0.0.1:8011`.
 
 ## Tests
 
