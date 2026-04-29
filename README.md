@@ -109,3 +109,7 @@ http://127.0.0.1:8000/
 ### Replay Metrics
 
 ![Replay run metrics and developer timing tools](assets/screenshots/llm-workbench-06.png)
+
+## License
+
+Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE).
