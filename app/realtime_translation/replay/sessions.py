@@ -105,6 +105,7 @@ class ReplaySession:
     second_pass_user_prompt: str = "{{draft_translation}}"
     source_language: str = "English"
     target_language: str = "Dutch"
+    tts_enabled: bool = False
     websocket: WebSocket | None = None
     source_committed_text: str = ""
     source_preview_text: str = ""
@@ -120,6 +121,7 @@ class ReplaySession:
     
     # Traces for metrics export
     traces: list[TraceRecord] = field(default_factory=list)
+    tts_artifacts: list[dict[str, object]] = field(default_factory=list)
     
     # Track all models used during session (for export accuracy)
     models_used: set[str] = field(default_factory=set)

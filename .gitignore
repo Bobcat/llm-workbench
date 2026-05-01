@@ -4,8 +4,8 @@ __pycache__/
 .coverage
 .venv/
 config/local.json
+data/realtime_translation/tts_artifacts/
 *.egg-info/
 *.code-workspace
 static
 tmp/
-docs/

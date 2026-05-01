@@ -1,12 +1,37 @@
 from __future__ import annotations
 
+import asyncio
 import unittest
+import wave
+from io import BytesIO
 from unittest import mock
 
 from fastapi.testclient import TestClient
 
 from app.main import app
 from app.realtime_translation.replay.sessions import _sessions
+from app.realtime_translation.replay.transport import _send_state_update
+from app.realtime_translation.replay.transport import _send_target_update
+from app.realtime_translation.replay.tts import synthesize_replay_tts
+from realtime_tts_engine import TTSResult
+
+
+def _wav_bytes(*, frame_count: int, sample_rate_hz: int = 24000) -> bytes:
+    buffer = BytesIO()
+    with wave.open(buffer, "wb") as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(sample_rate_hz)
+        wav.writeframes(b"\x00\x00" * frame_count)
+    return buffer.getvalue()
+
+
+class FakeWebSocket:
+    def __init__(self) -> None:
+        self.messages: list[dict[str, object]] = []
+
+    async def send_json(self, message: dict[str, object]) -> None:
+        self.messages.append(message)
 
 
 class ReplayApiTests(unittest.TestCase):
@@ -77,6 +102,156 @@ class ReplayApiTests(unittest.TestCase):
         self.assertEqual(payload.get("status"), "ok")
         self.assertEqual(payload.get("second_pass_model"), "google_gemma-4-E4B-it-Q5_K_M-gguf")
         self.assertTrue(payload.get("second_pass_enabled"))
+
+    def test_set_tts_updates_session(self) -> None:
+        client = TestClient(app)
+        create_response = client.post(
+            "/api/replay/session",
+            json={"file_path": "data/realtime_translation/sample/sample_p_c_120s.pc"},
+        )
+        self.assertEqual(create_response.status_code, 200)
+        session_id = create_response.json()["session_id"]
+
+        response = client.post(
+            f"/api/replay/{session_id}/tts",
+            json={"enabled": True},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload.get("status"), "ok")
+        self.assertTrue(payload.get("tts_enabled"))
+        self.assertTrue(_sessions[session_id].tts_enabled)
+
+    def test_get_tts_artifact_serves_generated_wav(self) -> None:
+        client = TestClient(app)
+        create_response = client.post(
+            "/api/replay/session",
+            json={"file_path": "data/realtime_translation/sample/sample_p_c_120s.pc"},
+        )
+        self.assertEqual(create_response.status_code, 200)
+        session_id = create_response.json()["session_id"]
+
+        with mock.patch("app.realtime_translation.replay.tts._engine") as engine_factory:
+            engine_factory.return_value.synthesize.return_value = TTSResult(
+                audio=_wav_bytes(frame_count=1200),
+                mime_type="audio/wav",
+                sample_rate_hz=24000,
+                duration_ms=100,
+                timings={"ttfa_s": 0.01, "total_s": 0.02},
+                metadata={"engine": "kokoro", "voice": "af_heart", "language_code": "a"},
+            )
+            artifact = synthesize_replay_tts(
+                session_id=session_id,
+                text="Hello world.",
+                language="English",
+            )
+        self.assertEqual(artifact["engine"], "kokoro")
+        self.assertEqual(artifact["voice"], "af_heart")
+        self.assertEqual(artifact["language_code"], "a")
+        self.assertEqual(artifact["timings"]["ttfa_s"], 0.01)
+        response = client.get(str(artifact["url"]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers.get("content-type"), "audio/wav")
+        self.assertTrue(response.headers.get("content-disposition", "").startswith("inline;"))
+        self.assertGreater(len(response.content), 44)
+
+    def test_get_tts_combined_artifact_concatenates_session_wavs(self) -> None:
+        client = TestClient(app)
+        create_response = client.post(
+            "/api/replay/session",
+            json={"file_path": "data/realtime_translation/sample/sample_p_c_120s.pc"},
+        )
+        self.assertEqual(create_response.status_code, 200)
+        session_id = create_response.json()["session_id"]
+        session = _sessions[session_id]
+
+        audio_results = [
+            TTSResult(audio=_wav_bytes(frame_count=1000), sample_rate_hz=24000, duration_ms=41),
+            TTSResult(audio=_wav_bytes(frame_count=2000), sample_rate_hz=24000, duration_ms=83),
+        ]
+        with mock.patch("app.realtime_translation.replay.tts._engine") as engine_factory:
+            engine_factory.return_value.synthesize.side_effect = audio_results
+            first = synthesize_replay_tts(session_id=session_id, text="Hello.", language="English")
+            second = synthesize_replay_tts(session_id=session_id, text="World.", language="English")
+        session.tts_artifacts.extend([dict(first), dict(second)])
+
+        response = client.get(f"/api/replay/{session_id}/tts-combined")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers.get("content-type"), "audio/wav")
+        self.assertTrue(response.headers.get("content-disposition", "").startswith("inline;"))
+        self.assertEqual(response.headers.get("x-tts-artifact-count"), "2")
+        with wave.open(BytesIO(response.content), "rb") as wav:
+            self.assertEqual(wav.getframerate(), 24000)
+            self.assertEqual(wav.getnchannels(), 1)
+            self.assertEqual(wav.getnframes(), 3000)
+
+    def test_completed_state_update_prepares_tts_combined_payload(self) -> None:
+        client = TestClient(app)
+        create_response = client.post(
+            "/api/replay/session",
+            json={"file_path": "data/realtime_translation/sample/sample_p_c_120s.pc"},
+        )
+        self.assertEqual(create_response.status_code, 200)
+        session_id = create_response.json()["session_id"]
+        session = _sessions[session_id]
+        session.websocket = FakeWebSocket()
+        session.current_event_index = len(session.events) + 1
+
+        audio_results = [
+            TTSResult(audio=_wav_bytes(frame_count=1000), sample_rate_hz=24000, duration_ms=41),
+            TTSResult(audio=_wav_bytes(frame_count=2000), sample_rate_hz=24000, duration_ms=83),
+        ]
+        with mock.patch("app.realtime_translation.replay.tts._engine") as engine_factory:
+            engine_factory.return_value.synthesize.side_effect = audio_results
+            first = synthesize_replay_tts(session_id=session_id, text="Hello.", language="English")
+            second = synthesize_replay_tts(session_id=session_id, text="World.", language="English")
+        session.tts_artifacts.extend([dict(first), dict(second)])
+
+        asyncio.run(_send_state_update(session, "completed"))
+
+        self.assertEqual(len(session.websocket.messages), 1)
+        payload = session.websocket.messages[0]["data"]["tts_combined"]
+        self.assertEqual(payload["artifact_count"], 2)
+        self.assertEqual(payload["duration_ms"], 125)
+        self.assertTrue(payload["url"].startswith(f"/api/replay/{session_id}/tts-combined"))
+
+    def test_tts_error_does_not_break_target_update(self) -> None:
+        client = TestClient(app)
+        create_response = client.post(
+            "/api/replay/session",
+            json={"file_path": "data/realtime_translation/sample/sample_p_c_120s.pc"},
+        )
+        self.assertEqual(create_response.status_code, 200)
+        session_id = create_response.json()["session_id"]
+        session = _sessions[session_id]
+        websocket = FakeWebSocket()
+        session.websocket = websocket
+        session.tts_enabled = True
+        session.target_committed_text = "Hallo wereld."
+        session.target_language = "Dutch"
+
+        with mock.patch(
+            "app.realtime_translation.replay.transport.synthesize_replay_tts",
+            side_effect=ValueError("unsupported Kokoro language 'Dutch'"),
+        ):
+            asyncio.run(_send_target_update(
+                session,
+                event_index=1,
+                triggered=True,
+                reason="test",
+                wall_ms=1.0,
+            ))
+
+        self.assertIs(session.websocket, websocket)
+        self.assertEqual(len(websocket.messages), 1)
+        payload = websocket.messages[0]["data"]
+        self.assertEqual(payload["committed_append"], "Hallo wereld.")
+        self.assertIsNone(payload["tts"])
+        self.assertIn("unsupported Kokoro language", payload["tts_error"])
+        self.assertEqual(session.tts_artifacts, [])
 
     def test_replay_websocket_uses_delta_transcript_updates(self) -> None:
         client = TestClient(app)

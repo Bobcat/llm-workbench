@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from app.realtime_translation.replay.tts import build_replay_tts_combined_artifact
+from app.realtime_translation.replay.tts import synthesize_replay_tts
+
 if TYPE_CHECKING:
     from app.realtime_translation.replay.sessions import ReplaySession
     from realtime_translation_engine import TranslationMetrics
@@ -17,6 +20,14 @@ async def _send_state_update(session: ReplaySession, status: str, *, error: str 
         }
         if error:
             payload["error"] = error
+        if status == "completed" and session.tts_artifacts:
+            try:
+                payload["tts_combined"] = build_replay_tts_combined_artifact(
+                    session_id=session.session_id,
+                    artifacts=session.tts_artifacts,
+                )
+            except ValueError as exc:
+                payload["tts_combined_error"] = str(exc)
         await session.websocket.send_json({
             "type": "state_update",
             "data": payload,
@@ -88,6 +99,18 @@ async def _send_target_update(
         session.last_sent_target_committed_text,
         force_reset=force_reset,
     )
+    tts_payload = None
+    tts_error = None
+    if bool(session.tts_enabled) and not force_reset and str(committed_append or "").strip():
+        try:
+            tts_payload = synthesize_replay_tts(
+                session_id=session.session_id,
+                text=committed_append,
+                language=session.target_language,
+            )
+            session.tts_artifacts.append(dict(tts_payload))
+        except Exception as exc:
+            tts_error = str(exc) or exc.__class__.__name__
     try:
         await session.websocket.send_json({
             "type": "target_update",
@@ -100,6 +123,8 @@ async def _send_target_update(
                 "triggered": triggered,
                 "reason": reason,
                 "wall_ms": round(wall_ms, 1) if triggered else 0.0,
+                "tts": tts_payload,
+                "tts_error": tts_error,
             }
         })
         session.last_sent_target_committed_text = session.target_committed_text

@@ -7,6 +7,8 @@ from collections.abc import Callable
 from pathlib import Path
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import HTTPException
+from fastapi.responses import FileResponse
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
 
@@ -29,6 +31,10 @@ from app.realtime_translation.replay.sessions import _playback_loop
 from app.realtime_translation.replay.sessions import _sessions
 from app.realtime_translation.replay.sessions import _sync_target_state
 from app.realtime_translation.replay.settings import load_replay_settings
+from app.realtime_translation.replay.tts import clear_replay_tts_artifacts
+from app.realtime_translation.replay.tts import build_replay_tts_combined_artifact
+from app.realtime_translation.replay.tts import replay_tts_combined_artifact_path
+from app.realtime_translation.replay.tts import replay_tts_artifact_path
 from promptlib import PromptRecord
 
 router = APIRouter(prefix="/replay", tags=["replay"])
@@ -78,6 +84,10 @@ class FirstPassLanguagesRequest(BaseModel):
     target_language: str | None = None
 
 
+class TtsRequest(BaseModel):
+    enabled: bool
+
+
 def _reset_session_state(session: ReplaySession) -> None:
     session.current_event_index = 1
     session.source_revision = 0
@@ -87,6 +97,8 @@ def _reset_session_state(session: ReplaySession) -> None:
     session.target_committed_text = ""
     session.target_preview_text = ""
     session.traces.clear()
+    session.tts_artifacts.clear()
+    clear_replay_tts_artifacts(session.session_id)
     session.models_used.clear()
     session.second_pass_models_used.clear()
     if session.runner:
@@ -167,6 +179,7 @@ async def create_session(request: CreateSessionRequest):
         "first_pass_prompt_id": session.first_pass_prompt_id,
         "second_pass_prompt_id": session.second_pass_prompt_id,
         "policy": session.policy,
+        "tts_enabled": session.tts_enabled,
     }
 
 
@@ -326,6 +339,25 @@ async def set_first_pass_languages(session_id: str, request: FirstPassLanguagesR
     }
 
 
+@router.post("/{session_id}/tts")
+async def set_tts(session_id: str, request: TtsRequest):
+    """Enable or disable dev TTS rendering for committed target text."""
+    if not (session := _sessions.get(session_id)):
+        return {"error": "Session not found"}
+
+    session.tts_enabled = bool(request.enabled)
+    await _safe_send_session_message(
+        session,
+        "tts_update",
+        {"tts_enabled": session.tts_enabled},
+    )
+
+    return {
+        "status": "ok",
+        "tts_enabled": session.tts_enabled,
+    }
+
+
 @router.post("/{session_id}/start")
 async def start_replay(session_id: str):
     """Start or resume playback."""
@@ -444,6 +476,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
                 "target_revision": session.target_revision,
                 "second_pass_model": session.second_pass_model,
                 "second_pass_enabled": bool(session.second_pass_model),
+                "tts_enabled": session.tts_enabled,
             },
         })
 
@@ -479,6 +512,50 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
         session.websocket = None
     except Exception:
         session.websocket = None
+
+
+@router.get("/{session_id}/tts/{artifact_id}")
+async def get_tts_artifact(session_id: str, artifact_id: str):
+    if not (session := _sessions.get(session_id)):
+        raise HTTPException(status_code=404, detail="Session not found")
+    try:
+        path = replay_tts_artifact_path(session.session_id, artifact_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="TTS artifact not found")
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="TTS artifact not found")
+    return FileResponse(
+        path,
+        media_type="audio/wav",
+        filename=f"{artifact_id}.wav",
+        content_disposition_type="inline",
+    )
+
+
+@router.get("/{session_id}/tts-combined")
+async def get_tts_combined_artifact(session_id: str):
+    if not (session := _sessions.get(session_id)):
+        raise HTTPException(status_code=404, detail="Session not found")
+    if not session.tts_artifacts:
+        raise HTTPException(status_code=404, detail="No TTS artifacts available")
+    try:
+        payload = build_replay_tts_combined_artifact(
+            session_id=session.session_id,
+            artifacts=session.tts_artifacts,
+        )
+        path = replay_tts_combined_artifact_path(session.session_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    return FileResponse(
+        path,
+        media_type="audio/wav",
+        filename=f"{session.session_id}-tts-combined.wav",
+        content_disposition_type="inline",
+        headers={
+            "X-TTS-Artifact-Count": str(payload["artifact_count"]),
+            "X-TTS-Duration-Ms": str(payload["duration_ms"]),
+        },
+    )
 
 
 @router.get("/{session_id}/export")
