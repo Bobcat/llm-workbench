@@ -1,4 +1,7 @@
 {
+  "tts_pool": {
+    "base_url": "http://127.0.0.1:8020"
+  },
   "replay": {
     "first_pass": {
       "default_model": "google_gemma-4-E2B-it-Q5_K_M-gguf",

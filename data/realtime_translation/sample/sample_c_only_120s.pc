@@ -1,16 +1,17 @@
-c,Andrew, I know you do a lot of vibe coding. How do you feel about how it has evolved?
-c,And particularly now, in some ways, I see a spirit of we can start with ideas instead of starting necessarily with code or technical specs.
-c,But I have very mixed feelings about the term five coding. I know it's taken off. Maybe the term was stuck with, but...
-c,I think it's led a lot of people to think, oh, just go with the vibes and accept all the changes in Crescent.
-c,It's not like that, right? I think after half a day of coding of AI, I'm mentally exhausted. So I have very mixed feelings about that term. I tend to call it AI coding these days.
-c,A lot of my teams use lovable v0 and so on.
-c,There's actually one interesting thing I've seen, which is among people entering software coding for the first time,
-c,I see a little bit of sometimes insecurity, maybe imposter syndrome. I actually have a request to make of all of you. So this lesson I learned in the early days of machine learning, which is...
-c,Not a single time did I ever see any senior machine learning person go to a junior person and say, the work you did, that's not actually machine learning.
-c,I have seen that like zero times in my career. So what I saw, one of the reasons I think machine learning, AI won, why it took off was because...
-c,If you want to call yourself a machine learning person, good enough for me. You're one of us. And what I hope we can do is when we see someone that's not an official developer,
-c,If they're writing code, hey, if they want to call themselves a developer, good enough for me. They're one of us.
-c,And I find that it's that really embracing, welcoming community where you go to all of these people that, you know...
-c,did not have a CS degree or whatever. And I actually routinely go to my team and they did something lovable. I routinely go and say, congrats, you're now one of us. Right.
-c,And I hope we can keep doing that and just embrace everyone to get everyone to code.
-c,Yeah. Maybe also to add to both of what you said is that one of the big difference of the current generation tools that are based on AI versus the last generation of
+kind,speech_start_ms,speech_end_ms,text
+c,31,5887,"Andrew, I know you do a lot of vibe coding. How do you feel about how it has evolved?"
+c,5918,13799,"And particularly now, in some ways, I see a spirit of we can start with ideas instead of starting necessarily with code or technical specs."
+c,14623,21744,"But I have very mixed feelings about the term five coding. I know it's taken off. Maybe the term was stuck with, but..."
+c,21775,30786,"I think it's led a lot of people to think, oh, just go with the vibes, accept all the changes in Cursor. But it's not like that, right? I think after half a day of..."
+c,30817,37516,coding of AI I'm mentally exhausted so I have very mixed feelings about that term. I tend to call it AI coding these days.
+c,37547,44567,"And maybe I actually have a, you know, listening to, a lot of my teams use lovable v0 and so on."
+c,44598,50859,"There's actually one interesting thing I've seen, which is among people entering software coding for the first time,"
+c,50890,60610,"I see a little bit of sometimes insecurity, maybe imposter syndrome. I actually have a request to make of all of you. So this lesson I learned in the early days of machine learning, which is..."
+c,60641,69062,"Not a single time did I ever see any senior machine learning person go to a junior person and say, the work you did, that's not actually machine learning."
+c,69093,76619,"I have seen that like zero times in my career. So what I saw, one of the reasons I think machine learning, AI won, why it took off was because..."
+c,76650,85526,"If you want to call yourself a machine learning person, good enough for me. You're one of us. And what I hope we can do is when we see someone that's not an official developer,"
+c,85557,90940,"If they're writing code, hey, if they want to call themselves a developer, good enough for me. They're one of us."
+c,90971,96877,"And I find that it's that really embracing, welcoming community where you go to all of these people that, you know..."
+c,96908,106257,"did not have a CS degree or whatever. And I actually routinely go to my team and they did something lovable. I routinely go and say, congrats, you're now one of us."
+c,106288,111064,And I hope we can keep doing that and just embrace everyone to get everyone to code.
+c,111064,120022,Maybe also to add to both of what you said is that one of the big difference of the current generation tools that are based on AI versus the last generation of

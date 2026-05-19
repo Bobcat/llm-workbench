@@ -8,10 +8,124 @@ import types
 import unittest
 from unittest.mock import Mock
 
+from app.realtime_translation.replay.events import SourceEventTiming
 from app.realtime_translation.replay.metrics import _build_metrics_summary
+from app.realtime_translation.replay.sessions import ReplaySession
+from realtime_translation_engine import SourceEvent
 
 
 class ReplayConfigFlowTests(unittest.TestCase):
+    def test_fixed_delay_speed_keeps_existing_delay(self) -> None:
+        session = ReplaySession(
+            session_id="session-1",
+            events=[SourceEvent(kind="p", text="preview", line_number=2)],
+            event_timings=[SourceEventTiming(speech_start_ms=0, speech_end_ms=335)],
+            settings=SimpleNamespace(),
+            speed="normal",
+        )
+
+        self.assertEqual(session.get_delay_ms(event_index=1), 500)
+        self.assertEqual(session.source_timing_payload(1)["clock"], "fixed_delay")
+
+    def test_recorded_speed_uses_next_event_timestamp_gap(self) -> None:
+        session = ReplaySession(
+            session_id="session-1",
+            events=[
+                SourceEvent(kind="p", text="one", line_number=2),
+                SourceEvent(kind="p", text="two", line_number=3),
+                SourceEvent(kind="c", text="three", line_number=4),
+            ],
+            event_timings=[
+                SourceEventTiming(speech_start_ms=0, speech_end_ms=335),
+                SourceEventTiming(speech_start_ms=0, speech_end_ms=655),
+                SourceEventTiming(speech_start_ms=0, speech_end_ms=1000),
+            ],
+            settings=SimpleNamespace(),
+            speed="recorded_2x",
+        )
+
+        self.assertEqual(session.get_delay_ms(event_index=1), 160)
+        self.assertEqual(session.get_delay_ms(event_index=2), 172)
+        self.assertEqual(session.get_delay_ms(event_index=3), 0)
+        self.assertEqual(session.source_timing_payload(1)["clock"], "recorded_2x")
+        self.assertEqual(session.source_timing_payload(1)["clock_label"], "recorded 2x")
+
+    def test_recorded_event_due_delay_subtracts_elapsed_wall_time(self) -> None:
+        session = ReplaySession(
+            session_id="session-1",
+            events=[
+                SourceEvent(kind="p", text="one", line_number=2),
+                SourceEvent(kind="p", text="two", line_number=3),
+            ],
+            event_timings=[
+                SourceEventTiming(speech_start_ms=0, speech_end_ms=335),
+                SourceEventTiming(speech_start_ms=0, speech_end_ms=655),
+            ],
+            settings=SimpleNamespace(),
+            speed="recorded_1x",
+        )
+
+        self.assertEqual(
+            session.get_event_due_delay_ms(
+                event_index=1,
+                playback_started_at=100.0,
+                now=100.050,
+            ),
+            285,
+        )
+        self.assertEqual(
+            session.get_event_due_delay_ms(
+                event_index=2,
+                playback_started_at=100.0,
+                now=100.500,
+            ),
+            155,
+        )
+        self.assertEqual(
+            session.get_event_due_delay_ms(
+                event_index=2,
+                playback_started_at=100.0,
+                now=100.800,
+            ),
+            0,
+        )
+
+    def test_recorded_event_due_delay_honors_speed_multiplier(self) -> None:
+        session = ReplaySession(
+            session_id="session-1",
+            events=[SourceEvent(kind="p", text="one", line_number=2)],
+            event_timings=[SourceEventTiming(speech_start_ms=0, speech_end_ms=1000)],
+            settings=SimpleNamespace(),
+            speed="recorded_2x",
+        )
+
+        self.assertEqual(
+            session.get_event_due_delay_ms(
+                event_index=1,
+                playback_started_at=200.0,
+                now=200.100,
+            ),
+            400,
+        )
+
+    def test_recorded_max_has_no_delay(self) -> None:
+        session = ReplaySession(
+            session_id="session-1",
+            events=[
+                SourceEvent(kind="p", text="one", line_number=2),
+                SourceEvent(kind="p", text="two", line_number=3),
+            ],
+            event_timings=[
+                SourceEventTiming(speech_start_ms=0, speech_end_ms=335),
+                SourceEventTiming(speech_start_ms=0, speech_end_ms=655),
+            ],
+            settings=SimpleNamespace(),
+            speed="recorded_max",
+        )
+
+        self.assertEqual(session.get_delay_ms(event_index=1), 0)
+        self.assertEqual(session.source_timing_payload(1)["clock"], "recorded_max")
+
     def test_metrics_summary_uses_session_settings_default_model(self) -> None:
         session = SimpleNamespace(
             settings=SimpleNamespace(

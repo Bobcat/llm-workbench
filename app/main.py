@@ -6,6 +6,7 @@ from fastapi import FastAPI, WebSocket
 from fastapi.staticfiles import StaticFiles
 
 from app.router import api_router
+from app.realtime_tts.replay import websocket_endpoint as realtime_tts_websocket_endpoint
 from app.realtime_translation.replay.replay import websocket_endpoint
 
 base_dir = Path(__file__).parent.parent
@@ -23,6 +24,11 @@ app.include_router(api_router)
 @app.websocket("/ws/replay/{session_id}")
 async def ws_replay(websocket: WebSocket, session_id: str):
     await websocket_endpoint(websocket, session_id)
+
+
+@app.websocket("/ws/replay-speak/{session_id}")
+async def ws_replay_speak(websocket: WebSocket, session_id: str):
+    await realtime_tts_websocket_endpoint(websocket, session_id)
 
 
 if static_dir.exists():

@@ -8,7 +8,8 @@ from pathlib import Path
 
 
 from app.realtime_translation.replay.live_dispatch import execute_live_dispatch_request
-from app.realtime_translation.replay.events import load_pc_events
+from app.realtime_translation.replay.events import SourceEventTiming
+from app.realtime_translation.replay.events import load_pc_event_stream
 from app.realtime_translation.replay.prompt_selection import _apply_first_pass_prompt
 from app.realtime_translation.replay.prompt_selection import _apply_second_pass_prompt
 from app.realtime_translation.replay.prompt_selection import _load_first_pass_prompt
@@ -31,8 +32,7 @@ from realtime_translation_engine.translators import build_translator
 DEFAULT_FIRST_PASS_PROMPT_ID = "translation/first-pass/current-default"
 DEFAULT_SECOND_PASS_PROMPT_ID = "translation/second-pass/current-default"
 
-# Speed presets (ms delay tussen events)
-SPEED_PRESETS = {
+FIXED_DELAY_SPEEDS_MS = {
     "slow": 900,
     "normal": 500,
     "fast": 200,
@@ -43,6 +43,19 @@ SPEED_PRESETS = {
     "fast6": 25,
     "fast7": 10,
     "fastest": 1,
+}
+
+RECORDED_SPEED_MULTIPLIERS = {
+    "recorded_1x": 1.0,
+    "recorded_2x": 2.0,
+    "recorded_5x": 5.0,
+    "recorded_10x": 10.0,
+    "recorded_max": None,
+}
+
+SPEED_PRESETS = {
+    **FIXED_DELAY_SPEEDS_MS,
+    **{key: 0 for key in RECORDED_SPEED_MULTIPLIERS},
 }
 REPLAY_POLICIES = {"replay", "live"}
 
@@ -87,8 +100,10 @@ class TraceRecord:
 class ReplaySession:
     session_id: str
     events: list[SourceEvent]
+    event_timings: list[SourceEventTiming]
     settings: ReplaySettings
     file_path: str = ""  # Path to the .pc file
+    source_duration_ms: int = 0
     current_event_index: int = 1
     source_revision: int = 0
     target_revision: int = 0
@@ -105,7 +120,6 @@ class ReplaySession:
     second_pass_user_prompt: str = "{{draft_translation}}"
     source_language: str = "English"
     target_language: str = "Dutch"
-    tts_enabled: bool = False
     websocket: WebSocket | None = None
     source_committed_text: str = ""
     source_preview_text: str = ""
@@ -121,7 +135,6 @@ class ReplaySession:
     
     # Traces for metrics export
     traces: list[TraceRecord] = field(default_factory=list)
-    tts_artifacts: list[dict[str, object]] = field(default_factory=list)
     
     # Track all models used during session (for export accuracy)
     models_used: set[str] = field(default_factory=set)
@@ -170,8 +183,69 @@ class ReplaySession:
         self.source_committed_text = state.source_committed_text
         self.source_preview_text = state.source_preview_text
     
-    def get_delay_ms(self) -> int:
-        return SPEED_PRESETS.get(self.speed, 500)
+    def get_delay_ms(self, event_index: int | None = None) -> int:
+        if self.speed in RECORDED_SPEED_MULTIPLIERS:
+            return self._recorded_delay_ms(event_index=event_index)
+        return FIXED_DELAY_SPEEDS_MS.get(self.speed, FIXED_DELAY_SPEEDS_MS["normal"])
+
+    def get_event_due_delay_ms(
+        self,
+        *,
+        event_index: int,
+        playback_started_at: float,
+        now: float | None = None,
+    ) -> int:
+        multiplier = RECORDED_SPEED_MULTIPLIERS.get(self.speed)
+        if multiplier is None:
+            return 0
+        idx = int(event_index) - 1
+        if idx < 0 or idx >= len(self.event_timings):
+            return 0
+        now_value = time.perf_counter() if now is None else float(now)
+        target_elapsed_ms = max(0.0, self.event_timings[idx].speech_end_ms / float(multiplier))
+        observed_elapsed_ms = max(0.0, (now_value - float(playback_started_at)) * 1000.0)
+        return int(round(max(0.0, target_elapsed_ms - observed_elapsed_ms)))
+
+    def _recorded_delay_ms(self, event_index: int | None = None) -> int:
+        multiplier = RECORDED_SPEED_MULTIPLIERS.get(self.speed)
+        if multiplier is None:
+            return 0
+        idx = int(event_index if event_index is not None else self.current_event_index) - 1
+        if idx < 0 or idx >= len(self.event_timings) - 1:
+            return 0
+        current_end_ms = int(max(0, self.event_timings[idx].speech_end_ms))
+        next_end_ms = int(max(0, self.event_timings[idx + 1].speech_end_ms))
+        source_delta_ms = int(max(0, next_end_ms - current_end_ms))
+        return int(round(source_delta_ms / float(multiplier)))
+
+    def _source_clock_payload(self) -> tuple[str, str]:
+        if self.speed in RECORDED_SPEED_MULTIPLIERS:
+            labels = {
+                "recorded_1x": "recorded 1x",
+                "recorded_2x": "recorded 2x",
+                "recorded_5x": "recorded 5x",
+                "recorded_10x": "recorded 10x",
+                "recorded_max": "recorded max",
+            }
+            return self.speed, labels.get(self.speed, "recorded")
+        return "fixed_delay", "fixed delay"
+
+    def source_timing_payload(self, event_index: int) -> dict[str, object] | None:
+        idx = int(event_index) - 1
+        if idx < 0 or idx >= len(self.event_timings):
+            return None
+        timing = self.event_timings[idx]
+        previous_end_ms = self.event_timings[idx - 1].speech_end_ms if idx > 0 else 0
+        source_gap_ms = int(max(0, timing.speech_end_ms - previous_end_ms))
+        clock, clock_label = self._source_clock_payload()
+        return {
+            "speech_start_ms": int(timing.speech_start_ms),
+            "speech_end_ms": int(timing.speech_end_ms),
+            "source_gap_ms": source_gap_ms,
+            "source_duration_ms": int(max(0, self.source_duration_ms)),
+            "clock": clock,
+            "clock_label": clock_label,
+        }
     
     def get_model_display(self) -> str:
         return self.model or "(none)"
@@ -186,10 +260,12 @@ class ReplaySession:
         default_first_pass_prompt: PromptRecord,
         default_second_pass_prompt: PromptRecord,
     ) -> "ReplaySession":
-        events = list(load_pc_events(file_path))
+        loaded = load_pc_event_stream(file_path)
         session = cls(
             session_id=session_id,
-            events=events,
+            events=list(loaded.events),
+            event_timings=list(loaded.timings),
+            source_duration_ms=int(max(0, loaded.source_duration_ms)),
             settings=settings,
             file_path=str(file_path),
         )
@@ -264,8 +340,18 @@ async def _playback_loop(session: ReplaySession):
 
 async def _playback_loop_replay(session: ReplaySession):
     playback_error: str | None = None
+    playback_started_at = time.perf_counter()
     try:
         while session.status == "playing" and session.current_event_index <= len(session.events):
+            due_delay_ms = session.get_event_due_delay_ms(
+                event_index=session.current_event_index,
+                playback_started_at=playback_started_at,
+            )
+            if due_delay_ms > 0:
+                await asyncio.sleep(due_delay_ms / 1000.0)
+            if session.status != "playing":
+                break
+
             event = session.events[session.current_event_index - 1]
             
             # Update source state
@@ -333,8 +419,9 @@ async def _playback_loop_replay(session: ReplaySession):
             
             session.current_event_index += 1
             
-            delay_ms = session.get_delay_ms()
-            await asyncio.sleep(delay_ms / 1000.0)
+            if session.speed not in RECORDED_SPEED_MULTIPLIERS:
+                delay_ms = session.get_delay_ms(event_index=session.current_event_index - 1)
+                await asyncio.sleep(delay_ms / 1000.0)
     
     except asyncio.CancelledError:
         # Loop was cancelled (e.g., by restart)
@@ -351,8 +438,18 @@ async def _playback_loop_replay(session: ReplaySession):
 
 async def _playback_loop_live(session: ReplaySession):
     playback_error: str | None = None
+    playback_started_at = time.perf_counter()
     try:
         while session.status == "playing" and session.current_event_index <= len(session.events):
+            due_delay_ms = session.get_event_due_delay_ms(
+                event_index=session.current_event_index,
+                playback_started_at=playback_started_at,
+            )
+            if due_delay_ms > 0:
+                await asyncio.sleep(due_delay_ms / 1000.0)
+            if session.status != "playing":
+                break
+
             event = session.events[session.current_event_index - 1]
             session.update_source(event)
             session.source_revision = session.current_event_index
@@ -395,8 +492,9 @@ async def _playback_loop_live(session: ReplaySession):
                     break
 
             session.current_event_index += 1
-            delay_ms = session.get_delay_ms()
-            await asyncio.sleep(delay_ms / 1000.0)
+            if session.speed not in RECORDED_SPEED_MULTIPLIERS:
+                delay_ms = session.get_delay_ms(event_index=session.current_event_index - 1)
+                await asyncio.sleep(delay_ms / 1000.0)
 
     except asyncio.CancelledError:
         pass
