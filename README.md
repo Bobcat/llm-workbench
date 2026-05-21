@@ -1,6 +1,6 @@
 # LLM Workbench
 
-LLM Workbench is the backend for a small personal workbench/playground for trying out LLM-driven workflows.
+LLM Workbench is a small personal workbench/playground for trying out LLM-driven workflows.
 
 Some parts are meant to stay as permanent tools, especially:
 - `LLM Pool / Models`
@@ -36,14 +36,12 @@ Other parts are more exploratory. `Realtime Translation / Replay & Translate` st
 ## Repository Role
 
 - This repo provides the FastAPI API, replay session orchestration, prompt-library storage, and `llm-pool` proxy routes.
-- The backend expects the browser UI to be served from `static/` or from another same-origin static deployment.
+- The browser UI lives in `static/` and is served by the FastAPI app on the same origin.
 - The backend does not run model inference itself; model calls go through `llm-pool`.
 - Replay translation runtime behavior is delegated to the extracted realtime translation engine.
 
 ## Related Repositories
 
-- [llm-workbench-ui](https://github.com/Bobcat/llm-workbench-ui)
-  Browser UI for this backend.
 - [realtime-translation-engine](https://github.com/Bobcat/realtime-translation-engine)
   Extracted translation runtime used by the replay workflow.
 - [llm-pool](https://github.com/Bobcat/llm-pool)
@@ -53,13 +51,17 @@ Other parts are more exploratory. `Realtime Translation / Replay & Translate` st
 
 ## Code Map
 
-- `app/main.py` creates the FastAPI app, mounts API routes, exposes the replay websocket, and optionally serves the frontend from `static/`.
+- `app/main.py` creates the FastAPI app, mounts API routes, exposes the replay websocket, and serves the frontend from `static/`.
 - `app/router.py` wires the `/api` router groups.
 - `app/llm_pool/` proxies model listing and model admin actions to `llm-pool`.
 - `app/prompt_testing/` implements the ad hoc prompt runner.
 - `app/realtime_translation/replay/` manages replay sessions, translation dispatch, runtime export, websocket transport, and metrics.
 - `app/realtime_translation/prompt_library/` manages translation prompt sets.
 - `promptlib/` contains prompt-library storage helpers.
+- `static/` contains the browser UI. It has no build step; the browser loads source files directly as ES modules.
+- `static/app.js` registers UI workflows and shell routing.
+- `static/src/api-client.js` contains the same-origin backend API client and replay websocket wrapper.
+- `static/src/workflows/` contains the replay, prompt-library, LLM-pool, TTS-pool, and ad hoc prompt runner screens.
 - `config/settings.json` contains committed defaults.
 - `data/realtime_translation/sample/` contains sample `.pc` replay files.
 - `deploy/systemd/` contains example service wiring for local deployments.
@@ -78,7 +80,7 @@ LLM Workbench keeps workflow state in the backend process while a session is act
 
 Model inference and model administration are external concerns owned by `llm-pool`. Translation replay orchestration lives in this backend, while reusable translation state and dispatch behavior is implemented in `realtime-translation-engine`.
 
-The optional `static/` directory is only the frontend delivery mechanism. It can be a symlink to `llm-workbench-ui` during development or a copied static deployment in another environment.
+The browser UI is a same-origin static app under `static/`. The backend owns replay sessions, prompt-library persistence, model/pool proxying, and websocket event delivery.
 
 ## Configuration
 
@@ -96,7 +98,7 @@ python3 -m venv .venv
 ./.venv/bin/python -m pip install -e ../realtime-translation-engine
 ```
 
-The browser UI is developed in the separate `llm-workbench-ui` repo. In local development this backend serves it when a `static/` symlink or directory is present.
+Run the backend from this repo; it serves the browser UI from `static/`.
 
 ```bash
 ./.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
@@ -112,6 +114,8 @@ http://127.0.0.1:8000/
 
 ```bash
 ./.venv/bin/python -m unittest discover -s tests
+node --input-type=module --check < static/src/workflows/llm-pool/index.js
+node --input-type=module --check < static/src/workflows/prompt-runner/index.js
 ```
 
 ## Screenshots

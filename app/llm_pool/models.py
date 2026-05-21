@@ -1,18 +1,56 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Body, HTTPException
+from pathlib import Path
 from urllib import error, parse, request
 import json
 import os
 
 router = APIRouter(prefix="/models", tags=["models"])
 
-DEFAULT_LLM_RESPONSES_API_BASE_URL = os.environ.get(
-    "LLM_RESPONSES_API_BASE_URL", "http://127.0.0.1:8011"
-)
+DEFAULT_SETTINGS_PATH = Path(__file__).resolve().parents[2] / "config" / "settings.json"
+DEFAULT_LLM_RESPONSES_API_BASE_URL = "http://127.0.0.1:8011"
+
+
+def _load_json_object(path: Path) -> dict[str, object]:
+    if not path.exists():
+        return {}
+    raw_text = path.read_text(encoding="utf-8")
+    if raw_text.strip() == "":
+        return {}
+    payload = json.loads(raw_text)
+    if not isinstance(payload, dict):
+        return {}
+    return dict(payload)
+
+
+def _merge_json_objects(base: dict[str, object], override: dict[str, object]) -> dict[str, object]:
+    merged: dict[str, object] = dict(base)
+    for key, value in override.items():
+        base_value = merged.get(key)
+        if isinstance(base_value, dict) and isinstance(value, dict):
+            merged[key] = _merge_json_objects(base_value, value)
+        else:
+            merged[key] = value
+    return merged
 
 
 def _llm_pool_base_url() -> str:
+    env_value = os.environ.get("LLM_RESPONSES_API_BASE_URL", "").strip()
+    if env_value:
+        return env_value.rstrip("/")
+
+    settings_path = DEFAULT_SETTINGS_PATH
+    payload = _merge_json_objects(
+        _load_json_object(settings_path),
+        _load_json_object(settings_path.with_name("local.json")),
+    )
+    llm_pool_payload = payload.get("llm_pool", {})
+    if isinstance(llm_pool_payload, dict):
+        base_url = str(llm_pool_payload.get("base_url", "")).strip()
+        if base_url:
+            return base_url.rstrip("/")
+
     return DEFAULT_LLM_RESPONSES_API_BASE_URL.rstrip("/")
 
 
@@ -72,7 +110,9 @@ def list_models() -> list[dict[str, str]]:
 @router.get("/admin")
 def get_admin_models() -> dict:
     """Get runtime admin model state from llm-pool."""
-    return _request_json(method="GET", path="/v1/admin/models", timeout=3.0)
+    payload = _request_json(method="GET", path="/v1/admin/models", timeout=3.0)
+    payload["proxy_base_url"] = _llm_pool_base_url()
+    return payload
 
 
 @router.get("/admin/gpu-memory")

@@ -68,7 +68,10 @@ class LlmPoolApiTests(unittest.TestCase):
             ]
         }
 
-        with mock.patch("app.llm_pool.models._request_json", return_value=admin_payload) as request_json:
+        with (
+            mock.patch("app.llm_pool.models._request_json", return_value=admin_payload) as request_json,
+            mock.patch("app.llm_pool.models._llm_pool_base_url", return_value="http://pool:8012"),
+        ):
             response = client.get("/api/models/admin")
 
         self.assertEqual(response.status_code, 200)
@@ -78,6 +81,7 @@ class LlmPoolApiTests(unittest.TestCase):
         self.assertEqual(payload["models"][0]["replica_max"], 3)
         self.assertEqual(payload["models"][0]["loaded_replicas"], 2)
         self.assertEqual(payload["models"][0]["definition"]["replica_max"], 3)
+        self.assertEqual(payload["proxy_base_url"], "http://pool:8012")
         request_json.assert_called_once_with(method="GET", path="/v1/admin/models", timeout=3.0)
 
     def test_load_admin_model_forwards_replica_count(self) -> None:

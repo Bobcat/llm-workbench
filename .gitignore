@@ -8,5 +8,4 @@ data/realtime_translation/tts_artifacts/
 data/realtime_tts/replay_artifacts/
 *.egg-info/
 *.code-workspace
-static
 tmp/

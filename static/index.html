@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LLM Workbench</title>
+  <script>
+    (function () {
+      document.documentElement.classList.add('shell-booting');
+      try {
+        const saved = JSON.parse(window.localStorage.getItem('llm-workbench.shell') || 'null');
+        window.__LLM_WORKBENCH_INITIAL_SHELL__ = {
+          sidebarOpen: typeof saved?.sidebarOpen === 'boolean' ? saved.sidebarOpen : true,
+        };
+      } catch {
+        window.__LLM_WORKBENCH_INITIAL_SHELL__ = { sidebarOpen: true };
+      }
+    }());
+  </script>
+  <style>
+    .shell-booting .app-container { visibility: hidden; }
+  </style>
+  <link rel="stylesheet"
+    href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0">
+  <link rel="stylesheet" href="foundation/spa-foundation/css/base.css">
+  <link rel="stylesheet" href="foundation/spa-foundation/css/shell.css">
+  <link rel="stylesheet" href="foundation/spa-foundation/css/preset-modern.css" id="presetStylesheet">
+  <link rel="stylesheet" href="css/app.css">
+  <link rel="stylesheet" href="css/sidebar-overrides.css">
+</head>
+<body>
+  <div class="app-container">
+    <aside id="sidebar" class="sidebar" aria-label="Main navigation">
+      <div class="sidebar-header">
+        <div class="sidebar-brand" aria-label="LLM Workbench">
+          <span class="sidebar-brand-title">Workbench</span>
+        </div>
+        <button id="sidebarToggle" class="icon-btn" type="button" aria-label="Toggle sidebar">
+          <span id="sidebarToggleIcon" class="toggle-icon material-symbols-outlined"></span>
+        </button>
+      </div>
+      <div class="sidebar-content">
+        <ul id="workflowList" class="nav-links">
+          <!-- Workflows loaded dynamically -->
+        </ul>
+      </div>
+    </aside>
+
+    <main id="appRoot" class="main-content" aria-live="polite"></main>
+  </div>
+  <script>
+    (function () {
+      const initialShell = window.__LLM_WORKBENCH_INITIAL_SHELL__ || { sidebarOpen: true };
+      const sidebar = document.getElementById('sidebar');
+      if (sidebar) {
+        sidebar.classList.toggle('expanded', !!initialShell.sidebarOpen);
+        sidebar.classList.toggle('collapsed', !initialShell.sidebarOpen);
+      }
+      document.documentElement.classList.remove('shell-booting');
+    }());
+  </script>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

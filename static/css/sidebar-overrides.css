@@ -1,0 +1,69 @@
+/* Adapted from /var/www/omniscripta-app/css/sidebar-overrides.css */
+#sidebar .sidebar-content > .nav-links {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
+#sidebar .sidebar-content > .nav-links > li {
+  height: 38px !important;
+  margin-bottom: 0 !important;
+  font-size: 0.85rem !important;
+  padding-left: 8px !important;
+}
+
+#sidebar .sidebar-content > .nav-links > li.sidebar-section-label {
+  height: auto !important;
+  min-height: 0 !important;
+  margin: 10px 0 4px !important;
+  padding: 6px 10px 4px !important;
+  color: #8a97a8 !important;
+  font-size: 0.66rem !important;
+  font-weight: 600 !important;
+  line-height: 1.2 !important;
+  letter-spacing: 0.04em !important;
+  text-transform: uppercase !important;
+  cursor: default !important;
+  pointer-events: none !important;
+}
+
+#sidebar .sidebar-content > .nav-links > li.sidebar-section-label:first-child {
+  margin-top: 2px !important;
+}
+
+#sidebar .sidebar-content > .nav-links > li.sidebar-route-bottom {
+  margin-top: auto !important;
+}
+
+#sidebar:not(.expanded) .sidebar-content > .nav-links > li {
+  padding-left: 0 !important;
+}
+
+#sidebar:not(.expanded) .sidebar-content > .nav-links > li.sidebar-section-label {
+  display: none !important;
+}
+
+#sidebar .sidebar-content > .nav-links > li .material-symbols-outlined {
+  font-size: 20px !important;
+}
+
+@media (min-width: 601px) {
+  #sidebar:not(.expanded) {
+    width: 66px !important;
+  }
+}
+
+#sidebar .sidebar-content {
+  padding-top: 6px !important;
+}
+
+#sidebar .sidebar-brand-title {
+  color: #1e40af !important;
+}
+
+@media (max-width: 600px) {
+  #sidebar {
+    z-index: 10050 !important;
+  }
+}

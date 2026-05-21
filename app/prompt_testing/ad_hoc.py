@@ -9,7 +9,7 @@ from urllib import request as urllib_request
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from realtime_translation_engine.translators import DEFAULT_LLM_RESPONSES_API_BASE_URL
+from app.llm_pool.models import _llm_pool_base_url
 
 router = APIRouter(prefix="/prompts", tags=["prompts"])
 
@@ -24,6 +24,7 @@ class PromptRunRequest(BaseModel):
     system_prompt: str = ""
     user_prompt: str = ""
     files: list[PromptRunFile] = Field(default_factory=list)
+    allow_remote: bool = False
 
 
 class PromptRunResponse(BaseModel):
@@ -67,27 +68,41 @@ def _render_user_prompt_with_attachments(
     return "\n".join(parts)
 
 
-def _prompt_runner_payload(*, model: str, system_prompt: str, rendered_user_prompt: str) -> dict[str, Any]:
+def _prompt_runner_payload(
+    *,
+    model: str,
+    system_prompt: str,
+    rendered_user_prompt: str,
+    allow_remote: bool,
+) -> dict[str, Any]:
     effective_system_prompt = system_prompt if str(system_prompt) != "" else " "
+    decoding: dict[str, Any] = {
+        "max_tokens": 2048,
+        "temperature": 0.01,
+        "top_p": 1,
+        "top_k": 1,
+        "repetition_penalty": 1,
+    }
+    if allow_remote:
+        decoding = {
+            "max_tokens": 2048,
+            "temperature": 0.6,
+            "top_p": 0.95,
+        }
     return {
         "model": model,
         "input": rendered_user_prompt,
         "instructions": effective_system_prompt,
+        "allow_remote": allow_remote,
         "stream": False,
-        "decoding": {
-            "max_tokens": 2048,
-            "temperature": 0.01,
-            "top_p": 1,
-            "top_k": 1,
-            "repetition_penalty": 1,
-        },
+        "decoding": decoding,
     }
 
 
 def _run_prompt_runner_payload(payload: dict[str, Any]) -> tuple[dict[str, Any], float]:
     body = json.dumps(payload, ensure_ascii=True).encode("utf-8")
     req = urllib_request.Request(
-        url=f"{DEFAULT_LLM_RESPONSES_API_BASE_URL.rstrip('/')}/v1/responses",
+        url=f"{_llm_pool_base_url()}/v1/responses",
         data=body,
         headers={
             "Content-Type": "application/json",
@@ -133,6 +148,7 @@ def run_prompt(request: PromptRunRequest) -> PromptRunResponse:
                 model=model,
                 system_prompt=request.system_prompt,
                 rendered_user_prompt=rendered_user_prompt,
+                allow_remote=request.allow_remote,
             )
         )
     except RuntimeError as exc:
