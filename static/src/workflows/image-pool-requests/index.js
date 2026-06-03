@@ -47,6 +47,7 @@ export function createImagePoolRequestsView() {
             <label class="translation-prompts-field">
               <span>Translator mode</span>
               <select id="imagePoolRequestTranslatorMode">
+                <option value="auto">auto</option>
                 <option value="translategemma">translategemma</option>
                 <option value="generic">generic</option>
               </select>
