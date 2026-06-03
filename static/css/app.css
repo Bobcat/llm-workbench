@@ -1933,13 +1933,18 @@
   border: 1px solid rgba(148, 163, 184, 0.24);
   border-radius: 8px;
   background: #f8fafc;
-  overflow: hidden;
+  overflow: auto;
+  scrollbar-gutter: stable both-edges;
 }
 
 .image-pool-requests-view .image-pool-preview-frame img {
   display: block;
-  max-width: 100%;
-  max-height: 100%;
+  align-self: start;
+  justify-self: center;
+  width: 100%;
+  max-width: none;
+  height: auto;
+  max-height: none;
   object-fit: contain;
 }
 
