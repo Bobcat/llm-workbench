@@ -181,6 +181,56 @@ export const api = {
     });
   },
 
+  async getImageModels() {
+    return fetchJson('/api/image-pool/models');
+  },
+
+  async getImageAdminModels() {
+    return fetchJson('/api/image-pool/models/admin');
+  },
+
+  async getImageAdminGpuMemory() {
+    return fetchJson('/api/image-pool/models/admin/gpu-memory');
+  },
+
+  async loadImageAdminModel(modelName, payload = null) {
+    const options = {
+      method: 'POST',
+    };
+    if (payload && typeof payload === 'object') {
+      options.headers = {'Content-Type': 'application/json'};
+      options.body = JSON.stringify(payload);
+    }
+    return fetchJson(`/api/image-pool/models/admin/${encodeURIComponent(modelName)}/load`, options);
+  },
+
+  async unloadImageAdminModel(modelName) {
+    return fetchJson(`/api/image-pool/models/admin/${encodeURIComponent(modelName)}/unload`, {
+      method: 'POST'
+    });
+  },
+
+  async submitImageRequest(formData) {
+    return fetchJson('/api/image-pool/requests', {
+      method: 'POST',
+      body: formData,
+    });
+  },
+
+  async getImageRequest(requestId) {
+    return fetchJson(`/api/image-pool/requests/${encodeURIComponent(requestId)}`);
+  },
+
+  async cancelImageRequest(requestId) {
+    return fetchJson(`/api/image-pool/requests/${encodeURIComponent(requestId)}/cancel`, {
+      method: 'POST'
+    });
+  },
+
+  async getImagePoolStatus() {
+    return fetchJson('/api/image-pool/pool');
+  },
+
   async getReplaySpeakSamples() {
     return fetchJson('/api/realtime-tts/replay/samples');
   },

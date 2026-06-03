@@ -1872,7 +1872,117 @@
   overflow-wrap: anywhere;
 }
 
+.image-pool-requests-view .image-pool-requests-content {
+  display: grid;
+  grid-template-columns: minmax(360px, 0.95fr) minmax(420px, 1.05fr);
+  gap: 0;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.image-pool-requests-view .image-pool-requests-form-pane,
+.image-pool-requests-view .image-pool-requests-preview-pane {
+  height: 100%;
+  min-height: 0;
+  max-height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
+}
+
+.image-pool-requests-view .image-pool-requests-preview-pane {
+  border-left: 1px solid rgba(148, 163, 184, 0.22);
+  background: #ffffff;
+}
+
+.image-pool-requests-view .image-pool-requests-grid {
+  padding-left: 0;
+  margin-bottom: 0;
+}
+
+.image-pool-requests-view .image-pool-requests-stats {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.image-pool-requests-view #imagePoolRequestRaw {
+  min-height: 220px;
+  max-height: 45vh;
+  overflow: auto;
+  resize: vertical;
+}
+
+.image-pool-requests-view .image-pool-preview-block {
+  display: grid;
+  gap: 8px;
+}
+
+.image-pool-requests-view .image-pool-preview-block > span {
+  color: #6b7a8c;
+  font-size: 0.78rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.image-pool-requests-view .image-pool-preview-frame {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: 220px;
+  aspect-ratio: 4 / 3;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 8px;
+  background: #f8fafc;
+  overflow: hidden;
+}
+
+.image-pool-requests-view .image-pool-preview-frame img {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.image-pool-requests-view .image-pool-preview-empty {
+  color: #8795a8;
+  font-size: 0.86rem;
+  line-height: 1.2;
+  text-align: center;
+  padding: 16px;
+}
+
 @media (max-width: 760px) {
+  .image-pool-requests-view .image-pool-requests-content {
+    grid-template-columns: 1fr;
+    height: 100%;
+    overflow: auto;
+  }
+
+  .image-pool-requests-view .image-pool-requests-form-pane,
+  .image-pool-requests-view .image-pool-requests-preview-pane {
+    height: auto;
+    max-height: none;
+    overflow: visible;
+  }
+
+  .image-pool-requests-view .image-pool-requests-preview-pane {
+    border-left: 0;
+    border-top: 1px solid rgba(148, 163, 184, 0.22);
+  }
+
+  .image-pool-requests-view .image-pool-requests-stats {
+    grid-template-columns: 1fr;
+  }
+
+  .image-pool-requests-view .image-pool-preview-frame {
+    min-height: 180px;
+  }
+
+  .image-pool-requests-view #imagePoolRequestRaw {
+    min-height: 260px;
+    max-height: 55vh;
+  }
+
   .translation-prompts-view .translation-prompts-language-grid {
     grid-template-columns: 1fr;
   }

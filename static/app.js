@@ -8,6 +8,8 @@ import { createReplayView } from './src/workflows/replay/index.js';
 import { createReplaySpeakView } from './src/workflows/replay-speak/index.js';
 import { createLlmPoolView } from './src/workflows/llm-pool/index.js';
 import { createTtsPoolView } from './src/workflows/tts-pool/index.js';
+import { createImagePoolView } from './src/workflows/image-pool/index.js';
+import { createImagePoolRequestsView } from './src/workflows/image-pool-requests/index.js';
 import { createTranslationPromptsView } from './src/workflows/translation-prompts/index.js';
 import { createPromptRunnerView } from './src/workflows/prompt-runner/index.js';
 import { createIconsView } from './src/workflows/icons/index.js';
@@ -29,6 +31,8 @@ const PERSISTENT_WORKFLOW_IDS = new Set([
   'llm-pool-models',
   'ad-hoc-prompt',
   'tts-pool-models',
+  'image-pool-models',
+  'image-pool-requests',
 ]);
 
 // State - start met open sidebar
@@ -100,6 +104,23 @@ const WORKFLOW_GROUPS = [
       },
     ],
   },
+  {
+    label: 'Image Pool',
+    items: [
+      {
+        id: 'image-pool-models',
+        route: 'image-pool-models',
+        name: 'Models',
+        icon: 'image',
+      },
+      {
+        id: 'image-pool-requests',
+        route: 'image-pool-requests',
+        name: 'Requests',
+        icon: 'upload_file',
+      },
+    ],
+  },
 ];
 
 const AUXILIARY_WORKFLOWS = [
@@ -158,6 +179,12 @@ function createWorkflowView(workflowId) {
   }
   if (workflowId === 'tts-pool-models') {
     return createTtsPoolView();
+  }
+  if (workflowId === 'image-pool-models') {
+    return createImagePoolView();
+  }
+  if (workflowId === 'image-pool-requests') {
+    return createImagePoolRequestsView();
   }
   if (workflowId === 'prompt-library') {
     return createTranslationPromptsView();

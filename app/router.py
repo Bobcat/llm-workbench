@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
+from app.image_pool.models import router as image_pool_router
+from app.image_pool.requests import router as image_pool_requests_router
 from app.llm_pool.models import router as llm_pool_router
 from app.prompt_testing.ad_hoc import router as prompt_testing_router
 from app.realtime_tts.replay import router as realtime_tts_router
@@ -13,6 +15,8 @@ from app.tts_pool.models import router as tts_pool_router
 api_router = APIRouter(prefix="/api")
 api_router.include_router(llm_pool_router)
 api_router.include_router(tts_pool_router)
+api_router.include_router(image_pool_router)
+api_router.include_router(image_pool_requests_router)
 api_router.include_router(realtime_tts_router)
 api_router.include_router(prompt_testing_router)
 api_router.include_router(replay_defaults_router)
