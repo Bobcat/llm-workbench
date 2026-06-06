@@ -195,7 +195,7 @@ export function createImagePoolRequestsView() {
 
   function buildRequestPayload() {
     const payload = {
-      task: 'translate_text',
+      task: 'translate_image',
       priority: 'normal',
     };
     const requestId = String(requestIdInput.value || '').trim();
