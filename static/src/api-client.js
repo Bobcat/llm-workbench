@@ -190,24 +190,24 @@ export const api = {
   },
 
   async submitImageRequest(formData) {
-    return fetchJson('/api/image-pool/requests', {
+    return fetchJson('/api/translation/requests', {
       method: 'POST',
       body: formData,
     });
   },
 
   async getImageRequest(requestId) {
-    return fetchJson(`/api/image-pool/requests/${encodeURIComponent(requestId)}`);
+    return fetchJson(`/api/translation/requests/${encodeURIComponent(requestId)}`);
   },
 
   async cancelImageRequest(requestId) {
-    return fetchJson(`/api/image-pool/requests/${encodeURIComponent(requestId)}/cancel`, {
+    return fetchJson(`/api/translation/requests/${encodeURIComponent(requestId)}/cancel`, {
       method: 'POST'
     });
   },
 
   async getImagePoolStatus() {
-    return fetchJson('/api/image-pool/pool');
+    return fetchJson('/api/translation/status');
   },
 
   async getReplaySpeakSamples() {

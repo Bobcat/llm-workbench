@@ -349,7 +349,7 @@ export function createImagePoolRequestsView() {
       return;
     }
     outputLabel.textContent = artifactLabel(artifactName);
-    outputPreview.src = `/api/image-pool/requests/${encodeURIComponent(requestId)}/artifacts/${encodeURIComponent(artifactName)}?ts=${Date.now()}`;
+    outputPreview.src = `/api/translation/requests/${encodeURIComponent(requestId)}/artifacts/${encodeURIComponent(artifactName)}?ts=${Date.now()}`;
     outputPreview.hidden = false;
     outputEmpty.hidden = true;
   }

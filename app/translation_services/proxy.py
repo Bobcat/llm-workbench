@@ -1,27 +1,92 @@
 from __future__ import annotations
 
 import json
+import os
+from pathlib import Path
 from urllib import error, parse, request
 import uuid
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response
 
-from app.image_pool.models import _image_pool_base_url
-from app.image_pool.models import _request_json
+
+router = APIRouter(prefix="/translation", tags=["translation"])
+
+DEFAULT_SETTINGS_PATH = Path(__file__).resolve().parents[2] / "config" / "settings.json"
+DEFAULT_BASE_URL = "http://127.0.0.1:8030"
 
 
-router = APIRouter(prefix="/image-pool", tags=["image-pool"])
+def _load_json_object(path: Path) -> dict[str, object]:
+    if not path.exists():
+        return {}
+    raw_text = path.read_text(encoding="utf-8")
+    if raw_text.strip() == "":
+        return {}
+    payload = json.loads(raw_text)
+    if not isinstance(payload, dict):
+        return {}
+    return dict(payload)
+
+
+def _merge_json_objects(base: dict[str, object], override: dict[str, object]) -> dict[str, object]:
+    merged: dict[str, object] = dict(base)
+    for key, value in override.items():
+        base_value = merged.get(key)
+        if isinstance(base_value, dict) and isinstance(value, dict):
+            merged[key] = _merge_json_objects(base_value, value)
+        else:
+            merged[key] = value
+    return merged
+
+
+def _base_url() -> str:
+    env_value = os.environ.get("TRANSLATION_SERVICES_API_BASE_URL", "").strip()
+    if env_value:
+        return env_value.rstrip("/")
+
+    settings_path = DEFAULT_SETTINGS_PATH
+    payload = _merge_json_objects(
+        _load_json_object(settings_path),
+        _load_json_object(settings_path.with_name("local.json")),
+    )
+    service_payload = payload.get("translation_services", {})
+    if isinstance(service_payload, dict):
+        base_url = str(service_payload.get("base_url", "")).strip()
+        if base_url:
+            return base_url.rstrip("/")
+
+    return DEFAULT_BASE_URL.rstrip("/")
+
+
+def _request_json(*, method: str, path: str, payload: dict | None = None, timeout: float = 2.0) -> dict:
+    headers = {"Accept": "application/json"}
+    data = None
+    if payload is not None:
+        headers["Content-Type"] = "application/json"
+        data = json.dumps(payload).encode("utf-8")
+
+    req = request.Request(url=f"{_base_url()}{path}", method=method, headers=headers, data=data)
+    try:
+        with request.urlopen(req, timeout=timeout) as response:
+            raw = response.read().decode("utf-8")
+            return json.loads(raw) if raw else {}
+    except error.HTTPError as exc:
+        raise _http_exception_from_error(exc) from exc
+    except (error.URLError, TimeoutError) as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={"error": "translation_services_unreachable", "message": str(exc)},
+        ) from exc
 
 
 @router.post("/requests")
-async def submit_image_request(
+async def submit_request(
     request_json: str = Form(...),
     image_file: UploadFile = File(...),
 ) -> dict:
     image_bytes = await image_file.read()
     return _request_multipart_json(
-        path="/v1/image/requests",
+        path="/v1/requests",
         request_json=request_json,
         image_filename=str(image_file.filename or "image"),
         image_content_type=str(image_file.content_type or "application/octet-stream"),
@@ -31,37 +96,37 @@ async def submit_image_request(
 
 
 @router.get("/requests/{request_id}")
-def get_image_request(request_id: str) -> dict:
+def get_request(request_id: str) -> dict:
     safe_request_id = parse.quote(request_id, safe="")
-    return _request_json(method="GET", path=f"/v1/image/requests/{safe_request_id}", timeout=3.0)
+    return _request_json(method="GET", path=f"/v1/requests/{safe_request_id}", timeout=3.0)
 
 
 @router.post("/requests/{request_id}/cancel")
-def cancel_image_request(request_id: str) -> dict:
+def cancel_request(request_id: str) -> dict:
     safe_request_id = parse.quote(request_id, safe="")
-    return _request_json(method="POST", path=f"/v1/image/requests/{safe_request_id}/cancel", timeout=10.0)
+    return _request_json(method="POST", path=f"/v1/requests/{safe_request_id}/cancel", timeout=10.0)
 
 
 @router.get("/requests/{request_id}/artifacts/{artifact_name}")
-def get_image_artifact(request_id: str, artifact_name: str) -> Response:
+def get_artifact(request_id: str, artifact_name: str) -> Response:
     safe_request_id = parse.quote(request_id, safe="")
     safe_artifact_name = parse.quote(artifact_name, safe="")
     payload, media_type = _request_binary(
-        path=f"/v1/image/requests/{safe_request_id}/artifacts/{safe_artifact_name}",
+        path=f"/v1/requests/{safe_request_id}/artifacts/{safe_artifact_name}",
         timeout=10.0,
     )
     return Response(content=payload, media_type=media_type)
 
 
 @router.get("/completions")
-def get_image_completions(since_seq: int = 0, limit: int = 100) -> dict:
+def get_completions(since_seq: int = 0, limit: int = 100) -> dict:
     query = parse.urlencode({"since_seq": max(0, int(since_seq)), "limit": max(1, min(1000, int(limit)))})
-    return _request_json(method="GET", path=f"/v1/image/completions?{query}", timeout=3.0)
+    return _request_json(method="GET", path=f"/v1/completions?{query}", timeout=3.0)
 
 
-@router.get("/pool")
-def get_image_pool_status() -> dict:
-    return _request_json(method="GET", path="/v1/image/pool", timeout=3.0)
+@router.get("/status")
+def get_status() -> dict:
+    return _request_json(method="GET", path="/v1/status", timeout=3.0)
 
 
 def _request_multipart_json(
@@ -73,7 +138,7 @@ def _request_multipart_json(
     image_bytes: bytes,
     timeout: float,
 ) -> dict:
-    boundary = f"image-pool-{uuid.uuid4().hex}"
+    boundary = f"ts-{uuid.uuid4().hex}"
     body = _multipart_body(
         boundary=boundary,
         request_json=request_json,
@@ -82,7 +147,7 @@ def _request_multipart_json(
         image_bytes=image_bytes,
     )
     req = request.Request(
-        url=f"{_image_pool_base_url()}{path}",
+        url=f"{_base_url()}{path}",
         method="POST",
         headers={
             "Accept": "application/json",
@@ -93,24 +158,18 @@ def _request_multipart_json(
     try:
         with request.urlopen(req, timeout=timeout) as response:
             raw = response.read().decode("utf-8")
-            if not raw:
-                return {}
-            return json.loads(raw)
+            return json.loads(raw) if raw else {}
     except error.HTTPError as exc:
         raise _http_exception_from_error(exc) from exc
     except (error.URLError, TimeoutError) as exc:
         raise HTTPException(
             status_code=503,
-            detail={"error": "image_pool_unreachable", "message": str(exc)},
+            detail={"error": "translation_services_unreachable", "message": str(exc)},
         ) from exc
 
 
 def _request_binary(*, path: str, timeout: float) -> tuple[bytes, str]:
-    req = request.Request(
-        url=f"{_image_pool_base_url()}{path}",
-        method="GET",
-        headers={"Accept": "*/*"},
-    )
+    req = request.Request(url=f"{_base_url()}{path}", method="GET", headers={"Accept": "*/*"})
     try:
         with request.urlopen(req, timeout=timeout) as response:
             media_type = str(response.headers.get("content-type") or "application/octet-stream")
@@ -120,7 +179,7 @@ def _request_binary(*, path: str, timeout: float) -> tuple[bytes, str]:
     except (error.URLError, TimeoutError) as exc:
         raise HTTPException(
             status_code=503,
-            detail={"error": "image_pool_unreachable", "message": str(exc)},
+            detail={"error": "translation_services_unreachable", "message": str(exc)},
         ) from exc
 
 
@@ -160,4 +219,3 @@ def _http_exception_from_error(exc: error.HTTPError) -> HTTPException:
     else:
         detail = {"error": f"HTTP {exc.code}"}
     return HTTPException(status_code=exc.code, detail=detail)
-

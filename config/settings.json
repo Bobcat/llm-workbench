@@ -5,7 +5,7 @@
   "tts_pool": {
     "base_url": "http://127.0.0.1:8020"
   },
-  "image_pool": {
+  "translation_services": {
     "base_url": "http://127.0.0.1:8030"
   },
   "replay": {
