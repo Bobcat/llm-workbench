@@ -1979,6 +1979,44 @@
   resize: vertical;
 }
 
+.image-pool-requests-view .image-pool-preview-zoom {
+  display: grid;
+  grid-template-columns: auto minmax(120px, 1fr) 48px;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 4px;
+  color: #6b7a8c;
+  font-size: 0.78rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.image-pool-requests-view .image-pool-preview-zoom input[type="range"] {
+  width: 100%;
+}
+
+.image-pool-requests-view .image-pool-preview-zoom output {
+  color: #111827;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.image-pool-requests-view .image-pool-preview-artifact {
+  display: grid;
+  grid-template-columns: auto minmax(180px, 1fr);
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  color: #6b7a8c;
+  font-size: 0.78rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.image-pool-requests-view .image-pool-preview-artifact select {
+  min-width: 0;
+}
+
 .image-pool-requests-view .image-pool-preview-block {
   display: grid;
   gap: 8px;
@@ -1994,9 +2032,10 @@
 .image-pool-requests-view .image-pool-preview-frame {
   position: relative;
   display: grid;
-  place-items: center;
-  min-height: 220px;
-  aspect-ratio: 4 / 3;
+  align-items: start;
+  justify-items: start;
+  min-height: 0;
+  height: clamp(180px, 32vh, 340px);
   border: 1px solid rgba(148, 163, 184, 0.24);
   border-radius: 8px;
   background: #f8fafc;
@@ -2007,17 +2046,19 @@
 .image-pool-requests-view .image-pool-preview-frame img {
   display: block;
   align-self: start;
-  justify-self: center;
-  width: 100%;
-  max-width: none;
+  justify-self: start;
+  width: auto;
+  max-width: var(--image-pool-preview-size, 70%);
   height: auto;
-  max-height: none;
+  max-height: var(--image-pool-preview-size, 70%);
   object-fit: contain;
 }
 
 .image-pool-requests-view .image-pool-preview-empty {
+  align-self: center;
   color: #8795a8;
   font-size: 0.86rem;
+  justify-self: center;
   line-height: 1.2;
   text-align: center;
   padding: 16px;
@@ -2047,7 +2088,7 @@
   }
 
   .image-pool-requests-view .image-pool-preview-frame {
-    min-height: 180px;
+    height: clamp(160px, 34vh, 260px);
   }
 
   .image-pool-requests-view #imagePoolRequestRaw {

@@ -3,6 +3,14 @@ import { escapeAttr, escapeHtml, formatApiError } from '../../shared/ui-helpers.
 
 const POLL_INTERVAL_MS = 800;
 const TERMINAL_STATES = new Set(['completed', 'failed', 'cancelled']);
+const IMAGE_ARTIFACT_ORDER = ['document_unwarped_debug', 'projected_overlay_debug', 'output', 'rectified_debug', 'debug_overlay'];
+const IMAGE_ARTIFACT_LABELS = {
+  document_unwarped_debug: 'Document unwarped',
+  projected_overlay_debug: 'Text planes',
+  output: 'Output',
+  rectified_debug: 'Rectified debug',
+  debug_overlay: 'Debug overlay',
+};
 
 export function createImagePoolRequestsView() {
   const container = document.createElement('div');
@@ -38,6 +46,22 @@ export function createImagePoolRequestsView() {
               <label class="translation-prompts-field">
                 <span>Target language</span>
                 <input id="imagePoolRequestTarget" value="nl" placeholder="nl" autocomplete="off">
+              </label>
+            </div>
+            <div class="translation-prompts-language-grid image-pool-requests-grid">
+              <label class="translation-prompts-field">
+                <span>OCR route</span>
+                <select id="imagePoolRequestOcrRoute">
+                  <option value="scene">Scene OCR</option>
+                  <option value="document">Document OCR</option>
+                </select>
+              </label>
+              <label class="translation-prompts-field">
+                <span>Document unwarp</span>
+                <select id="imagePoolRequestOcrUnwarp">
+                  <option value="false">off</option>
+                  <option value="true">on</option>
+                </select>
               </label>
             </div>
             <label class="translation-prompts-field">
@@ -94,6 +118,17 @@ export function createImagePoolRequestsView() {
           </section>
           <section class="translation-prompts-pane image-pool-requests-preview-pane">
             <div class="translation-prompts-pane-title">Preview</div>
+            <label class="image-pool-preview-zoom">
+              <span>Preview size</span>
+              <input id="imagePoolPreviewZoom" type="range" min="25" max="180" step="5" value="70">
+              <output id="imagePoolPreviewZoomValue">70%</output>
+            </label>
+            <label class="image-pool-preview-artifact">
+              <span>Artifact</span>
+              <select id="imagePoolPreviewArtifact" disabled>
+                <option value="">No artifact</option>
+              </select>
+            </label>
             <div class="image-pool-preview-block">
               <span>Input</span>
               <div class="image-pool-preview-frame">
@@ -102,7 +137,7 @@ export function createImagePoolRequestsView() {
               </div>
             </div>
             <div class="image-pool-preview-block">
-              <span>Output</span>
+              <span id="imagePoolOutputLabel">Artifact</span>
               <div class="image-pool-preview-frame">
                 <img id="imagePoolOutputPreview" alt="Image pool output preview" hidden>
                 <div id="imagePoolOutputEmpty" class="image-pool-preview-empty">No output yet</div>
@@ -119,6 +154,8 @@ export function createImagePoolRequestsView() {
   const modelSelect = container.querySelector('#imagePoolRequestModel');
   const sourceInput = container.querySelector('#imagePoolRequestSource');
   const targetInput = container.querySelector('#imagePoolRequestTarget');
+  const ocrRouteSelect = container.querySelector('#imagePoolRequestOcrRoute');
+  const ocrUnwarpSelect = container.querySelector('#imagePoolRequestOcrUnwarp');
   const translatorInput = container.querySelector('#imagePoolRequestTranslator');
   const translatorModeSelect = container.querySelector('#imagePoolRequestTranslatorMode');
   const instructionInput = container.querySelector('#imagePoolRequestInstruction');
@@ -136,12 +173,17 @@ export function createImagePoolRequestsView() {
   const inputEmpty = container.querySelector('#imagePoolInputEmpty');
   const outputPreview = container.querySelector('#imagePoolOutputPreview');
   const outputEmpty = container.querySelector('#imagePoolOutputEmpty');
+  const outputLabel = container.querySelector('#imagePoolOutputLabel');
+  const previewZoomInput = container.querySelector('#imagePoolPreviewZoom');
+  const previewZoomValue = container.querySelector('#imagePoolPreviewZoomValue');
+  const previewArtifactSelect = container.querySelector('#imagePoolPreviewArtifact');
 
   let models = [];
   let isBusy = false;
   let currentRequestId = '';
   let pollTimer = null;
   let inputObjectUrl = '';
+  let lastPreviewResult = null;
 
   function setStatus(message, kind = '') {
     statusEl.textContent = String(message || '');
@@ -156,6 +198,8 @@ export function createImagePoolRequestsView() {
     modelSelect.disabled = isBusy;
     sourceInput.disabled = isBusy;
     targetInput.disabled = isBusy;
+    ocrRouteSelect.disabled = isBusy || String(taskSelect.value || '') !== 'translate_text';
+    ocrUnwarpSelect.disabled = isBusy || String(taskSelect.value || '') !== 'translate_text';
     translatorInput.disabled = isBusy;
     translatorModeSelect.disabled = isBusy;
     instructionInput.disabled = isBusy;
@@ -233,6 +277,11 @@ export function createImagePoolRequestsView() {
     if (sourceLang) payload.source_lang_code = sourceLang;
     const targetLang = String(targetInput.value || '').trim();
     if (targetLang) payload.target_lang_code = targetLang;
+    const ocrRoute = String(ocrRouteSelect.value || '').trim();
+    if (payload.task === 'translate_text' && ocrRoute) payload.ocr_route = ocrRoute;
+    if (payload.task === 'translate_text') {
+      payload.ocr_unwarp = String(ocrUnwarpSelect.value || '') === 'true';
+    }
     const translatorModel = String(translatorInput.value || '').trim();
     if (translatorModel) payload.translator_model = translatorModel;
     const translatorMode = String(translatorModeSelect.value || '').trim();
@@ -356,24 +405,76 @@ export function createImagePoolRequestsView() {
   }
 
   function clearOutputPreview() {
+    lastPreviewResult = null;
+    previewArtifactSelect.innerHTML = '<option value="">No artifact</option>';
+    previewArtifactSelect.disabled = true;
+    outputLabel.textContent = 'Artifact';
     outputPreview.hidden = true;
     outputPreview.removeAttribute('src');
     outputEmpty.hidden = false;
   }
 
+  function updatePreviewZoom() {
+    const value = Math.max(25, Math.min(180, Number(previewZoomInput.value) || 70));
+    container.style.setProperty('--image-pool-preview-size', `${value}%`);
+    previewZoomValue.textContent = `${value}%`;
+  }
+
   function renderOutputPreview(result) {
+    lastPreviewResult = result || null;
     const requestId = String(result?.request_id || currentRequestId || '');
-    const outputArtifact = result?.response?.artifacts?.output;
-    if (!requestId || !outputArtifact) {
+    const entries = updateArtifactOptions(result);
+    const artifactName = String(previewArtifactSelect.value || '');
+    if (!requestId || !artifactName || !entries.some((entry) => entry.name === artifactName)) {
       clearOutputPreview();
       return;
     }
-    outputPreview.src = `/api/image-pool/requests/${encodeURIComponent(requestId)}/artifacts/output?ts=${Date.now()}`;
+    outputLabel.textContent = artifactLabel(artifactName);
+    outputPreview.src = `/api/image-pool/requests/${encodeURIComponent(requestId)}/artifacts/${encodeURIComponent(artifactName)}?ts=${Date.now()}`;
     outputPreview.hidden = false;
     outputEmpty.hidden = true;
   }
 
+  function updateArtifactOptions(result) {
+    const entries = imageArtifactEntries(result);
+    const previous = String(previewArtifactSelect.value || '');
+    previewArtifactSelect.innerHTML = entries.length > 0
+      ? entries.map((entry) => `<option value="${escapeAttr(entry.name)}">${escapeHtml(artifactLabel(entry.name))}</option>`).join('')
+      : '<option value="">No artifact</option>';
+    previewArtifactSelect.disabled = entries.length === 0;
+    if (entries.some((entry) => entry.name === previous)) {
+      previewArtifactSelect.value = previous;
+    } else {
+      previewArtifactSelect.value = entries[0]?.name || '';
+    }
+    return entries;
+  }
+
+  function imageArtifactEntries(result) {
+    const artifacts = result?.response?.artifacts || {};
+    const names = Object.keys(artifacts).filter((name) => {
+      const artifact = artifacts[name] || {};
+      return name !== 'input' && String(artifact.mime_type || '').startsWith('image/');
+    });
+    return names
+      .sort((left, right) => artifactRank(left) - artifactRank(right) || left.localeCompare(right, 'nl', { sensitivity: 'base' }))
+      .map((name) => ({ name, artifact: artifacts[name] }));
+  }
+
+  function artifactRank(name) {
+    const index = IMAGE_ARTIFACT_ORDER.indexOf(String(name || ''));
+    return index === -1 ? IMAGE_ARTIFACT_ORDER.length : index;
+  }
+
+  function artifactLabel(name) {
+    return IMAGE_ARTIFACT_LABELS[name] || String(name || 'Artifact');
+  }
+
   fileInput.addEventListener('change', updateInputPreview);
+  previewZoomInput.addEventListener('input', updatePreviewZoom);
+  previewArtifactSelect.addEventListener('change', () => {
+    if (lastPreviewResult) renderOutputPreview(lastPreviewResult);
+  });
   submitBtn.addEventListener('click', submitRequest);
   cancelBtn.addEventListener('click', cancelRequest);
   refreshModelsBtn.addEventListener('click', loadModels);
@@ -382,6 +483,10 @@ export function createImagePoolRequestsView() {
     if (task === 'edit_image' && !instructionInput.value.trim()) {
       instructionInput.placeholder = 'remove the cars in the background';
     }
+    setBusy(isBusy);
+  });
+  ocrRouteSelect.addEventListener('change', () => {
+    setBusy(isBusy);
   });
 
   container.__onActivate = () => {
@@ -399,6 +504,7 @@ export function createImagePoolRequestsView() {
   };
 
   clearOutputPreview();
+  updatePreviewZoom();
   updateInputPreview();
   loadModels();
   return container;

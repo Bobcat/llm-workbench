@@ -13,6 +13,7 @@ dependencies = [
     "fastapi",
     "transformers",
     "uvicorn",
+    "websockets",
     "python-multipart",  # For file uploads
     "pydantic",
 ]
