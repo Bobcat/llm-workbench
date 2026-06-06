@@ -12,6 +12,7 @@ import { createImagePoolView } from './src/workflows/image-pool/index.js';
 import { createImagePoolRequestsView } from './src/workflows/image-pool-requests/index.js';
 import { createTranslationPromptsView } from './src/workflows/translation-prompts/index.js';
 import { createPromptRunnerView } from './src/workflows/prompt-runner/index.js';
+import { createVlmTestView } from './src/workflows/vlm-test/index.js';
 import { createIconsView } from './src/workflows/icons/index.js';
 
 // === Initialization ===
@@ -30,6 +31,7 @@ const PERSISTENT_WORKFLOW_IDS = new Set([
   'prompt-library',
   'llm-pool-models',
   'ad-hoc-prompt',
+  'vlm-test',
   'tts-pool-models',
   'image-pool-models',
   'image-pool-requests',
@@ -90,6 +92,12 @@ const WORKFLOW_GROUPS = [
         route: 'ad-hoc-prompt',
         name: 'Ad-hoc Prompt',
         icon: 'chat',
+      },
+      {
+        id: 'vlm-test',
+        route: 'vlm-test',
+        name: 'VLM Test',
+        icon: 'image_search',
       },
     ],
   },
@@ -191,6 +199,9 @@ function createWorkflowView(workflowId) {
   }
   if (workflowId === 'ad-hoc-prompt') {
     return createPromptRunnerView();
+  }
+  if (workflowId === 'vlm-test') {
+    return createVlmTestView();
   }
   if (workflowId === 'icons') {
     return createIconsView();

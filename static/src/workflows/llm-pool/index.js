@@ -839,6 +839,63 @@ function buildLoadSettingsMarkup(model, draft, runtimeState) {
     }
   }
 
+  const vllmMaxLenConstraint = getIntegerConstraint(model, 'vllm_max_model_len');
+  if (vllmMaxLenConstraint) {
+    wideControls.push(buildSliderSettingMarkup({
+      modelName: model.name,
+      key: 'vllm_max_model_len',
+      label: 'Max model len',
+      value: getDraftOrEffectiveIntegerValue(model, draft, 'vllm_max_model_len', vllmMaxLenConstraint.minimum),
+      minimum: vllmMaxLenConstraint.minimum,
+      step: vllmMaxLenConstraint.step,
+      disabled: !canConfigure,
+    }));
+  }
+
+  const vllmKvBytesConstraint = getIntegerConstraint(model, 'vllm_kv_cache_memory_bytes');
+  if (vllmKvBytesConstraint) {
+    const minimumGib = bytesToGibStep(vllmKvBytesConstraint.minimum);
+    wideControls.push(buildSliderSettingMarkup({
+      modelName: model.name,
+      key: 'vllm_kv_cache_gib',
+      label: 'KV cache (GiB)',
+      value: getDraftOrEffectiveKvCacheGib(model, draft, minimumGib),
+      minimum: minimumGib,
+      step: 1,
+      maximum: 64,
+      disabled: !canConfigure,
+    }));
+  }
+
+  const vllmMaxPixelsConstraint = getIntegerConstraint(model, 'vllm_max_pixels');
+  if (vllmMaxPixelsConstraint) {
+    wideControls.push(buildSliderSettingMarkup({
+      modelName: model.name,
+      key: 'vllm_max_pixels',
+      label: 'Max pixels (image)',
+      value: getDraftOrEffectiveMaxPixels(model, draft, vllmMaxPixelsConstraint.minimum),
+      minimum: vllmMaxPixelsConstraint.minimum,
+      step: vllmMaxPixelsConstraint.step,
+      maximum: 12845056,
+      disabled: !canConfigure,
+    }));
+  }
+
+  const vllmKvDtypeConstraint = getEnumConstraint(model, 'vllm_kv_cache_dtype');
+  if (vllmKvDtypeConstraint) {
+    compactControls.push(buildEnumSelectSettingMarkup({
+      modelName: model.name,
+      key: 'vllm_kv_cache_dtype',
+      label: 'KV cache dtype',
+      options: vllmKvDtypeConstraint.allowedValues,
+      value: getDraftOrEffectiveEnumValue(model, draft, 'vllm_kv_cache_dtype', vllmKvDtypeConstraint.defaultValue),
+      disabled: !canConfigure,
+    }));
+    notes.push(buildLoadSettingNoteMarkup(
+      'fp8 KV-cache dtype needs CUDA toolkit 12.9+ on Blackwell GPUs; otherwise the model load fails. Leave it on auto if unsure.'
+    ));
+  }
+
   if (replicaControlMarkup) {
     compactControls.push(replicaControlMarkup);
   }
@@ -859,7 +916,8 @@ function buildLoadSettingsMarkup(model, draft, runtimeState) {
   `;
 }
 
-function buildSliderSettingMarkup({modelName, key, label, value, minimum, step, disabled}) {
+function buildSliderSettingMarkup({modelName, key, label, value, minimum, step, disabled, maximum}) {
+  const sliderMax = toPositiveInt(maximum) ?? LOAD_SETTING_SLIDER_MAX;
   return `
     <div class="llm-pool-load-setting llm-pool-load-setting-wide">
       <span>${escapeHtml(label)}</span>
@@ -867,7 +925,7 @@ function buildSliderSettingMarkup({modelName, key, label, value, minimum, step, 
         <input
           type="range"
           min="${escapeAttr(String(minimum))}"
-          max="${escapeAttr(String(LOAD_SETTING_SLIDER_MAX))}"
+          max="${escapeAttr(String(sliderMax))}"
           step="${escapeAttr(String(step))}"
           value="${escapeAttr(String(value))}"
           data-load-setting="${escapeAttr(key)}"
@@ -995,6 +1053,45 @@ function getEffectiveLoadValue(model, key) {
     return model.load_override[key];
   }
   return model?.definition?.[key];
+}
+
+const GIB = 1024 * 1024 * 1024;
+
+function bytesToGibStep(bytes) {
+  const value = toPositiveInt(bytes);
+  if (value == null) return 1;
+  return Math.max(1, Math.round(value / GIB));
+}
+
+function getDraftOrEffectiveKvCacheGib(model, draft, fallbackGib) {
+  const draftValue = toPositiveInt(draft?.vllm_kv_cache_gib);
+  if (draftValue != null) return draftValue;
+  const effectiveBytes = toPositiveInt(getEffectiveLoadValue(model, 'vllm_kv_cache_memory_bytes'));
+  if (effectiveBytes != null) return Math.max(1, Math.round(effectiveBytes / GIB));
+  return fallbackGib;
+}
+
+function getMmProcessorMaxPixels(model) {
+  // load_override carries vllm_max_pixels directly; definition carries the
+  // merged vllm_mm_processor_kwargs as a list of [key, value] pairs.
+  const override = model?.load_override;
+  if (override && Object.prototype.hasOwnProperty.call(override, 'vllm_max_pixels')) {
+    return toPositiveInt(override.vllm_max_pixels);
+  }
+  const mmKwargs = model?.definition?.vllm_mm_processor_kwargs;
+  if (Array.isArray(mmKwargs)) {
+    const entry = mmKwargs.find((pair) => Array.isArray(pair) && pair[0] === 'max_pixels');
+    if (entry) return toPositiveInt(entry[1]);
+  }
+  return null;
+}
+
+function getDraftOrEffectiveMaxPixels(model, draft, fallbackMinimum) {
+  const draftValue = toPositiveInt(draft?.vllm_max_pixels);
+  if (draftValue != null) return draftValue;
+  const effective = getMmProcessorMaxPixels(model);
+  if (effective != null) return effective;
+  return fallbackMinimum;
 }
 
 function getPairPresetRecommendations(model, key) {
@@ -1186,6 +1283,36 @@ function buildLoadPayload(model, draft) {
 
   if (Object.prototype.hasOwnProperty.call(draft, 'exllama_cache_quant') && hasLoadConstraint(model, 'exllama_cache_quant')) {
     payload.exllama_cache_quant = normalizeExllamaCacheQuantValue(draft.exllama_cache_quant);
+  }
+
+  const vllmMaxLen = toPositiveInt(draft.vllm_max_model_len);
+  if (
+    vllmMaxLen != null
+    && hasLoadConstraint(model, 'vllm_max_model_len')
+    && vllmMaxLen !== toPositiveInt(getEffectiveLoadValue(model, 'vllm_max_model_len'))
+  ) {
+    payload.vllm_max_model_len = vllmMaxLen;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(draft, 'vllm_kv_cache_dtype') && hasLoadConstraint(model, 'vllm_kv_cache_dtype')) {
+    payload.vllm_kv_cache_dtype = draft.vllm_kv_cache_dtype;
+  }
+
+  const vllmKvGib = toPositiveInt(draft.vllm_kv_cache_gib);
+  if (vllmKvGib != null && hasLoadConstraint(model, 'vllm_kv_cache_memory_bytes')) {
+    const bytes = vllmKvGib * GIB;
+    if (bytes !== toPositiveInt(getEffectiveLoadValue(model, 'vllm_kv_cache_memory_bytes'))) {
+      payload.vllm_kv_cache_memory_bytes = bytes;
+    }
+  }
+
+  const vllmMaxPixels = toPositiveInt(draft.vllm_max_pixels);
+  if (
+    vllmMaxPixels != null
+    && hasLoadConstraint(model, 'vllm_max_pixels')
+    && vllmMaxPixels !== getMmProcessorMaxPixels(model)
+  ) {
+    payload.vllm_max_pixels = vllmMaxPixels;
   }
 
   return Object.keys(payload).length ? payload : null;

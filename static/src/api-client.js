@@ -127,6 +127,14 @@ export const api = {
     });
   },
 
+  async runVlmPrompt(payload) {
+    return fetchJson('/api/vlm/run', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload)
+    });
+  },
+
   async getAdminModels() {
     return fetchJson('/api/models/admin');
   },
