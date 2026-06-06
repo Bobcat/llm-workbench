@@ -27,19 +27,6 @@ export function createImagePoolRequestsView() {
             </label>
             <div class="translation-prompts-language-grid image-pool-requests-grid">
               <label class="translation-prompts-field">
-                <span>Task</span>
-                <select id="imagePoolRequestTask">
-                  <option value="translate_text">translate_text</option>
-                  <option value="edit_image">edit_image</option>
-                </select>
-              </label>
-              <label class="translation-prompts-field">
-                <span>Model</span>
-                <select id="imagePoolRequestModel"></select>
-              </label>
-            </div>
-            <div class="translation-prompts-language-grid image-pool-requests-grid">
-              <label class="translation-prompts-field">
                 <span>Source language</span>
                 <input id="imagePoolRequestSource" value="en" placeholder="en" autocomplete="off">
               </label>
@@ -77,19 +64,14 @@ export function createImagePoolRequestsView() {
               </select>
             </label>
             <label class="translation-prompts-field">
-              <span>Instruction</span>
-              <textarea id="imagePoolRequestInstruction" rows="4" placeholder="For edit_image: remove the cars in the background"></textarea>
-            </label>
-            <label class="translation-prompts-field">
               <span>Request id</span>
               <input id="imagePoolRequestId" placeholder="leave empty for automatic id">
             </label>
             <div class="translation-prompts-run-actions">
               <button type="button" id="imagePoolRequestSubmit">Submit</button>
               <button type="button" id="imagePoolRequestCancel" disabled>Cancel</button>
-              <button type="button" id="imagePoolRequestRefreshModels">Refresh models</button>
             </div>
-            <div class="translation-prompts-inline-status" id="imagePoolRequestStatus">Loading image models...</div>
+            <div class="translation-prompts-inline-status" id="imagePoolRequestStatus"></div>
             <div class="translation-prompts-divider" aria-hidden="true"></div>
             <section class="translation-prompts-stats-block">
               <div class="translation-prompts-stats-grid image-pool-requests-stats">
@@ -150,19 +132,15 @@ export function createImagePoolRequestsView() {
   `;
 
   const fileInput = container.querySelector('#imagePoolRequestFile');
-  const taskSelect = container.querySelector('#imagePoolRequestTask');
-  const modelSelect = container.querySelector('#imagePoolRequestModel');
   const sourceInput = container.querySelector('#imagePoolRequestSource');
   const targetInput = container.querySelector('#imagePoolRequestTarget');
   const ocrRouteSelect = container.querySelector('#imagePoolRequestOcrRoute');
   const ocrUnwarpSelect = container.querySelector('#imagePoolRequestOcrUnwarp');
   const translatorInput = container.querySelector('#imagePoolRequestTranslator');
   const translatorModeSelect = container.querySelector('#imagePoolRequestTranslatorMode');
-  const instructionInput = container.querySelector('#imagePoolRequestInstruction');
   const requestIdInput = container.querySelector('#imagePoolRequestId');
   const submitBtn = container.querySelector('#imagePoolRequestSubmit');
   const cancelBtn = container.querySelector('#imagePoolRequestCancel');
-  const refreshModelsBtn = container.querySelector('#imagePoolRequestRefreshModels');
   const statusEl = container.querySelector('#imagePoolRequestStatus');
   const statIdEl = container.querySelector('#imagePoolRequestStatId');
   const statStateEl = container.querySelector('#imagePoolRequestStatState');
@@ -178,7 +156,6 @@ export function createImagePoolRequestsView() {
   const previewZoomValue = container.querySelector('#imagePoolPreviewZoomValue');
   const previewArtifactSelect = container.querySelector('#imagePoolPreviewArtifact');
 
-  let models = [];
   let isBusy = false;
   let currentRequestId = '';
   let pollTimer = null;
@@ -192,19 +169,15 @@ export function createImagePoolRequestsView() {
 
   function setBusy(nextBusy) {
     isBusy = Boolean(nextBusy);
-    submitBtn.disabled = isBusy || !selectedFile() || loadedModels().length === 0;
+    submitBtn.disabled = isBusy || !selectedFile();
     fileInput.disabled = isBusy;
-    taskSelect.disabled = isBusy;
-    modelSelect.disabled = isBusy;
     sourceInput.disabled = isBusy;
     targetInput.disabled = isBusy;
-    ocrRouteSelect.disabled = isBusy || String(taskSelect.value || '') !== 'translate_text';
-    ocrUnwarpSelect.disabled = isBusy || String(taskSelect.value || '') !== 'translate_text';
+    ocrRouteSelect.disabled = isBusy;
+    ocrUnwarpSelect.disabled = isBusy;
     translatorInput.disabled = isBusy;
     translatorModeSelect.disabled = isBusy;
-    instructionInput.disabled = isBusy;
     requestIdInput.disabled = isBusy;
-    refreshModelsBtn.disabled = isBusy;
     cancelBtn.disabled = !currentRequestId || isTerminalState(currentState());
   }
 
@@ -220,55 +193,9 @@ export function createImagePoolRequestsView() {
     return TERMINAL_STATES.has(String(state || '').trim().toLowerCase());
   }
 
-  function loadedModels() {
-    return models
-      .filter((model) => model.runtimeState === 'loaded')
-      .sort((left, right) => left.name.localeCompare(right.name, 'nl', { sensitivity: 'base' }));
-  }
-
-  function renderModelOptions() {
-    const loaded = loadedModels();
-    const previous = String(modelSelect.value || '');
-    modelSelect.innerHTML = loaded.length > 0
-      ? loaded.map((model) => `<option value="${escapeAttr(model.id)}">${escapeHtml(model.name)}</option>`).join('')
-      : '<option value="">No loaded image models</option>';
-    if (loaded.some((model) => model.id === previous)) {
-      modelSelect.value = previous;
-    }
-    setBusy(isBusy);
-  }
-
-  function normalizeModelsPayload(payload) {
-    const list = Array.isArray(payload?.models) ? payload.models : [];
-    return list
-      .map((model) => ({
-        id: String(model?.name || '').trim(),
-        name: String(model?.name || '').trim(),
-        runtimeState: String(model?.runtime_state || 'unloaded').trim().toLowerCase(),
-      }))
-      .filter((model) => model.id !== '');
-  }
-
-  async function loadModels() {
-    setBusy(true);
-    setStatus('Loading image models...');
-    try {
-      models = normalizeModelsPayload(await api.getImageAdminModels());
-      renderModelOptions();
-      setStatus(loadedModels().length > 0 ? '' : 'No loaded image models available.', loadedModels().length > 0 ? '' : 'error');
-    } catch (err) {
-      models = [];
-      renderModelOptions();
-      setStatus(formatApiError(err), 'error');
-    } finally {
-      setBusy(false);
-    }
-  }
-
   function buildRequestPayload() {
     const payload = {
-      task: String(taskSelect.value || 'translate_text'),
-      model: String(modelSelect.value || '').trim(),
+      task: 'translate_text',
       priority: 'normal',
     };
     const requestId = String(requestIdInput.value || '').trim();
@@ -278,16 +205,12 @@ export function createImagePoolRequestsView() {
     const targetLang = String(targetInput.value || '').trim();
     if (targetLang) payload.target_lang_code = targetLang;
     const ocrRoute = String(ocrRouteSelect.value || '').trim();
-    if (payload.task === 'translate_text' && ocrRoute) payload.ocr_route = ocrRoute;
-    if (payload.task === 'translate_text') {
-      payload.ocr_unwarp = String(ocrUnwarpSelect.value || '') === 'true';
-    }
+    if (ocrRoute) payload.ocr_route = ocrRoute;
+    payload.ocr_unwarp = String(ocrUnwarpSelect.value || '') === 'true';
     const translatorModel = String(translatorInput.value || '').trim();
     if (translatorModel) payload.translator_model = translatorModel;
     const translatorMode = String(translatorModeSelect.value || '').trim();
     if (translatorMode) payload.translator_mode = translatorMode;
-    const instruction = String(instructionInput.value || '').trim();
-    if (instruction) payload.instruction = instruction;
     return payload;
   }
 
@@ -295,10 +218,6 @@ export function createImagePoolRequestsView() {
     const file = selectedFile();
     if (!file) {
       setStatus('Select an image first.', 'error');
-      return;
-    }
-    if (!String(modelSelect.value || '').trim()) {
-      setStatus('Select a loaded image model.', 'error');
       return;
     }
 
@@ -477,21 +396,10 @@ export function createImagePoolRequestsView() {
   });
   submitBtn.addEventListener('click', submitRequest);
   cancelBtn.addEventListener('click', cancelRequest);
-  refreshModelsBtn.addEventListener('click', loadModels);
-  taskSelect.addEventListener('change', () => {
-    const task = String(taskSelect.value || '');
-    if (task === 'edit_image' && !instructionInput.value.trim()) {
-      instructionInput.placeholder = 'remove the cars in the background';
-    }
-    setBusy(isBusy);
-  });
   ocrRouteSelect.addEventListener('change', () => {
     setBusy(isBusy);
   });
 
-  container.__onActivate = () => {
-    loadModels();
-  };
   container.__onDeactivate = () => {
     stopPolling();
   };
@@ -506,6 +414,6 @@ export function createImagePoolRequestsView() {
   clearOutputPreview();
   updatePreviewZoom();
   updateInputPreview();
-  loadModels();
+  setBusy(false);
   return container;
 }

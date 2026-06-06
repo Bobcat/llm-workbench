@@ -8,7 +8,6 @@ import { createReplayView } from './src/workflows/replay/index.js';
 import { createReplaySpeakView } from './src/workflows/replay-speak/index.js';
 import { createLlmPoolView } from './src/workflows/llm-pool/index.js';
 import { createTtsPoolView } from './src/workflows/tts-pool/index.js';
-import { createImagePoolView } from './src/workflows/image-pool/index.js';
 import { createImagePoolRequestsView } from './src/workflows/image-pool-requests/index.js';
 import { createTranslationPromptsView } from './src/workflows/translation-prompts/index.js';
 import { createPromptRunnerView } from './src/workflows/prompt-runner/index.js';
@@ -33,7 +32,6 @@ const PERSISTENT_WORKFLOW_IDS = new Set([
   'ad-hoc-prompt',
   'vlm-test',
   'tts-pool-models',
-  'image-pool-models',
   'image-pool-requests',
 ]);
 
@@ -113,14 +111,8 @@ const WORKFLOW_GROUPS = [
     ],
   },
   {
-    label: 'Image Pool',
+    label: 'Translation Services',
     items: [
-      {
-        id: 'image-pool-models',
-        route: 'image-pool-models',
-        name: 'Models',
-        icon: 'image',
-      },
       {
         id: 'image-pool-requests',
         route: 'image-pool-requests',
@@ -187,9 +179,6 @@ function createWorkflowView(workflowId) {
   }
   if (workflowId === 'tts-pool-models') {
     return createTtsPoolView();
-  }
-  if (workflowId === 'image-pool-models') {
-    return createImagePoolView();
   }
   if (workflowId === 'image-pool-requests') {
     return createImagePoolRequestsView();
