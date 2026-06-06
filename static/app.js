@@ -8,7 +8,7 @@ import { createReplayView } from './src/workflows/replay/index.js';
 import { createReplaySpeakView } from './src/workflows/replay-speak/index.js';
 import { createLlmPoolView } from './src/workflows/llm-pool/index.js';
 import { createTtsPoolView } from './src/workflows/tts-pool/index.js';
-import { createImagePoolRequestsView } from './src/workflows/image-pool-requests/index.js';
+import { createTranslationRequestsView } from './src/workflows/translation-requests/index.js';
 import { createTranslationPromptsView } from './src/workflows/translation-prompts/index.js';
 import { createPromptRunnerView } from './src/workflows/prompt-runner/index.js';
 import { createVlmTestView } from './src/workflows/vlm-test/index.js';
@@ -32,7 +32,7 @@ const PERSISTENT_WORKFLOW_IDS = new Set([
   'ad-hoc-prompt',
   'vlm-test',
   'tts-pool-models',
-  'image-pool-requests',
+  'translation-requests',
 ]);
 
 // State - start met open sidebar
@@ -114,8 +114,8 @@ const WORKFLOW_GROUPS = [
     label: 'Translation Services',
     items: [
       {
-        id: 'image-pool-requests',
-        route: 'image-pool-requests',
+        id: 'translation-requests',
+        route: 'translation-requests',
         name: 'Requests',
         icon: 'upload_file',
       },
@@ -180,8 +180,8 @@ function createWorkflowView(workflowId) {
   if (workflowId === 'tts-pool-models') {
     return createTtsPoolView();
   }
-  if (workflowId === 'image-pool-requests') {
-    return createImagePoolRequestsView();
+  if (workflowId === 'translation-requests') {
+    return createTranslationRequestsView();
   }
   if (workflowId === 'prompt-library') {
     return createTranslationPromptsView();

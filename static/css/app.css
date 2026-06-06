@@ -1939,7 +1939,7 @@
   overflow-wrap: anywhere;
 }
 
-.image-pool-requests-view .image-pool-requests-content {
+.translation-requests-view .translation-requests-content {
   display: grid;
   grid-template-columns: minmax(360px, 0.95fr) minmax(420px, 1.05fr);
   gap: 0;
@@ -1948,8 +1948,8 @@
   overflow: hidden;
 }
 
-.image-pool-requests-view .image-pool-requests-form-pane,
-.image-pool-requests-view .image-pool-requests-preview-pane {
+.translation-requests-view .translation-requests-form-pane,
+.translation-requests-view .translation-requests-preview-pane {
   height: 100%;
   min-height: 0;
   max-height: 100%;
@@ -1958,28 +1958,28 @@
   scrollbar-gutter: stable;
 }
 
-.image-pool-requests-view .image-pool-requests-preview-pane {
+.translation-requests-view .translation-requests-preview-pane {
   border-left: 1px solid rgba(148, 163, 184, 0.22);
   background: #ffffff;
 }
 
-.image-pool-requests-view .image-pool-requests-grid {
+.translation-requests-view .translation-requests-grid {
   padding-left: 0;
   margin-bottom: 0;
 }
 
-.image-pool-requests-view .image-pool-requests-stats {
+.translation-requests-view .translation-requests-stats {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
-.image-pool-requests-view #imagePoolRequestRaw {
+.translation-requests-view #translationRequestRaw {
   min-height: 220px;
   max-height: 45vh;
   overflow: auto;
   resize: vertical;
 }
 
-.image-pool-requests-view .image-pool-preview-zoom {
+.translation-requests-view .translation-preview-zoom {
   display: grid;
   grid-template-columns: auto minmax(120px, 1fr) 48px;
   align-items: center;
@@ -1991,17 +1991,17 @@
   line-height: 1.2;
 }
 
-.image-pool-requests-view .image-pool-preview-zoom input[type="range"] {
+.translation-requests-view .translation-preview-zoom input[type="range"] {
   width: 100%;
 }
 
-.image-pool-requests-view .image-pool-preview-zoom output {
+.translation-requests-view .translation-preview-zoom output {
   color: #111827;
   font-variant-numeric: tabular-nums;
   text-align: right;
 }
 
-.image-pool-requests-view .image-pool-preview-artifact {
+.translation-requests-view .translation-preview-artifact {
   display: grid;
   grid-template-columns: auto minmax(180px, 1fr);
   align-items: center;
@@ -2013,23 +2013,23 @@
   line-height: 1.2;
 }
 
-.image-pool-requests-view .image-pool-preview-artifact select {
+.translation-requests-view .translation-preview-artifact select {
   min-width: 0;
 }
 
-.image-pool-requests-view .image-pool-preview-block {
+.translation-requests-view .translation-preview-block {
   display: grid;
   gap: 8px;
 }
 
-.image-pool-requests-view .image-pool-preview-block > span {
+.translation-requests-view .translation-preview-block > span {
   color: #6b7a8c;
   font-size: 0.78rem;
   font-weight: 600;
   line-height: 1.2;
 }
 
-.image-pool-requests-view .image-pool-preview-frame {
+.translation-requests-view .translation-preview-frame {
   position: relative;
   display: grid;
   align-items: start;
@@ -2043,18 +2043,18 @@
   scrollbar-gutter: stable both-edges;
 }
 
-.image-pool-requests-view .image-pool-preview-frame img {
+.translation-requests-view .translation-preview-frame img {
   display: block;
   align-self: start;
   justify-self: start;
   width: auto;
-  max-width: var(--image-pool-preview-size, 70%);
+  max-width: var(--translation-preview-size, 70%);
   height: auto;
-  max-height: var(--image-pool-preview-size, 70%);
+  max-height: var(--translation-preview-size, 70%);
   object-fit: contain;
 }
 
-.image-pool-requests-view .image-pool-preview-empty {
+.translation-requests-view .translation-preview-empty {
   align-self: center;
   color: #8795a8;
   font-size: 0.86rem;
@@ -2065,33 +2065,33 @@
 }
 
 @media (max-width: 760px) {
-  .image-pool-requests-view .image-pool-requests-content {
+  .translation-requests-view .translation-requests-content {
     grid-template-columns: 1fr;
     height: 100%;
     overflow: auto;
   }
 
-  .image-pool-requests-view .image-pool-requests-form-pane,
-  .image-pool-requests-view .image-pool-requests-preview-pane {
+  .translation-requests-view .translation-requests-form-pane,
+  .translation-requests-view .translation-requests-preview-pane {
     height: auto;
     max-height: none;
     overflow: visible;
   }
 
-  .image-pool-requests-view .image-pool-requests-preview-pane {
+  .translation-requests-view .translation-requests-preview-pane {
     border-left: 0;
     border-top: 1px solid rgba(148, 163, 184, 0.22);
   }
 
-  .image-pool-requests-view .image-pool-requests-stats {
+  .translation-requests-view .translation-requests-stats {
     grid-template-columns: 1fr;
   }
 
-  .image-pool-requests-view .image-pool-preview-frame {
+  .translation-requests-view .translation-preview-frame {
     height: clamp(160px, 34vh, 260px);
   }
 
-  .image-pool-requests-view #imagePoolRequestRaw {
+  .translation-requests-view #translationRequestRaw {
     min-height: 260px;
     max-height: 55vh;
   }

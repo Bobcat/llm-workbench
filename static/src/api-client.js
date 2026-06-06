@@ -206,7 +206,7 @@ export const api = {
     });
   },
 
-  async getImagePoolStatus() {
+  async getTranslationStatus() {
     return fetchJson('/api/translation/status');
   },
 

@@ -12,40 +12,40 @@ const IMAGE_ARTIFACT_LABELS = {
   debug_overlay: 'Debug overlay',
 };
 
-export function createImagePoolRequestsView() {
+export function createTranslationRequestsView() {
   const container = document.createElement('div');
-  container.className = 'translation-prompts-view image-pool-requests-view';
+  container.className = 'translation-prompts-view translation-requests-view';
 
   container.innerHTML = `
     <div class="translation-prompts-shell">
       <div class="translation-prompts-main">
-        <div class="translation-prompts-content-area image-pool-requests-content">
-          <section class="translation-prompts-pane translation-prompts-pane-editor image-pool-requests-form-pane">
+        <div class="translation-prompts-content-area translation-requests-content">
+          <section class="translation-prompts-pane translation-prompts-pane-editor translation-requests-form-pane">
             <label class="translation-prompts-field">
               <span>Image</span>
-              <input id="imagePoolRequestFile" type="file" accept="image/png,image/jpeg,image/webp">
+              <input id="translationRequestFile" type="file" accept="image/png,image/jpeg,image/webp">
             </label>
-            <div class="translation-prompts-language-grid image-pool-requests-grid">
+            <div class="translation-prompts-language-grid translation-requests-grid">
               <label class="translation-prompts-field">
                 <span>Source language</span>
-                <input id="imagePoolRequestSource" value="en" placeholder="en" autocomplete="off">
+                <input id="translationRequestSource" value="en" placeholder="en" autocomplete="off">
               </label>
               <label class="translation-prompts-field">
                 <span>Target language</span>
-                <input id="imagePoolRequestTarget" value="nl" placeholder="nl" autocomplete="off">
+                <input id="translationRequestTarget" value="nl" placeholder="nl" autocomplete="off">
               </label>
             </div>
-            <div class="translation-prompts-language-grid image-pool-requests-grid">
+            <div class="translation-prompts-language-grid translation-requests-grid">
               <label class="translation-prompts-field">
                 <span>OCR route</span>
-                <select id="imagePoolRequestOcrRoute">
+                <select id="translationRequestOcrRoute">
                   <option value="scene">Scene OCR</option>
                   <option value="document">Document OCR</option>
                 </select>
               </label>
               <label class="translation-prompts-field">
                 <span>Document unwarp</span>
-                <select id="imagePoolRequestOcrUnwarp">
+                <select id="translationRequestOcrUnwarp">
                   <option value="false">off</option>
                   <option value="true">on</option>
                 </select>
@@ -53,11 +53,11 @@ export function createImagePoolRequestsView() {
             </div>
             <label class="translation-prompts-field">
               <span>Translator model</span>
-              <input id="imagePoolRequestTranslator" placeholder="leave empty for image-pool default">
+              <input id="translationRequestTranslator" placeholder="leave empty for translation default">
             </label>
             <label class="translation-prompts-field">
               <span>Translator mode</span>
-              <select id="imagePoolRequestTranslatorMode">
+              <select id="translationRequestTranslatorMode">
                 <option value="auto">auto</option>
                 <option value="translategemma">translategemma</option>
                 <option value="generic">generic</option>
@@ -65,64 +65,64 @@ export function createImagePoolRequestsView() {
             </label>
             <label class="translation-prompts-field">
               <span>Request id</span>
-              <input id="imagePoolRequestId" placeholder="leave empty for automatic id">
+              <input id="translationRequestId" placeholder="leave empty for automatic id">
             </label>
             <div class="translation-prompts-run-actions">
-              <button type="button" id="imagePoolRequestSubmit">Submit</button>
-              <button type="button" id="imagePoolRequestCancel" disabled>Cancel</button>
+              <button type="button" id="translationRequestSubmit">Submit</button>
+              <button type="button" id="translationRequestCancel" disabled>Cancel</button>
             </div>
-            <div class="translation-prompts-inline-status" id="imagePoolRequestStatus"></div>
+            <div class="translation-prompts-inline-status" id="translationRequestStatus"></div>
             <div class="translation-prompts-divider" aria-hidden="true"></div>
             <section class="translation-prompts-stats-block">
-              <div class="translation-prompts-stats-grid image-pool-requests-stats">
+              <div class="translation-prompts-stats-grid translation-requests-stats">
                 <div class="translation-prompts-stat">
                   <span>Request</span>
-                  <strong id="imagePoolRequestStatId">-</strong>
+                  <strong id="translationRequestStatId">-</strong>
                 </div>
                 <div class="translation-prompts-stat">
                   <span>State</span>
-                  <strong id="imagePoolRequestStatState">-</strong>
+                  <strong id="translationRequestStatState">-</strong>
                 </div>
                 <div class="translation-prompts-stat">
                   <span>Stage</span>
-                  <strong id="imagePoolRequestStatStage">-</strong>
+                  <strong id="translationRequestStatStage">-</strong>
                 </div>
                 <div class="translation-prompts-stat">
                   <span>Queue</span>
-                  <strong id="imagePoolRequestStatQueue">-</strong>
+                  <strong id="translationRequestStatQueue">-</strong>
                 </div>
               </div>
             </section>
             <label class="translation-prompts-field translation-prompts-field-response">
               <span>Raw response</span>
-              <textarea id="imagePoolRequestRaw" rows="10" readonly></textarea>
+              <textarea id="translationRequestRaw" rows="10" readonly></textarea>
             </label>
           </section>
-          <section class="translation-prompts-pane image-pool-requests-preview-pane">
+          <section class="translation-prompts-pane translation-requests-preview-pane">
             <div class="translation-prompts-pane-title">Preview</div>
-            <label class="image-pool-preview-zoom">
+            <label class="translation-preview-zoom">
               <span>Preview size</span>
-              <input id="imagePoolPreviewZoom" type="range" min="25" max="180" step="5" value="70">
-              <output id="imagePoolPreviewZoomValue">70%</output>
+              <input id="translationPreviewZoom" type="range" min="25" max="180" step="5" value="70">
+              <output id="translationPreviewZoomValue">70%</output>
             </label>
-            <label class="image-pool-preview-artifact">
+            <label class="translation-preview-artifact">
               <span>Artifact</span>
-              <select id="imagePoolPreviewArtifact" disabled>
+              <select id="translationPreviewArtifact" disabled>
                 <option value="">No artifact</option>
               </select>
             </label>
-            <div class="image-pool-preview-block">
+            <div class="translation-preview-block">
               <span>Input</span>
-              <div class="image-pool-preview-frame">
-                <img id="imagePoolInputPreview" alt="Selected input preview" hidden>
-                <div id="imagePoolInputEmpty" class="image-pool-preview-empty">No image selected</div>
+              <div class="translation-preview-frame">
+                <img id="translationInputPreview" alt="Selected input preview" hidden>
+                <div id="translationInputEmpty" class="translation-preview-empty">No image selected</div>
               </div>
             </div>
-            <div class="image-pool-preview-block">
-              <span id="imagePoolOutputLabel">Artifact</span>
-              <div class="image-pool-preview-frame">
-                <img id="imagePoolOutputPreview" alt="Image pool output preview" hidden>
-                <div id="imagePoolOutputEmpty" class="image-pool-preview-empty">No output yet</div>
+            <div class="translation-preview-block">
+              <span id="translationOutputLabel">Artifact</span>
+              <div class="translation-preview-frame">
+                <img id="translationOutputPreview" alt="Image pool output preview" hidden>
+                <div id="translationOutputEmpty" class="translation-preview-empty">No output yet</div>
               </div>
             </div>
           </section>
@@ -131,30 +131,30 @@ export function createImagePoolRequestsView() {
     </div>
   `;
 
-  const fileInput = container.querySelector('#imagePoolRequestFile');
-  const sourceInput = container.querySelector('#imagePoolRequestSource');
-  const targetInput = container.querySelector('#imagePoolRequestTarget');
-  const ocrRouteSelect = container.querySelector('#imagePoolRequestOcrRoute');
-  const ocrUnwarpSelect = container.querySelector('#imagePoolRequestOcrUnwarp');
-  const translatorInput = container.querySelector('#imagePoolRequestTranslator');
-  const translatorModeSelect = container.querySelector('#imagePoolRequestTranslatorMode');
-  const requestIdInput = container.querySelector('#imagePoolRequestId');
-  const submitBtn = container.querySelector('#imagePoolRequestSubmit');
-  const cancelBtn = container.querySelector('#imagePoolRequestCancel');
-  const statusEl = container.querySelector('#imagePoolRequestStatus');
-  const statIdEl = container.querySelector('#imagePoolRequestStatId');
-  const statStateEl = container.querySelector('#imagePoolRequestStatState');
-  const statStageEl = container.querySelector('#imagePoolRequestStatStage');
-  const statQueueEl = container.querySelector('#imagePoolRequestStatQueue');
-  const rawEl = container.querySelector('#imagePoolRequestRaw');
-  const inputPreview = container.querySelector('#imagePoolInputPreview');
-  const inputEmpty = container.querySelector('#imagePoolInputEmpty');
-  const outputPreview = container.querySelector('#imagePoolOutputPreview');
-  const outputEmpty = container.querySelector('#imagePoolOutputEmpty');
-  const outputLabel = container.querySelector('#imagePoolOutputLabel');
-  const previewZoomInput = container.querySelector('#imagePoolPreviewZoom');
-  const previewZoomValue = container.querySelector('#imagePoolPreviewZoomValue');
-  const previewArtifactSelect = container.querySelector('#imagePoolPreviewArtifact');
+  const fileInput = container.querySelector('#translationRequestFile');
+  const sourceInput = container.querySelector('#translationRequestSource');
+  const targetInput = container.querySelector('#translationRequestTarget');
+  const ocrRouteSelect = container.querySelector('#translationRequestOcrRoute');
+  const ocrUnwarpSelect = container.querySelector('#translationRequestOcrUnwarp');
+  const translatorInput = container.querySelector('#translationRequestTranslator');
+  const translatorModeSelect = container.querySelector('#translationRequestTranslatorMode');
+  const requestIdInput = container.querySelector('#translationRequestId');
+  const submitBtn = container.querySelector('#translationRequestSubmit');
+  const cancelBtn = container.querySelector('#translationRequestCancel');
+  const statusEl = container.querySelector('#translationRequestStatus');
+  const statIdEl = container.querySelector('#translationRequestStatId');
+  const statStateEl = container.querySelector('#translationRequestStatState');
+  const statStageEl = container.querySelector('#translationRequestStatStage');
+  const statQueueEl = container.querySelector('#translationRequestStatQueue');
+  const rawEl = container.querySelector('#translationRequestRaw');
+  const inputPreview = container.querySelector('#translationInputPreview');
+  const inputEmpty = container.querySelector('#translationInputEmpty');
+  const outputPreview = container.querySelector('#translationOutputPreview');
+  const outputEmpty = container.querySelector('#translationOutputEmpty');
+  const outputLabel = container.querySelector('#translationOutputLabel');
+  const previewZoomInput = container.querySelector('#translationPreviewZoom');
+  const previewZoomValue = container.querySelector('#translationPreviewZoomValue');
+  const previewArtifactSelect = container.querySelector('#translationPreviewArtifact');
 
   let isBusy = false;
   let currentRequestId = '';
@@ -335,7 +335,7 @@ export function createImagePoolRequestsView() {
 
   function updatePreviewZoom() {
     const value = Math.max(25, Math.min(180, Number(previewZoomInput.value) || 70));
-    container.style.setProperty('--image-pool-preview-size', `${value}%`);
+    container.style.setProperty('--translation-preview-size', `${value}%`);
     previewZoomValue.textContent = `${value}%`;
   }
 
