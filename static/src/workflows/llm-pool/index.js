@@ -5,6 +5,8 @@ const REFRESH_INTERVAL_MS = 3000;
 const INTERACTION_GUARD_MS = 1200;
 const LLM_POOL_ADDRESS_LABEL = 'llm-pool';
 const LOAD_SETTING_SLIDER_MAX = 65536;
+const VLLM_KV_CACHE_STEP_MIB = 256;
+const VLLM_KV_CACHE_MAX_MIB = 64 * 1024;
 
 const FILTERS = [
   { id: 'all', label: 'All' },
@@ -300,7 +302,7 @@ export function createLlmPoolView() {
       .closest('.llm-pool-load-setting')
       ?.querySelector('[data-load-setting-value]');
     if (valueEl) {
-      valueEl.textContent = String(Math.trunc(value));
+      valueEl.textContent = formatSliderSettingValue(settingKey, Math.trunc(value));
     }
   });
 
@@ -854,15 +856,17 @@ function buildLoadSettingsMarkup(model, draft, runtimeState) {
 
   const vllmKvBytesConstraint = getIntegerConstraint(model, 'vllm_kv_cache_memory_bytes');
   if (vllmKvBytesConstraint) {
-    const minimumGib = bytesToGibStep(vllmKvBytesConstraint.minimum);
+    const minimumMib = bytesToKvCacheMibStep(vllmKvBytesConstraint.minimum);
+    const kvCacheMib = getDraftOrEffectiveKvCacheMib(model, draft, minimumMib);
     wideControls.push(buildSliderSettingMarkup({
       modelName: model.name,
-      key: 'vllm_kv_cache_gib',
-      label: 'KV cache (GiB)',
-      value: getDraftOrEffectiveKvCacheGib(model, draft, minimumGib),
-      minimum: minimumGib,
-      step: 1,
-      maximum: 64,
+      key: 'vllm_kv_cache_mib',
+      label: 'KV cache (MiB)',
+      value: kvCacheMib,
+      valueLabel: formatSliderSettingValue('vllm_kv_cache_mib', kvCacheMib),
+      minimum: minimumMib,
+      step: VLLM_KV_CACHE_STEP_MIB,
+      maximum: VLLM_KV_CACHE_MAX_MIB,
       disabled: !canConfigure,
     }));
   }
@@ -916,8 +920,9 @@ function buildLoadSettingsMarkup(model, draft, runtimeState) {
   `;
 }
 
-function buildSliderSettingMarkup({modelName, key, label, value, minimum, step, disabled, maximum}) {
+function buildSliderSettingMarkup({modelName, key, label, value, valueLabel, minimum, step, disabled, maximum}) {
   const sliderMax = toPositiveInt(maximum) ?? LOAD_SETTING_SLIDER_MAX;
+  const displayValue = valueLabel ?? String(value);
   return `
     <div class="llm-pool-load-setting llm-pool-load-setting-wide">
       <span>${escapeHtml(label)}</span>
@@ -932,7 +937,7 @@ function buildSliderSettingMarkup({modelName, key, label, value, minimum, step, 
           data-model="${escapeAttr(modelName)}"
           ${disabled ? 'disabled' : ''}
         />
-        <output class="llm-pool-load-slider-value" data-load-setting-value>${escapeHtml(String(value))}</output>
+        <output class="llm-pool-load-slider-value" data-load-setting-value>${escapeHtml(displayValue)}</output>
       </div>
     </div>
   `;
@@ -1055,20 +1060,28 @@ function getEffectiveLoadValue(model, key) {
   return model?.definition?.[key];
 }
 
-const GIB = 1024 * 1024 * 1024;
+const MIB = 1024 * 1024;
 
-function bytesToGibStep(bytes) {
+function bytesToKvCacheMibStep(bytes) {
   const value = toPositiveInt(bytes);
-  if (value == null) return 1;
-  return Math.max(1, Math.round(value / GIB));
+  if (value == null) return VLLM_KV_CACHE_STEP_MIB;
+  const mib = Math.round(value / MIB / VLLM_KV_CACHE_STEP_MIB) * VLLM_KV_CACHE_STEP_MIB;
+  return Math.max(VLLM_KV_CACHE_STEP_MIB, mib);
 }
 
-function getDraftOrEffectiveKvCacheGib(model, draft, fallbackGib) {
-  const draftValue = toPositiveInt(draft?.vllm_kv_cache_gib);
+function getDraftOrEffectiveKvCacheMib(model, draft, fallbackMib) {
+  const draftValue = toPositiveInt(draft?.vllm_kv_cache_mib);
   if (draftValue != null) return draftValue;
   const effectiveBytes = toPositiveInt(getEffectiveLoadValue(model, 'vllm_kv_cache_memory_bytes'));
-  if (effectiveBytes != null) return Math.max(1, Math.round(effectiveBytes / GIB));
-  return fallbackGib;
+  if (effectiveBytes != null) return bytesToKvCacheMibStep(effectiveBytes);
+  return fallbackMib;
+}
+
+function formatSliderSettingValue(key, value) {
+  if (key === 'vllm_kv_cache_mib') {
+    return `${value} MiB`;
+  }
+  return String(value);
 }
 
 function getMmProcessorMaxPixels(model) {
@@ -1298,9 +1311,9 @@ function buildLoadPayload(model, draft) {
     payload.vllm_kv_cache_dtype = draft.vllm_kv_cache_dtype;
   }
 
-  const vllmKvGib = toPositiveInt(draft.vllm_kv_cache_gib);
-  if (vllmKvGib != null && hasLoadConstraint(model, 'vllm_kv_cache_memory_bytes')) {
-    const bytes = vllmKvGib * GIB;
+  const vllmKvMib = toPositiveInt(draft.vllm_kv_cache_mib);
+  if (vllmKvMib != null && hasLoadConstraint(model, 'vllm_kv_cache_memory_bytes')) {
+    const bytes = vllmKvMib * MIB;
     if (bytes !== toPositiveInt(getEffectiveLoadValue(model, 'vllm_kv_cache_memory_bytes'))) {
       payload.vllm_kv_cache_memory_bytes = bytes;
     }

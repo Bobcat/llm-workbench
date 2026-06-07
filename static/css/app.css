@@ -1267,7 +1267,7 @@
 }
 
 .llm-pool-view .llm-pool-load-slider-value {
-  min-width: 56px;
+  min-width: 76px;
   color: #344255;
   font-size: 0.82rem;
   font-variant-numeric: tabular-nums;
