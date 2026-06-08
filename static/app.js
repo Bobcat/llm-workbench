@@ -88,13 +88,13 @@ const WORKFLOW_GROUPS = [
       {
         id: 'ad-hoc-prompt',
         route: 'ad-hoc-prompt',
-        name: 'Ad-hoc Prompt',
+        name: 'Text prompt',
         icon: 'chat',
       },
       {
         id: 'vlm-test',
         route: 'vlm-test',
-        name: 'VLM Test',
+        name: 'Vision prompt',
         icon: 'image_search',
       },
     ],
@@ -116,7 +116,7 @@ const WORKFLOW_GROUPS = [
       {
         id: 'translation-requests',
         route: 'translation-requests',
-        name: 'Requests',
+        name: 'Image translation',
         icon: 'upload_file',
       },
     ],
