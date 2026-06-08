@@ -30,6 +30,10 @@ class VlmRunRequest(BaseModel):
     images: list[VlmImageInput] = Field(default_factory=list)
     allow_remote: bool = False
     max_tokens: int = Field(default=_DEFAULT_OUTPUT_TOKENS, ge=1, le=_MAX_OUTPUT_TOKENS)
+    # Optional decode overrides; when omitted the previous defaults apply.
+    temperature: float | None = Field(default=None, ge=0.0, le=2.0)
+    top_p: float | None = Field(default=None, gt=0.0, le=1.0)
+    top_k: int | None = Field(default=None, ge=1, le=200)
 
 
 class VlmRunResponse(BaseModel):
@@ -84,6 +88,9 @@ def _vlm_runner_payload(
     content_input: list[dict[str, Any]],
     allow_remote: bool,
     max_tokens: int = _DEFAULT_OUTPUT_TOKENS,
+    temperature: float | None = None,
+    top_p: float | None = None,
+    top_k: int | None = None,
 ) -> dict[str, Any]:
     effective_system_prompt = system_prompt if str(system_prompt) != "" else " "
     clamped_max_tokens = max(1, min(_MAX_OUTPUT_TOKENS, int(max_tokens)))
@@ -91,9 +98,11 @@ def _vlm_runner_payload(
     # local backends are fine with a lower, more deterministic value.
     decoding: dict[str, Any] = {
         "max_tokens": clamped_max_tokens,
-        "temperature": 0.6 if allow_remote else 0.2,
-        "top_p": 0.95,
+        "temperature": temperature if temperature is not None else (0.6 if allow_remote else 0.2),
+        "top_p": top_p if top_p is not None else 0.95,
     }
+    if top_k is not None:
+        decoding["top_k"] = top_k
     return {
         "model": model,
         "input": content_input,
@@ -123,6 +132,9 @@ def run_vlm(request: VlmRunRequest) -> VlmRunResponse:
                 content_input=content_input,
                 allow_remote=request.allow_remote,
                 max_tokens=request.max_tokens,
+                temperature=request.temperature,
+                top_p=request.top_p,
+                top_k=request.top_k,
             )
         )
     except RuntimeError as exc:

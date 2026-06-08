@@ -26,6 +26,20 @@ export function createVlmTestView() {
               <span>Max output tokens</span>
               <input id="vlmMaxTokens" type="number" min="1" max="4096" step="1" value="2048">
             </label>
+            <div class="translation-prompts-language-grid vlm-decode-grid">
+              <label class="translation-prompts-field">
+                <span>Temperature</span>
+                <input id="vlmTemperature" type="number" min="0" max="2" step="0.05" placeholder="0.2 (0=greedy)">
+              </label>
+              <label class="translation-prompts-field">
+                <span>Top-p</span>
+                <input id="vlmTopP" type="number" min="0.01" max="1" step="0.01" placeholder="0.95">
+              </label>
+              <label class="translation-prompts-field">
+                <span>Top-k</span>
+                <input id="vlmTopK" type="number" min="1" max="200" step="1" placeholder="1=greedy">
+              </label>
+            </div>
             <label class="translation-prompts-field">
               <span>System prompt</span>
               <textarea id="vlmSystemPrompt" rows="3" placeholder="<Optional system prompt>"></textarea>
@@ -75,6 +89,9 @@ export function createVlmTestView() {
   const modelSelect = container.querySelector('#vlmModelSelect');
   const allowRemoteInput = container.querySelector('#vlmAllowRemote');
   const maxTokensInput = container.querySelector('#vlmMaxTokens');
+  const temperatureInput = container.querySelector('#vlmTemperature');
+  const topPInput = container.querySelector('#vlmTopP');
+  const topKInput = container.querySelector('#vlmTopK');
   const systemPromptInput = container.querySelector('#vlmSystemPrompt');
   const userPromptInput = container.querySelector('#vlmUserPrompt');
   const runBtn = container.querySelector('#vlmRunBtn');
@@ -134,6 +151,9 @@ export function createVlmTestView() {
     modelSelect.disabled = nextBusy;
     allowRemoteInput.disabled = nextBusy;
     maxTokensInput.disabled = nextBusy;
+    temperatureInput.disabled = nextBusy;
+    topPInput.disabled = nextBusy;
+    topKInput.disabled = nextBusy;
     systemPromptInput.disabled = nextBusy;
     userPromptInput.disabled = nextBusy;
     const noModels = visionModels().length === 0;
@@ -260,12 +280,17 @@ export function createVlmTestView() {
     setStatus('Running prompt...');
     try {
       const maxTokens = Math.max(1, Math.min(4096, Number.parseInt(maxTokensInput.value, 10) || 2048));
+      const optionalFloat = (el) => (el.value.trim() === '' ? undefined : Number(el.value));
+      const optionalInt = (el) => (el.value.trim() === '' ? undefined : Number.parseInt(el.value, 10));
       const result = await api.runVlmPrompt({
         model,
         system_prompt: String(systemPromptInput.value || ''),
         user_prompt: String(userPromptInput.value || ''),
         allow_remote: allowRemote,
         max_tokens: maxTokens,
+        temperature: optionalFloat(temperatureInput),
+        top_p: optionalFloat(topPInput),
+        top_k: optionalInt(topKInput),
         images: selectedImages.map((image) => ({
           name: image.name,
           data_url: image.dataUrl,

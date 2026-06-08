@@ -1887,6 +1887,10 @@
   margin-bottom: 10px;
 }
 
+.translation-prompts-view .vlm-decode-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .translation-prompts-view .translation-prompts-field {
   display: grid;
   gap: 6px;
@@ -1969,7 +1973,7 @@
 }
 
 .translation-requests-view .translation-requests-stats {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .translation-requests-view #translationRequestRaw {
@@ -1977,6 +1981,86 @@
   max-height: 45vh;
   overflow: auto;
   resize: vertical;
+}
+
+/* Choose File: match the workbench button look */
+.translation-requests-view input[type="file"]::file-selector-button {
+  margin-right: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  border-radius: 8px;
+  padding: 6px 12px;
+  background: #fff;
+  color: #162638;
+  font-size: 0.86rem;
+  font-weight: 500;
+  line-height: 1.2;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.translation-requests-view input[type="file"]::file-selector-button:hover {
+  background: #f6f8fb;
+}
+
+/* Raw response sits right under its label (no stretched gap) */
+.translation-requests-view .translation-prompts-field-response {
+  flex: 0 0 auto;
+}
+
+/* Request id on its own full-width line above State/Stage/Queue */
+.translation-requests-view .translation-requests-id-stat #translationRequestStatId {
+  font-size: 0.92rem;
+}
+
+/* Nested stage timings */
+.translation-requests-view .translation-requests-timings-title {
+  color: #6b7a8c;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.translation-requests-view .translation-requests-timings {
+  display: grid;
+  gap: 4px;
+  font-size: 0.84rem;
+}
+
+.translation-requests-view .trt-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.translation-requests-view .trt-row > span {
+  color: #6b7a8c;
+}
+
+.translation-requests-view .trt-row > strong {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-weight: 600;
+  color: #162638;
+}
+
+.translation-requests-view .trt-row.trt-total > span {
+  color: #162638;
+  font-weight: 600;
+}
+
+.translation-requests-view .trt-row.trt-total > strong {
+  font-weight: 700;
+}
+
+.translation-requests-view .trt-l1 {
+  padding-left: 16px;
+}
+
+.translation-requests-view .trt-l2 {
+  padding-left: 32px;
+}
+
+.translation-requests-view .trt-placeholder > span {
+  color: #97a4b6;
+  font-style: italic;
 }
 
 .translation-requests-view .translation-preview-zoom {
@@ -2054,6 +2138,10 @@
   object-fit: contain;
 }
 
+.translation-requests-view .translation-preview-frame img[hidden] {
+  display: none;
+}
+
 .translation-requests-view .translation-preview-empty {
   align-self: center;
   color: #8795a8;
@@ -2062,6 +2150,41 @@
   line-height: 1.2;
   text-align: center;
   padding: 16px;
+}
+
+.translation-requests-view .translation-requests-advanced {
+  margin-bottom: 10px;
+}
+
+.translation-requests-view .translation-requests-advanced > summary {
+  cursor: pointer;
+  color: #5b6b80;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  padding: 4px 0;
+  user-select: none;
+}
+
+.translation-requests-view .translation-requests-advanced[open] > summary {
+  margin-bottom: 10px;
+}
+
+.translation-requests-view .translation-requests-advanced > .translation-prompts-field + .translation-prompts-field {
+  margin-top: 10px;
+}
+
+.translation-requests-view .translation-requests-stats .translation-prompts-stat {
+  min-width: 0;
+}
+
+.translation-requests-view #translationRequestStatId {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 @media (max-width: 760px) {

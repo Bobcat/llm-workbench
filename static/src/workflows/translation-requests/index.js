@@ -3,9 +3,9 @@ import { escapeAttr, escapeHtml, formatApiError } from '../../shared/ui-helpers.
 
 const POLL_INTERVAL_MS = 800;
 const TERMINAL_STATES = new Set(['completed', 'failed', 'cancelled']);
-const IMAGE_ARTIFACT_ORDER = ['document_unwarped_debug', 'projected_overlay_debug', 'output', 'rectified_debug', 'debug_overlay'];
+const IMAGE_ARTIFACT_ORDER = ['grouping_overlay_debug', 'projected_overlay_debug', 'output', 'rectified_debug', 'debug_overlay'];
 const IMAGE_ARTIFACT_LABELS = {
-  document_unwarped_debug: 'Document unwarped',
+  grouping_overlay_debug: 'Grouping',
   projected_overlay_debug: 'Text planes',
   output: 'Output',
   rectified_debug: 'Rectified debug',
@@ -35,50 +35,17 @@ export function createTranslationRequestsView() {
                 <input id="translationRequestTarget" value="nl" placeholder="nl" autocomplete="off">
               </label>
             </div>
-            <div class="translation-prompts-language-grid translation-requests-grid">
-              <label class="translation-prompts-field">
-                <span>OCR route</span>
-                <select id="translationRequestOcrRoute">
-                  <option value="scene">Scene OCR</option>
-                  <option value="document">Document OCR</option>
-                </select>
-              </label>
-              <label class="translation-prompts-field">
-                <span>Document unwarp</span>
-                <select id="translationRequestOcrUnwarp">
-                  <option value="false">off</option>
-                  <option value="true">on</option>
-                </select>
-              </label>
-            </div>
-            <label class="translation-prompts-field">
-              <span>Translator model</span>
-              <input id="translationRequestTranslator" placeholder="leave empty for translation default">
-            </label>
-            <label class="translation-prompts-field">
-              <span>Translator mode</span>
-              <select id="translationRequestTranslatorMode">
-                <option value="auto">auto</option>
-                <option value="translategemma">translategemma</option>
-                <option value="generic">generic</option>
-              </select>
-            </label>
-            <label class="translation-prompts-field">
-              <span>Request id</span>
-              <input id="translationRequestId" placeholder="leave empty for automatic id">
-            </label>
             <div class="translation-prompts-run-actions">
               <button type="button" id="translationRequestSubmit">Submit</button>
               <button type="button" id="translationRequestCancel" disabled>Cancel</button>
             </div>
             <div class="translation-prompts-inline-status" id="translationRequestStatus"></div>
-            <div class="translation-prompts-divider" aria-hidden="true"></div>
             <section class="translation-prompts-stats-block">
+              <div class="translation-prompts-stat translation-requests-id-stat">
+                <span>Request</span>
+                <strong id="translationRequestStatId">-</strong>
+              </div>
               <div class="translation-prompts-stats-grid translation-requests-stats">
-                <div class="translation-prompts-stat">
-                  <span>Request</span>
-                  <strong id="translationRequestStatId">-</strong>
-                </div>
                 <div class="translation-prompts-stat">
                   <span>State</span>
                   <strong id="translationRequestStatState">-</strong>
@@ -93,10 +60,37 @@ export function createTranslationRequestsView() {
                 </div>
               </div>
             </section>
+            <section class="translation-prompts-stats-block">
+              <div class="translation-requests-timings-title">Timings</div>
+              <div class="translation-requests-timings" id="translationRequestTimings"></div>
+            </section>
             <label class="translation-prompts-field translation-prompts-field-response">
               <span>Raw response</span>
               <textarea id="translationRequestRaw" rows="10" readonly></textarea>
             </label>
+            <details class="translation-requests-advanced">
+              <summary>Advanced / overrides</summary>
+              <label class="translation-prompts-field">
+                <span>Translator model</span>
+                <input id="translationRequestTranslator" placeholder="leave empty for translation default">
+              </label>
+              <label class="translation-prompts-field">
+                <span>Translator mode</span>
+                <select id="translationRequestTranslatorMode">
+                  <option value="">(default)</option>
+                  <option value="translategemma">translategemma</option>
+                  <option value="generic">generic</option>
+                </select>
+              </label>
+              <label class="translation-prompts-field">
+                <span>Grouping model</span>
+                <input id="translationRequestGroupingModel" placeholder="leave empty for grouping default">
+              </label>
+              <label class="translation-prompts-field">
+                <span>Request id</span>
+                <input id="translationRequestId" placeholder="leave empty for automatic id">
+              </label>
+            </details>
           </section>
           <section class="translation-prompts-pane translation-requests-preview-pane">
             <div class="translation-prompts-pane-title">Preview</div>
@@ -134,10 +128,9 @@ export function createTranslationRequestsView() {
   const fileInput = container.querySelector('#translationRequestFile');
   const sourceInput = container.querySelector('#translationRequestSource');
   const targetInput = container.querySelector('#translationRequestTarget');
-  const ocrRouteSelect = container.querySelector('#translationRequestOcrRoute');
-  const ocrUnwarpSelect = container.querySelector('#translationRequestOcrUnwarp');
   const translatorInput = container.querySelector('#translationRequestTranslator');
   const translatorModeSelect = container.querySelector('#translationRequestTranslatorMode');
+  const groupingModelInput = container.querySelector('#translationRequestGroupingModel');
   const requestIdInput = container.querySelector('#translationRequestId');
   const submitBtn = container.querySelector('#translationRequestSubmit');
   const cancelBtn = container.querySelector('#translationRequestCancel');
@@ -146,6 +139,7 @@ export function createTranslationRequestsView() {
   const statStateEl = container.querySelector('#translationRequestStatState');
   const statStageEl = container.querySelector('#translationRequestStatStage');
   const statQueueEl = container.querySelector('#translationRequestStatQueue');
+  const timingsEl = container.querySelector('#translationRequestTimings');
   const rawEl = container.querySelector('#translationRequestRaw');
   const inputPreview = container.querySelector('#translationInputPreview');
   const inputEmpty = container.querySelector('#translationInputEmpty');
@@ -173,10 +167,9 @@ export function createTranslationRequestsView() {
     fileInput.disabled = isBusy;
     sourceInput.disabled = isBusy;
     targetInput.disabled = isBusy;
-    ocrRouteSelect.disabled = isBusy;
-    ocrUnwarpSelect.disabled = isBusy;
     translatorInput.disabled = isBusy;
     translatorModeSelect.disabled = isBusy;
+    groupingModelInput.disabled = isBusy;
     requestIdInput.disabled = isBusy;
     cancelBtn.disabled = !currentRequestId || isTerminalState(currentState());
   }
@@ -204,13 +197,12 @@ export function createTranslationRequestsView() {
     if (sourceLang) payload.source_lang_code = sourceLang;
     const targetLang = String(targetInput.value || '').trim();
     if (targetLang) payload.target_lang_code = targetLang;
-    const ocrRoute = String(ocrRouteSelect.value || '').trim();
-    if (ocrRoute) payload.ocr_route = ocrRoute;
-    payload.ocr_unwarp = String(ocrUnwarpSelect.value || '') === 'true';
     const translatorModel = String(translatorInput.value || '').trim();
     if (translatorModel) payload.translator_model = translatorModel;
     const translatorMode = String(translatorModeSelect.value || '').trim();
     if (translatorMode) payload.translator_mode = translatorMode;
+    const groupingModel = String(groupingModelInput.value || '').trim();
+    if (groupingModel) payload.grouping_model = groupingModel;
     return payload;
   }
 
@@ -296,11 +288,35 @@ export function createTranslationRequestsView() {
     const requestId = String(result?.request_id || '');
     if (requestId) currentRequestId = requestId;
     statIdEl.textContent = requestId || '-';
+    statIdEl.title = requestId || '';
     statStateEl.textContent = String(result?.state || '-');
     statStageEl.textContent = String(result?.stage || '-');
     statQueueEl.textContent = result?.queue_position == null ? '-' : String(result.queue_position);
     rawEl.value = JSON.stringify(result || {}, null, 2);
+    renderTimings(result);
     setBusy(isBusy);
+  }
+
+  function renderTimings(result) {
+    const timings = result?.timings || {};
+    const metrics = result?.response?.metrics || {};
+    const secMs = (s) => (typeof s === 'number' ? `${Math.round(s * 1000)} ms` : '—');
+    const ms = (v) => (typeof v === 'number' ? `${Math.round(v)} ms` : '—');
+    const hasData = ['pool_queue_wait_s', 'pool_run_wall_s'].some((k) => typeof timings[k] === 'number')
+      || typeof metrics.translate_image_total_wall_ms === 'number';
+    if (!hasData) {
+      timingsEl.innerHTML = '<div class="trt-row trt-placeholder"><span>Run a request to see stage timings.</span></div>';
+      return;
+    }
+    const row = (label, value, cls = '') => `<div class="trt-row ${cls}"><span>${label}</span><strong>${value}</strong></div>`;
+    timingsEl.innerHTML = [
+      row('Queue wait', secMs(timings.pool_queue_wait_s)),
+      row('Pool run', secMs(timings.pool_run_wall_s), 'trt-total'),
+      row('Pipeline total', ms(metrics.translate_image_total_wall_ms), 'trt-l1'),
+      row('OCR', ms(metrics.ocr_wall_ms), 'trt-l2'),
+      row('Grouping', ms(metrics.grouping_wall_ms), 'trt-l2'),
+      row('Translation', ms(metrics.translation_wall_ms), 'trt-l2'),
+    ].join('');
   }
 
   function updateInputPreview() {
@@ -396,9 +412,6 @@ export function createTranslationRequestsView() {
   });
   submitBtn.addEventListener('click', submitRequest);
   cancelBtn.addEventListener('click', cancelRequest);
-  ocrRouteSelect.addEventListener('change', () => {
-    setBusy(isBusy);
-  });
 
   container.__onDeactivate = () => {
     stopPolling();
@@ -414,6 +427,7 @@ export function createTranslationRequestsView() {
   clearOutputPreview();
   updatePreviewZoom();
   updateInputPreview();
+  renderTimings(null);
   setBusy(false);
   return container;
 }
