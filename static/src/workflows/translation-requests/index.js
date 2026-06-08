@@ -3,8 +3,9 @@ import { escapeAttr, escapeHtml, formatApiError } from '../../shared/ui-helpers.
 
 const POLL_INTERVAL_MS = 800;
 const TERMINAL_STATES = new Set(['completed', 'failed', 'cancelled']);
-const IMAGE_ARTIFACT_ORDER = ['grouping_overlay_debug', 'projected_overlay_debug', 'output', 'rectified_debug', 'debug_overlay'];
+const IMAGE_ARTIFACT_ORDER = ['rendered', 'grouping_overlay_debug', 'projected_overlay_debug', 'output', 'rectified_debug', 'debug_overlay'];
 const IMAGE_ARTIFACT_LABELS = {
+  rendered: 'Translated',
   grouping_overlay_debug: 'Grouping',
   projected_overlay_debug: 'Text planes',
   output: 'Output',
