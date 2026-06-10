@@ -66,28 +66,31 @@ export function createChatView() {
               <span>Allow remote calls</span>
             </label>
           </div>
-          <label class="translation-prompts-field">
-            <span>System prompt</span>
-            <textarea id="chatSystemPrompt" rows="2" placeholder="<Optional system prompt>"></textarea>
-          </label>
-          <div class="translation-prompts-language-grid vlm-decode-grid">
+          <details class="translation-prompts-system-details">
+            <summary>System prompt &amp; decoding</summary>
             <label class="translation-prompts-field">
-              <span>Max tokens</span>
-              <input id="chatMaxTokens" type="number" min="1" max="4096" step="1" value="2048">
+              <span>System prompt</span>
+              <textarea id="chatSystemPrompt" rows="2" placeholder="<Optional system prompt>"></textarea>
             </label>
-            <label class="translation-prompts-field">
-              <span>Temperature</span>
-              <input id="chatTemperature" type="number" min="0" max="2" step="0.05" placeholder="0.2">
-            </label>
-            <label class="translation-prompts-field">
-              <span>Top-p</span>
-              <input id="chatTopP" type="number" min="0.01" max="1" step="0.01" placeholder="0.95">
-            </label>
-            <label class="translation-prompts-field">
-              <span>Top-k</span>
-              <input id="chatTopK" type="number" min="1" max="200" step="1" placeholder="-">
-            </label>
-          </div>
+            <div class="translation-prompts-language-grid vlm-decode-grid">
+              <label class="translation-prompts-field">
+                <span>Max tokens</span>
+                <input id="chatMaxTokens" type="number" min="1" max="4096" step="1" value="2048">
+              </label>
+              <label class="translation-prompts-field">
+                <span>Temperature</span>
+                <input id="chatTemperature" type="number" min="0" max="2" step="0.05" placeholder="0.2">
+              </label>
+              <label class="translation-prompts-field">
+                <span>Top-p</span>
+                <input id="chatTopP" type="number" min="0.01" max="1" step="0.01" placeholder="0.95">
+              </label>
+              <label class="translation-prompts-field">
+                <span>Top-k</span>
+                <input id="chatTopK" type="number" min="1" max="200" step="1" placeholder="-">
+              </label>
+            </div>
+          </details>
         </section>
 
         <div class="chat-warning" id="chatWarning" role="status" hidden></div>
@@ -98,7 +101,7 @@ export function createChatView() {
         <div class="translation-prompts-inline-status chat-status" id="chatStatus">Loading models...</div>
 
         <div class="chat-composer">
-          <textarea id="chatInput" rows="3" placeholder="Type a message... (Ctrl+Enter to send)"></textarea>
+          <textarea id="chatInput" rows="3" placeholder="Type a message... (Enter to send, Shift+Enter for newline)"></textarea>
           <div class="chat-composer-actions">
             <button type="button" id="chatSendBtn">Send</button>
             <button type="button" id="chatAddFilesBtn">Add files</button>
@@ -529,7 +532,8 @@ export function createChatView() {
   sendBtn.addEventListener('click', () => send());
 
   inputEl.addEventListener('keydown', (event) => {
-    if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+    // Enter sends; Shift+Enter inserts a newline. Ignore Enter mid-IME-composition.
+    if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
       event.preventDefault();
       if (!isBusy) send();
       return;
