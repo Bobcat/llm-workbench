@@ -1947,15 +1947,24 @@
 .chat-view .chat-settings {
   flex: 0 0 auto;
   display: grid;
-  gap: 10px;
-  padding: 16px 18px 12px;
+  gap: 14px;
+  padding: 16px 18px 18px;
   border-bottom: 1px solid rgba(148, 163, 184, 0.18);
   background: #ffffff;
 }
 
+.chat-view .chat-settings .translation-prompts-system-details {
+  gap: 14px;
+}
+
+.chat-view .chat-settings .translation-prompts-system-details > summary {
+  font-size: 0.84rem;
+  padding: 2px 0;
+}
+
+/* Line the decode grid up with the System prompt field (shared 18px indent). */
 .chat-view .chat-settings .vlm-decode-grid {
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  padding-left: 0;
   margin-bottom: 0;
 }
 

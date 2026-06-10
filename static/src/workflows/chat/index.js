@@ -79,7 +79,7 @@ export function createChatView() {
               </label>
               <label class="translation-prompts-field">
                 <span>Temperature</span>
-                <input id="chatTemperature" type="number" min="0" max="2" step="0.05" placeholder="0.2">
+                <input id="chatTemperature" type="number" min="0" max="2" step="0.05" placeholder="0.2 (0=greedy)">
               </label>
               <label class="translation-prompts-field">
                 <span>Top-p</span>
@@ -87,7 +87,7 @@ export function createChatView() {
               </label>
               <label class="translation-prompts-field">
                 <span>Top-k</span>
-                <input id="chatTopK" type="number" min="1" max="200" step="1" placeholder="-">
+                <input id="chatTopK" type="number" min="1" max="200" step="1" placeholder="1=greedy">
               </label>
             </div>
           </details>
