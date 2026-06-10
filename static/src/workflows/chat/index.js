@@ -221,11 +221,13 @@ export function createChatView() {
         const modalities = Array.isArray(capabilities.modalities)
           ? capabilities.modalities.map((m) => String(m).trim().toLowerCase())
           : ['text'];
+        const backend = String(model?.resolved_backend || model?.definition?.backend || '').trim().toLowerCase();
         return {
           id: String(model?.name || '').trim(),
           name: String(model?.name || '').trim(),
           runtimeState: String(model?.runtime_state || 'unloaded').trim().toLowerCase(),
-          isRemote: String(model?.resolved_backend || model?.definition?.backend || '').trim().toLowerCase() === 'openai_compatible',
+          backend,
+          isRemote: backend === 'openai_compatible',
           supportsImage: modalities.includes('image'),
           multiTurn: capabilities.multi_turn === true,
           imageLimit: parseImageLimit(model?.definition),
@@ -287,7 +289,7 @@ export function createChatView() {
     if (model && !model.multiTurn) {
       warningEl.hidden = false;
       warningEl.innerHTML = `<span class="material-symbols-outlined" aria-hidden="true">info</span>
-        <span>Simulated chat — <strong>${escapeHtml(model.name)}</strong> has no multi-turn support, so the full history is sent as a single prompt each turn.</span>`;
+        <span>Simulated chat — llm-pool's <strong>${escapeHtml(model.backend || 'current')}</strong> backend doesn't support multi-turn yet, so the full history is sent as a single prompt each turn.</span>`;
     } else {
       warningEl.hidden = true;
       warningEl.textContent = '';
