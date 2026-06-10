@@ -2009,13 +2009,15 @@
 
 .chat-view .chat-bubble-user {
   align-self: flex-end;
-  background: #2f6df6;
-  color: #ffffff;
+  background: #eef3fc;
+  border: 1px solid #dbe6f5;
+  color: #1d2a38;
   border-bottom-right-radius: 4px;
 }
 
 .chat-view .chat-bubble-assistant {
-  align-self: flex-start;
+  align-self: stretch;
+  max-width: none;
   background: #ffffff;
   border: 1px solid #d8e0ea;
   color: #1d2a38;
