@@ -28,6 +28,8 @@ Other parts are more exploratory. `Realtime Translation / Replay & Translate` st
   List, load, unload, and inspect models through the `llm-pool` admin API.
 - `Prompt Testing / Ad hoc prompt`
   Run one-off prompts against available models without building a dedicated workflow first.
+- `LLM Pool / Chat`
+  Hold a multi-turn conversation with a loaded model. Models that report multi-turn support use real message history; others fall back to a flattened single-prompt transcript (shown with a warning). A single "Add files" button accepts images (on vision models) and text files.
 - `Realtime Translation / Replay & Translate`
   Replay `.pc` transcript event streams, inspect first-pass and second-pass translation behavior, and export session state.
 - `Realtime Translation / Prompt Library`
@@ -61,7 +63,7 @@ Other parts are more exploratory. `Realtime Translation / Replay & Translate` st
 - `static/` contains the browser UI. It has no build step; the browser loads source files directly as ES modules.
 - `static/app.js` registers UI workflows and shell routing.
 - `static/src/api-client.js` contains the same-origin backend API client and replay websocket wrapper.
-- `static/src/workflows/` contains the replay, prompt-library, LLM-pool, TTS-pool, and ad hoc prompt runner screens.
+- `static/src/workflows/` contains the replay, prompt-library, LLM-pool, TTS-pool, ad hoc prompt runner, and chat screens.
 - `config/settings.json` contains committed defaults.
 - `data/realtime_translation/sample/` contains sample `.pc` replay files.
 - `deploy/systemd/` contains example service wiring for local deployments.
@@ -70,6 +72,7 @@ Other parts are more exploratory. `Realtime Translation / Replay & Translate` st
 
 - `/api/models*` exposes model listing and model admin proxy routes.
 - `/api/prompts/run` runs ad hoc prompts.
+- `/api/chat/run` runs a multi-turn chat turn (or a flattened single-prompt fallback) against a model.
 - `/api/prompts*` manages the realtime translation prompt library.
 - `/api/replay*` creates and controls replay sessions.
 - `/ws/replay/{session_id}` streams replay updates to the UI.
@@ -116,6 +119,7 @@ http://127.0.0.1:8000/
 ./.venv/bin/python -m unittest discover -s tests
 node --input-type=module --check < static/src/workflows/llm-pool/index.js
 node --input-type=module --check < static/src/workflows/prompt-runner/index.js
+node --input-type=module --check < static/src/workflows/chat/index.js
 ```
 
 ## Screenshots
