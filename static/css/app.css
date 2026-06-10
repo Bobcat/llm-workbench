@@ -1973,6 +1973,15 @@
   margin-bottom: 0;
 }
 
+.chat-view .chat-settings-actions {
+  padding-left: 18px;
+}
+
+.chat-view #chatResetSettings {
+  font-size: 0.8rem;
+  padding: 4px 10px;
+}
+
 .chat-view .chat-warning {
   flex: 0 0 auto;
   display: flex;

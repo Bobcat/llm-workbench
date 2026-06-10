@@ -3,6 +3,29 @@ import { escapeAttr, escapeHtml, formatApiError } from '../../shared/ui-helpers.
 
 const MAX_IMAGES_PER_TURN = 4;
 
+// System prompt + decode params persist across refreshes/boots (not the model
+// or allow-remote, which are per-session choices).
+const SETTINGS_STORAGE_KEY = 'llm-workbench.chat.settings';
+const DEFAULT_SETTINGS = {
+  systemPrompt: '',
+  maxTokens: '2048',
+  temperature: '',
+  topP: '',
+  topK: '',
+};
+
+function loadChatSettings() {
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(SETTINGS_STORAGE_KEY) || 'null');
+    if (parsed && typeof parsed === 'object') {
+      return { ...DEFAULT_SETTINGS, ...parsed };
+    }
+  } catch {
+    // ignore malformed or unavailable storage
+  }
+  return { ...DEFAULT_SETTINGS };
+}
+
 // Text-like files are flattened into the message text; images become image
 // content; everything else is rejected (e.g. audio, until a model advertises it).
 const TEXT_MIME_ALLOWLIST = new Set([
@@ -90,6 +113,9 @@ export function createChatView() {
                 <input id="chatTopK" type="number" min="1" max="200" step="1" placeholder="1=greedy">
               </label>
             </div>
+            <div class="chat-settings-actions">
+              <button type="button" id="chatResetSettings">Reset to defaults</button>
+            </div>
           </details>
         </section>
 
@@ -129,6 +155,7 @@ export function createChatView() {
   const addFilesBtn = container.querySelector('#chatAddFilesBtn');
   const clearBtn = container.querySelector('#chatClearBtn');
   const fileInput = container.querySelector('#chatFileInput');
+  const resetSettingsBtn = container.querySelector('#chatResetSettings');
 
   let adminModels = [];
   // Committed conversation. user: {role, text, images:[{name,dataUrl}]}.
@@ -142,6 +169,30 @@ export function createChatView() {
   let promptHistory = [];
   let historyIndex = null; // null = not navigating
   let historyStash = ''; // draft saved when navigation begins
+
+  const settingInputs = [systemPromptInput, maxTokensInput, temperatureInput, topPInput, topKInput];
+
+  function saveChatSettings() {
+    try {
+      window.localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify({
+        systemPrompt: systemPromptInput.value,
+        maxTokens: maxTokensInput.value,
+        temperature: temperatureInput.value,
+        topP: topPInput.value,
+        topK: topKInput.value,
+      }));
+    } catch {
+      // ignore unavailable storage
+    }
+  }
+
+  function applyChatSettings(settings) {
+    systemPromptInput.value = settings.systemPrompt;
+    maxTokensInput.value = settings.maxTokens;
+    temperatureInput.value = settings.temperature;
+    topPInput.value = settings.topP;
+    topKInput.value = settings.topK;
+  }
 
   function normalizeAdminModelsPayload(payload) {
     const list = Array.isArray(payload?.models) ? payload.models : [];
@@ -588,6 +639,13 @@ export function createChatView() {
     if (!isBusy) clearConversation();
   });
 
+  settingInputs.forEach((el) => el.addEventListener('input', saveChatSettings));
+  resetSettingsBtn.addEventListener('click', () => {
+    applyChatSettings(DEFAULT_SETTINGS);
+    saveChatSettings();
+  });
+
+  applyChatSettings(loadChatSettings());
   renderStream();
   renderAttachments();
 
