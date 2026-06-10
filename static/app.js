@@ -12,6 +12,7 @@ import { createTranslationRequestsView } from './src/workflows/translation-reque
 import { createTranslationPromptsView } from './src/workflows/translation-prompts/index.js';
 import { createPromptRunnerView } from './src/workflows/prompt-runner/index.js';
 import { createVlmTestView } from './src/workflows/vlm-test/index.js';
+import { createChatView } from './src/workflows/chat/index.js';
 import { createIconsView } from './src/workflows/icons/index.js';
 
 // === Initialization ===
@@ -31,6 +32,7 @@ const PERSISTENT_WORKFLOW_IDS = new Set([
   'llm-pool-models',
   'ad-hoc-prompt',
   'vlm-test',
+  'chat',
   'tts-pool-models',
   'translation-requests',
 ]);
@@ -96,6 +98,12 @@ const WORKFLOW_GROUPS = [
         route: 'vlm-test',
         name: 'Vision prompt',
         icon: 'image_search',
+      },
+      {
+        id: 'chat',
+        route: 'chat',
+        name: 'Chat',
+        icon: 'forum',
       },
     ],
   },
@@ -191,6 +199,9 @@ function createWorkflowView(workflowId) {
   }
   if (workflowId === 'vlm-test') {
     return createVlmTestView();
+  }
+  if (workflowId === 'chat') {
+    return createChatView();
   }
   if (workflowId === 'icons') {
     return createIconsView();

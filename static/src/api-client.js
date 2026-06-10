@@ -135,6 +135,14 @@ export const api = {
     });
   },
 
+  async runChatPrompt(payload) {
+    return fetchJson('/api/chat/run', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload)
+    });
+  },
+
   async getAdminModels() {
     return fetchJson('/api/models/admin');
   },
