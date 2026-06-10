@@ -1947,13 +1947,16 @@
 .chat-view .chat-settings {
   flex: 0 0 auto;
   display: grid;
-  gap: 14px;
-  padding: 16px 18px 14px;
+  gap: 12px;
+  padding: 16px 18px 10px;
   border-bottom: 1px solid rgba(148, 163, 184, 0.18);
   background: #ffffff;
 }
 
+/* Group the expander with the chat below it: clear space above (away from
+   Allow-remote), little below (close to the chat window). */
 .chat-view .chat-settings .translation-prompts-system-details {
+  margin-top: 14px;
   gap: 14px;
 }
 
@@ -1962,9 +1965,11 @@
   padding: 2px 0;
 }
 
-/* Line the decode grid up with the System prompt field (shared 18px indent). */
+/* Line the decode grid up with the System prompt field (shared 18px indent),
+   with extra space above so its labels don't touch the textarea. */
 .chat-view .chat-settings .vlm-decode-grid {
   grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-top: 8px;
   margin-bottom: 0;
 }
 
