@@ -324,8 +324,10 @@ export function createChatView() {
           continue;
         }
         if (imageBudget() <= 0) {
-          const scope = model.multiTurn ? 'conversation' : 'message';
-          rejected.push(`${file.name} (this model accepts at most ${model.imageLimit} image(s) per ${scope})`);
+          const reason = (model.multiTurn && committedImageCount() > 0)
+            ? `the earlier image is still active for this chat — no need to re-add (this model allows ${model.imageLimit} per conversation)`
+            : `this model accepts at most ${model.imageLimit} image(s) per ${model.multiTurn ? 'conversation' : 'message'}`;
+          rejected.push(`${file.name} (${reason})`);
           continue;
         }
         const dataUrl = await readImageAsDataUrl(file);
