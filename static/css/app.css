@@ -1948,7 +1948,7 @@
   flex: 0 0 auto;
   display: grid;
   gap: 14px;
-  padding: 16px 18px 18px;
+  padding: 16px 18px 14px;
   border-bottom: 1px solid rgba(148, 163, 184, 0.18);
   background: #ffffff;
 }
