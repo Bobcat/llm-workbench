@@ -35,6 +35,19 @@ function classifyFile(file) {
   return 'other';
 }
 
+// vLLM models report a per-prompt image cap as [["image", N], ...]. In a
+// multi-turn request the whole history is one prompt, so this caps the images
+// across the conversation. Defaults to MAX_IMAGES_PER_TURN when unspecified.
+function parseImageLimit(definition) {
+  const raw = definition?.vllm_limit_mm_per_prompt;
+  if (Array.isArray(raw)) {
+    const entry = raw.find((pair) => Array.isArray(pair) && String(pair[0]) === 'image');
+    const count = entry ? Number(entry[1]) : NaN;
+    if (Number.isFinite(count)) return Math.max(0, Math.trunc(count));
+  }
+  return MAX_IMAGES_PER_TURN;
+}
+
 export function createChatView() {
   const container = document.createElement('div');
   container.className = 'translation-prompts-view chat-view';
@@ -116,12 +129,16 @@ export function createChatView() {
 
   let adminModels = [];
   // Committed conversation. user: {role, text, images:[{name,dataUrl}]}.
-  // assistant: {role, text, isError}.
+  // assistant: {role, text}. A failed send is rolled back, never stored.
   let turns = [];
   // Pending attachments for the next user turn.
   let pendingImages = [];
   let pendingTextFiles = [];
   let isBusy = false;
+  // Shell-style recall of previously sent prompt text (Up/Down in the composer).
+  let promptHistory = [];
+  let historyIndex = null; // null = not navigating
+  let historyStash = ''; // draft saved when navigation begins
 
   function normalizeAdminModelsPayload(payload) {
     const list = Array.isArray(payload?.models) ? payload.models : [];
@@ -138,6 +155,7 @@ export function createChatView() {
           isRemote: String(model?.resolved_backend || model?.definition?.backend || '').trim().toLowerCase() === 'openai_compatible',
           supportsImage: modalities.includes('image'),
           multiTurn: capabilities.multi_turn === true,
+          imageLimit: parseImageLimit(model?.definition),
         };
       })
       .filter((model) => model.id !== '');
@@ -174,12 +192,21 @@ export function createChatView() {
     inputEl.disabled = nextBusy;
     const noModels = loadedModels().length === 0;
     sendBtn.disabled = nextBusy || noModels;
-    const model = selectedModel();
-    const imageFull = pendingImages.length >= MAX_IMAGES_PER_TURN;
     addFilesBtn.disabled = nextBusy || noModels;
     clearBtn.disabled = nextBusy || (turns.length === 0 && !inputEl.value && pendingImages.length === 0 && pendingTextFiles.length === 0);
-    // hint flags used by status copy
-    addFilesBtn.dataset.imageFull = String(Boolean(model?.supportsImage) && imageFull);
+  }
+
+  function committedImageCount() {
+    return turns.reduce((sum, turn) => sum + ((turn.images || []).length), 0);
+  }
+
+  // Remaining images that can still be attached. Multi-turn counts the whole
+  // conversation (one rendered prompt); single-turn counts only this message.
+  function imageBudget() {
+    const model = selectedModel();
+    if (!model || !model.supportsImage) return 0;
+    const used = (model.multiTurn ? committedImageCount() : 0) + pendingImages.length;
+    return Math.max(0, model.imageLimit - used);
   }
 
   function updateWarning() {
@@ -216,7 +243,6 @@ export function createChatView() {
 
   function bubbleMarkup(turn) {
     const roleClass = turn.role === 'user' ? 'chat-bubble-user' : 'chat-bubble-assistant';
-    const errorClass = turn.isError ? ' chat-bubble-error' : '';
     const imagesMarkup = (turn.images || []).length
       ? `<div class="chat-bubble-images">${turn.images.map((img) => `
           <img src="${escapeAttr(img.dataUrl)}" alt="${escapeAttr(img.name)}" title="${escapeAttr(img.name)}">
@@ -225,7 +251,7 @@ export function createChatView() {
     const text = String(turn.text || '');
     const textMarkup = text ? `<div class="chat-bubble-text">${escapeHtml(text)}</div>` : '';
     return `
-      <div class="chat-bubble ${roleClass}${errorClass}">
+      <div class="chat-bubble ${roleClass}">
         ${imagesMarkup}
         ${textMarkup}
       </div>
@@ -294,8 +320,9 @@ export function createChatView() {
           rejected.push(`${file.name} (this model can't read images)`);
           continue;
         }
-        if (pendingImages.length >= MAX_IMAGES_PER_TURN) {
-          rejected.push(`${file.name} (max ${MAX_IMAGES_PER_TURN} images per message)`);
+        if (imageBudget() <= 0) {
+          const scope = model.multiTurn ? 'conversation' : 'message';
+          rejected.push(`${file.name} (this model accepts at most ${model.imageLimit} image(s) per ${scope})`);
           continue;
         }
         const dataUrl = await readImageAsDataUrl(file);
@@ -334,13 +361,20 @@ export function createChatView() {
   }
 
   function apiTurns() {
-    return turns
-      .filter((turn) => !turn.isError)
-      .map((turn) => ({
-        role: turn.role,
-        text: String(turn.text || ''),
-        images: (turn.images || []).map((img) => ({ name: img.name, data_url: img.dataUrl })),
-      }));
+    return turns.map((turn) => ({
+      role: turn.role,
+      text: String(turn.text || ''),
+      images: (turn.images || []).map((img) => ({ name: img.name, data_url: img.dataUrl })),
+    }));
+  }
+
+  function formatResultStats(metrics) {
+    const parts = [];
+    const gpuMs = metrics.gpu_generate_total_ms;
+    if (gpuMs != null) parts.push(`${Number(gpuMs).toFixed(0)} ms GPU`);
+    const tps = metrics.engine_tokens_per_second;
+    if (tps != null) parts.push(`${Number(tps).toFixed(1)} tok/s`);
+    return parts.join(' · ');
   }
 
   function readDecode() {
@@ -365,13 +399,22 @@ export function createChatView() {
       setStatus('Enable remote calls for this model.');
       return;
     }
+    const draft = inputEl.value;
+    const sentImages = pendingImages;
+    const sentTextFiles = pendingTextFiles;
     const text = buildUserTurnText();
-    if (text.trim() === '' && pendingImages.length === 0) {
+    if (text.trim() === '' && sentImages.length === 0) {
       setStatus('Type a message or add a file.');
       return;
     }
 
-    turns.push({ role: 'user', text, images: pendingImages });
+    if (draft.trim() !== '' && promptHistory[promptHistory.length - 1] !== draft) {
+      promptHistory.push(draft);
+    }
+    historyIndex = null;
+
+    const userTurn = { role: 'user', text, images: sentImages };
+    turns.push(userTurn);
     pendingImages = [];
     pendingTextFiles = [];
     inputEl.value = '';
@@ -394,12 +437,17 @@ export function createChatView() {
         turns: apiTurns(),
       });
       turns.push({ role: 'assistant', text: String(result?.output_text || '') });
-      const metrics = result?.metrics || {};
-      const tps = metrics.engine_tokens_per_second;
-      setStatus(tps != null ? `${Number(tps).toFixed(1)} tok/s` : '');
+      setStatus(formatResultStats(result?.metrics || {}));
     } catch (err) {
-      turns.push({ role: 'assistant', text: formatApiError(err), isError: true });
-      setStatus('');
+      // Roll the failed turn back into the composer so it never lingers in the
+      // sent history (which would re-send its attachments on every later turn).
+      const idx = turns.indexOf(userTurn);
+      if (idx !== -1) turns.splice(idx, 1);
+      inputEl.value = draft;
+      pendingImages = sentImages;
+      pendingTextFiles = sentTextFiles;
+      renderAttachments();
+      setStatus(formatApiError(err));
     } finally {
       renderStream();
       setBusy(false);
@@ -412,10 +460,49 @@ export function createChatView() {
     pendingImages = [];
     pendingTextFiles = [];
     inputEl.value = '';
+    historyIndex = null;
     renderAttachments();
     renderStream();
     setStatus('');
     setBusy(isBusy);
+  }
+
+  function moveCaretToEnd(el) {
+    const end = el.value.length;
+    el.setSelectionRange(end, end);
+  }
+
+  // Up/Down recall of previously sent prompts (shell-style). Starting recall
+  // requires an empty box or the caret at the very start, so multi-line editing
+  // still uses the arrows normally; once recalling, the arrows step through.
+  function recallPrevPrompt() {
+    if (promptHistory.length === 0) return false;
+    const navigating = historyIndex !== null;
+    const atStart = inputEl.selectionStart === 0 && inputEl.selectionEnd === 0;
+    if (!navigating && inputEl.value !== '' && !atStart) return false;
+    if (!navigating) {
+      historyStash = inputEl.value;
+      historyIndex = promptHistory.length;
+    }
+    historyIndex = Math.max(0, historyIndex - 1);
+    inputEl.value = promptHistory[historyIndex];
+    moveCaretToEnd(inputEl);
+    setBusy(isBusy);
+    return true;
+  }
+
+  function recallNextPrompt() {
+    if (historyIndex === null) return false;
+    historyIndex += 1;
+    if (historyIndex >= promptHistory.length) {
+      historyIndex = null;
+      inputEl.value = historyStash;
+    } else {
+      inputEl.value = promptHistory[historyIndex];
+    }
+    moveCaretToEnd(inputEl);
+    setBusy(isBusy);
+    return true;
   }
 
   async function loadModels() {
@@ -445,9 +532,19 @@ export function createChatView() {
     if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
       event.preventDefault();
       if (!isBusy) send();
+      return;
+    }
+    if (isBusy) return;
+    if (event.key === 'ArrowUp' && recallPrevPrompt()) {
+      event.preventDefault();
+    } else if (event.key === 'ArrowDown' && recallNextPrompt()) {
+      event.preventDefault();
     }
   });
-  inputEl.addEventListener('input', () => setBusy(isBusy));
+  inputEl.addEventListener('input', () => {
+    historyIndex = null; // typing exits history recall
+    setBusy(isBusy);
+  });
 
   addFilesBtn.addEventListener('click', () => {
     fileInput.value = '';

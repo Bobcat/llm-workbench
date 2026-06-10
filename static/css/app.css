@@ -1974,6 +1974,10 @@
   line-height: 1.35;
 }
 
+.chat-view .chat-warning[hidden] {
+  display: none;
+}
+
 .chat-view .chat-warning .material-symbols-outlined {
   font-size: 18px;
   flex: 0 0 auto;
@@ -2016,12 +2020,6 @@
   border: 1px solid #d8e0ea;
   color: #1d2a38;
   border-bottom-left-radius: 4px;
-}
-
-.chat-view .chat-bubble-error {
-  background: #fdecec;
-  border-color: #f3c2c2;
-  color: #9b2c2c;
 }
 
 .chat-view .chat-bubble-text {
