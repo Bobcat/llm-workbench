@@ -26,6 +26,25 @@ function loadChatSettings() {
   return { ...DEFAULT_SETTINGS };
 }
 
+// The chosen model persists separately from the reset-able decode settings.
+const MODEL_STORAGE_KEY = 'llm-workbench.chat.model';
+
+function loadStoredModel() {
+  try {
+    return String(window.localStorage.getItem(MODEL_STORAGE_KEY) || '');
+  } catch {
+    return '';
+  }
+}
+
+function saveStoredModel(id) {
+  try {
+    window.localStorage.setItem(MODEL_STORAGE_KEY, String(id || ''));
+  } catch {
+    // ignore unavailable storage
+  }
+}
+
 // Text-like files are flattened into the message text; images become image
 // content; everything else is rejected (e.g. audio, until a model advertises it).
 const TEXT_MIME_ALLOWLIST = new Set([
@@ -277,7 +296,9 @@ export function createChatView() {
 
   function renderModelOptions() {
     const models = loadedModels();
-    const previous = String(modelSelect.value || '');
+    // Prefer the in-session selection; on a fresh load fall back to the stored
+    // model, but only restore it below if it is currently loaded.
+    const previous = String(modelSelect.value || '') || loadStoredModel();
     modelSelect.innerHTML = models.length > 0
       ? models.map((model) => {
         const tags = [];
@@ -578,6 +599,7 @@ export function createChatView() {
   }
 
   modelSelect.addEventListener('change', () => {
+    saveStoredModel(modelSelect.value);
     updateWarning();
     setBusy(isBusy);
   });
