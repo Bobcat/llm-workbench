@@ -2371,6 +2371,7 @@
 
 .translation-requests-view .translation-preview-frame img {
   display: block;
+  grid-area: 1 / 1;
   align-self: start;
   justify-self: start;
   width: auto;
@@ -2385,6 +2386,7 @@
 }
 
 .translation-requests-view .translation-preview-empty {
+  grid-area: 1 / 1;
   align-self: center;
   color: #8795a8;
   font-size: 0.86rem;
@@ -2392,6 +2394,20 @@
   line-height: 1.2;
   text-align: center;
   padding: 16px;
+}
+
+.translation-requests-view .translation-preview-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  justify-self: start;
+  white-space: nowrap;
+  color: #6b7a8c;
+  font-size: 0.78rem;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+  user-select: none;
 }
 
 .translation-requests-view .translation-requests-advanced {

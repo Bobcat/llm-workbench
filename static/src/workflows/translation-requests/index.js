@@ -116,9 +116,14 @@ export function createTranslationRequestsView() {
             <div class="translation-preview-block">
               <span id="translationOutputLabel">Artifact</span>
               <div class="translation-preview-frame">
+                <img id="translationComparePreview" alt="Original for comparison" hidden>
                 <img id="translationOutputPreview" alt="Image pool output preview" hidden>
                 <div id="translationOutputEmpty" class="translation-preview-empty">No output yet</div>
               </div>
+              <label class="translation-preview-toggle" id="translationPreviewToggleLabel" hidden>
+                <input type="checkbox" id="translationPreviewShowOriginal">
+                <span>Show original</span>
+              </label>
             </div>
           </section>
         </div>
@@ -150,6 +155,9 @@ export function createTranslationRequestsView() {
   const previewZoomInput = container.querySelector('#translationPreviewZoom');
   const previewZoomValue = container.querySelector('#translationPreviewZoomValue');
   const previewArtifactSelect = container.querySelector('#translationPreviewArtifact');
+  const comparePreview = container.querySelector('#translationComparePreview');
+  const toggleInput = container.querySelector('#translationPreviewShowOriginal');
+  const toggleLabel = container.querySelector('#translationPreviewToggleLabel');
 
   let isBusy = false;
   let currentRequestId = '';
@@ -348,6 +356,10 @@ export function createTranslationRequestsView() {
     outputPreview.hidden = true;
     outputPreview.removeAttribute('src');
     outputEmpty.hidden = false;
+    comparePreview.hidden = true;
+    comparePreview.removeAttribute('src');
+    toggleInput.checked = false;
+    toggleLabel.hidden = true;
   }
 
   function updatePreviewZoom() {
@@ -369,6 +381,23 @@ export function createTranslationRequestsView() {
     outputPreview.src = `/api/translation/requests/${encodeURIComponent(requestId)}/artifacts/${encodeURIComponent(artifactName)}?ts=${Date.now()}`;
     outputPreview.hidden = false;
     outputEmpty.hidden = true;
+    const hasInput = Boolean(result?.response?.artifacts?.input);
+    if (hasInput) {
+      comparePreview.src = `/api/translation/requests/${encodeURIComponent(requestId)}/artifacts/input`;
+      toggleLabel.hidden = false;
+    } else {
+      comparePreview.removeAttribute('src');
+      toggleInput.checked = false;
+      toggleLabel.hidden = true;
+    }
+    applyToggle();
+  }
+
+  function applyToggle() {
+    if (!outputPreview.getAttribute('src')) return;
+    const showOriginal = toggleInput.checked && Boolean(comparePreview.getAttribute('src'));
+    outputPreview.hidden = showOriginal;
+    comparePreview.hidden = !showOriginal;
   }
 
   function updateArtifactOptions(result) {
@@ -407,6 +436,7 @@ export function createTranslationRequestsView() {
   }
 
   fileInput.addEventListener('change', updateInputPreview);
+  toggleInput.addEventListener('change', applyToggle);
   previewZoomInput.addEventListener('input', updatePreviewZoom);
   previewArtifactSelect.addEventListener('change', () => {
     if (lastPreviewResult) renderOutputPreview(lastPreviewResult);
