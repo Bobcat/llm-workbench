@@ -39,6 +39,7 @@ export function createTranslationRequestsView() {
             <div class="translation-prompts-run-actions">
               <button type="button" id="translationRequestSubmit">Submit</button>
               <button type="button" id="translationRequestCancel" disabled>Cancel</button>
+              <button type="button" id="translationRequestFixture" style="margin-left:auto" title="Translate using the registered reference fixture for this image (no LLM) — for comparing render quality against a reference">Reference run</button>
             </div>
             <div class="translation-prompts-inline-status" id="translationRequestStatus"></div>
             <section class="translation-prompts-stats-block">
@@ -139,6 +140,7 @@ export function createTranslationRequestsView() {
   const groupingModelInput = container.querySelector('#translationRequestGroupingModel');
   const requestIdInput = container.querySelector('#translationRequestId');
   const submitBtn = container.querySelector('#translationRequestSubmit');
+  const fixtureBtn = container.querySelector('#translationRequestFixture');
   const cancelBtn = container.querySelector('#translationRequestCancel');
   const statusEl = container.querySelector('#translationRequestStatus');
   const statIdEl = container.querySelector('#translationRequestStatId');
@@ -173,6 +175,7 @@ export function createTranslationRequestsView() {
   function setBusy(nextBusy) {
     isBusy = Boolean(nextBusy);
     submitBtn.disabled = isBusy || !selectedFile();
+    fixtureBtn.disabled = isBusy || !selectedFile();
     fileInput.disabled = isBusy;
     sourceInput.disabled = isBusy;
     targetInput.disabled = isBusy;
@@ -195,7 +198,7 @@ export function createTranslationRequestsView() {
     return TERMINAL_STATES.has(String(state || '').trim().toLowerCase());
   }
 
-  function buildRequestPayload() {
+  function buildRequestPayload(options = {}) {
     const payload = {
       task: 'translate_image',
       priority: 'normal',
@@ -212,10 +215,12 @@ export function createTranslationRequestsView() {
     if (translatorMode) payload.translator_mode = translatorMode;
     const groupingModel = String(groupingModelInput.value || '').trim();
     if (groupingModel) payload.grouping_model = groupingModel;
+    // Reference run: pin the translation to the registered fixture for this image (no LLM).
+    if (options.fixture) payload.translation_fixture = 'auto';
     return payload;
   }
 
-  async function submitRequest() {
+  async function submitRequest(options = {}) {
     const file = selectedFile();
     if (!file) {
       setStatus('Select an image first.', 'error');
@@ -225,10 +230,10 @@ export function createTranslationRequestsView() {
     stopPolling();
     clearOutputPreview();
     setBusy(true);
-    setStatus('Submitting image request...');
+    setStatus(options.fixture ? 'Submitting reference run...' : 'Submitting image request...');
     try {
       const formData = new FormData();
-      formData.append('request_json', JSON.stringify(buildRequestPayload()));
+      formData.append('request_json', JSON.stringify(buildRequestPayload(options)));
       formData.append('image_file', file);
       const result = await api.submitImageRequest(formData);
       applyLifecycle(result);
@@ -441,7 +446,8 @@ export function createTranslationRequestsView() {
   previewArtifactSelect.addEventListener('change', () => {
     if (lastPreviewResult) renderOutputPreview(lastPreviewResult);
   });
-  submitBtn.addEventListener('click', submitRequest);
+  submitBtn.addEventListener('click', () => submitRequest());
+  fixtureBtn.addEventListener('click', () => submitRequest({ fixture: true }));
   cancelBtn.addEventListener('click', cancelRequest);
 
   container.__onDeactivate = () => {
