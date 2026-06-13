@@ -187,7 +187,8 @@ export function createChatView() {
   const resetSettingsBtn = container.querySelector('#chatResetSettings');
 
   let adminModels = [];
-  // Committed conversation. user: {role, text, images:[{name,dataUrl}]}.
+  // Committed conversation.
+  // user: {role, text, images:[{name,dataUrl}], imagePlaceholders:[{name}]}.
   // assistant: {role, text}. A failed send is rolled back, never stored.
   let turns = [];
   // Pending attachments for the next user turn.
@@ -297,6 +298,21 @@ export function createChatView() {
     return turns.reduce((sum, turn) => sum + ((turn.images || []).length), 0);
   }
 
+  function archiveCommittedImages(requiredSlots = 1) {
+    const model = selectedModel();
+    if (!model?.multiTurn) return 0;
+    let archived = 0;
+    while (imageBudget() < requiredSlots) {
+      const turn = turns.find((item) => (item.images || []).length > 0);
+      if (!turn) break;
+      const [image] = turn.images.splice(0, 1);
+      if (!image) break;
+      turn.imagePlaceholders = [...(turn.imagePlaceholders || []), { name: image.name }];
+      archived += 1;
+    }
+    return archived;
+  }
+
   // Remaining images that can still be attached. Multi-turn counts the whole
   // conversation (one rendered prompt); single-turn counts only this message.
   function imageBudget() {
@@ -358,19 +374,41 @@ export function createChatView() {
     setBusy(isBusy);
   }
 
-  function bubbleMarkup(turn) {
+  function bubbleMarkup(turn, index) {
+    const messageClass = turn.role === 'user' ? 'chat-message-user' : 'chat-message-assistant';
     const roleClass = turn.role === 'user' ? 'chat-bubble-user' : 'chat-bubble-assistant';
     const imagesMarkup = (turn.images || []).length
       ? `<div class="chat-bubble-images">${turn.images.map((img) => `
           <img src="${escapeAttr(img.dataUrl)}" alt="${escapeAttr(img.name)}" title="${escapeAttr(img.name)}">
         `).join('')}</div>`
       : '';
+    const placeholdersMarkup = (turn.imagePlaceholders || []).length
+      ? `<div class="chat-bubble-image-placeholders">${turn.imagePlaceholders.map((img) => `
+          <span class="chat-bubble-image-placeholder" title="Image omitted from current request: ${escapeAttr(img.name || 'image')}">
+            <span class="material-symbols-outlined" aria-hidden="true">image</span>
+            <span>${escapeHtml(img.name || 'image')}</span>
+          </span>
+        `).join('')}</div>`
+      : '';
     const text = String(turn.text || '');
     const textMarkup = text ? `<div class="chat-bubble-text">${escapeHtml(text)}</div>` : '';
+    const copyText = copyableTurnText(turn);
+    const copyMarkup = copyText.trim() === ''
+      ? ''
+      : `<div class="chat-message-actions">
+          <button type="button" class="chat-bubble-copy" data-turn-index="${index}"
+            aria-label="Copy message text" title="Copy message text">
+            <span class="material-symbols-outlined" aria-hidden="true">content_copy</span>
+          </button>
+        </div>`;
     return `
-      <div class="chat-bubble ${roleClass}">
-        ${imagesMarkup}
-        ${textMarkup}
+      <div class="chat-message ${messageClass}">
+        <div class="chat-bubble ${roleClass}">
+          ${imagesMarkup}
+          ${placeholdersMarkup}
+          ${textMarkup}
+        </div>
+        ${copyMarkup}
       </div>
     `;
   }
@@ -437,6 +475,8 @@ export function createChatView() {
           rejected.push(`${file.name} (this model can't read images)`);
           continue;
         }
+        const archived = archiveCommittedImages(1);
+        if (archived > 0) renderStream();
         if (imageBudget() <= 0) {
           const reason = (model.multiTurn && committedImageCount() > 0)
             ? `the earlier image is still active for this chat — no need to re-add (this model allows ${model.imageLimit} per conversation)`
@@ -482,9 +522,55 @@ export function createChatView() {
   function apiTurns() {
     return turns.map((turn) => ({
       role: turn.role,
-      text: String(turn.text || ''),
+      text: apiTurnText(turn),
       images: (turn.images || []).map((img) => ({ name: img.name, data_url: img.dataUrl })),
     }));
+  }
+
+  function apiTurnText(turn) {
+    const text = String(turn.text || '');
+    const placeholders = (turn.imagePlaceholders || [])
+      .map((img) => `[Image omitted from current request: ${img.name || 'image'}]`);
+    if (placeholders.length === 0) return text;
+    return [text, placeholders.join('\n')].filter((part) => part.trim() !== '').join('\n');
+  }
+
+  function copyableTurnText(turn) {
+    return apiTurnText(turn);
+  }
+
+  function markCopyButtonCopied(button) {
+    if (!button) return;
+    const icon = button.querySelector('.material-symbols-outlined');
+    button.classList.add('is-copied');
+    button.setAttribute('aria-label', 'Copied');
+    button.title = 'Copied';
+    if (icon) icon.textContent = 'check';
+  }
+
+  function resetCopyButton(button) {
+    if (!button) return;
+    const icon = button.querySelector('.material-symbols-outlined');
+    button.classList.remove('is-copied');
+    button.setAttribute('aria-label', 'Copy message text');
+    button.title = 'Copy message text';
+    if (icon) icon.textContent = 'content_copy';
+  }
+
+  async function copyTurnToClipboard(index, button) {
+    const turn = turns[index];
+    const text = copyableTurnText(turn || {});
+    if (text.trim() === '') return;
+    try {
+      await navigator.clipboard.writeText(text);
+      if (button?.isConnected && button.matches(':hover')) {
+        markCopyButtonCopied(button);
+        button.addEventListener('pointerleave', () => resetCopyButton(button), { once: true });
+      }
+      setStatus('Copied message text.');
+    } catch {
+      setStatus('Clipboard API unavailable.');
+    }
   }
 
   function formatResultStats(metrics) {
@@ -692,6 +778,27 @@ export function createChatView() {
     } finally {
       setBusy(false);
     }
+  });
+
+  streamEl.addEventListener('click', (event) => {
+    const button = event.target.closest('.chat-bubble-copy');
+    if (!button) return;
+    const index = Number.parseInt(button.dataset.turnIndex || '', 10);
+    if (!Number.isInteger(index)) return;
+    copyTurnToClipboard(index, button);
+  });
+
+  streamEl.addEventListener('pointerout', (event) => {
+    const button = event.target.closest('.chat-bubble-copy');
+    const related = event.relatedTarget;
+    if (!button || (related instanceof Node && button.contains(related))) return;
+    resetCopyButton(button);
+  });
+
+  streamEl.addEventListener('focusout', (event) => {
+    const button = event.target.closest('.chat-bubble-copy');
+    if (!button) return;
+    resetCopyButton(button);
   });
 
   attachmentsEl.addEventListener('click', (event) => {
