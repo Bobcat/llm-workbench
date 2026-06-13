@@ -119,16 +119,8 @@ export const api = {
     });
   },
 
-  async runPrompt(payload) {
-    return fetchJson('/api/prompts/run', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify(payload)
-    });
-  },
-
-  async runVlmPrompt(payload) {
-    return fetchJson('/api/vlm/run', {
+  async runTextGeneration(payload) {
+    return fetchJson('/api/text-generation/run', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify(payload)
@@ -194,6 +186,51 @@ export const api = {
   async unloadTtsAdminModel(modelName) {
     return fetchJson(`/api/tts-pool/models/admin/${encodeURIComponent(modelName)}/unload`, {
       method: 'POST'
+    });
+  },
+
+  async getImagePoolModels() {
+    return fetchJson('/api/image-pool/models');
+  },
+
+  async getImagePoolAdminModels() {
+    return fetchJson('/api/image-pool/models/admin');
+  },
+
+  async getImagePoolAdminGpuMemory() {
+    return fetchJson('/api/image-pool/models/admin/gpu-memory');
+  },
+
+  async loadImagePoolAdminModel(modelName, payload = null) {
+    const options = {
+      method: 'POST',
+    };
+    if (payload && typeof payload === 'object') {
+      options.headers = {'Content-Type': 'application/json'};
+      options.body = JSON.stringify(payload);
+    }
+    return fetchJson(`/api/image-pool/models/admin/${encodeURIComponent(modelName)}/load`, options);
+  },
+
+  async unloadImagePoolAdminModel(modelName) {
+    return fetchJson(`/api/image-pool/models/admin/${encodeURIComponent(modelName)}/unload`, {
+      method: 'POST'
+    });
+  },
+
+  async runImageGeneration(payload) {
+    return fetchJson('/api/image-pool/images/generations', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async runImageEdit(payload) {
+    return fetchJson('/api/image-pool/images/edits', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload)
     });
   },
 

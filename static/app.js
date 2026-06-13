@@ -8,10 +8,11 @@ import { createReplayView } from './src/workflows/replay/index.js';
 import { createReplaySpeakView } from './src/workflows/replay-speak/index.js';
 import { createLlmPoolView } from './src/workflows/llm-pool/index.js';
 import { createTtsPoolView } from './src/workflows/tts-pool/index.js';
+import { createImagePoolView } from './src/workflows/image-pool/index.js';
 import { createTranslationRequestsView } from './src/workflows/translation-requests/index.js';
 import { createTranslationPromptsView } from './src/workflows/translation-prompts/index.js';
-import { createPromptRunnerView } from './src/workflows/prompt-runner/index.js';
-import { createVlmTestView } from './src/workflows/vlm-test/index.js';
+import { createTextGenerationView } from './src/workflows/text-generation/index.js';
+import { createImageGenerationView } from './src/workflows/image-generation/index.js';
 import { createChatView } from './src/workflows/chat/index.js';
 import { createIconsView } from './src/workflows/icons/index.js';
 
@@ -30,12 +31,23 @@ const PERSISTENT_WORKFLOW_IDS = new Set([
   'replay-speak',
   'prompt-library',
   'llm-pool-models',
-  'ad-hoc-prompt',
-  'vlm-test',
+  'text-generation',
   'chat',
   'tts-pool-models',
+  'image-pool-models',
+  'image-generation',
   'translation-requests',
 ]);
+
+const ROUTE_ALIASES = new Map([
+  ['ad-hoc-prompt', 'text-generation'],
+  ['vlm-test', 'text-generation'],
+]);
+
+function normalizeRoute(route) {
+  const name = String(route || '').trim();
+  return ROUTE_ALIASES.get(name) || name;
+}
 
 // State - start met open sidebar
 const shellState = new ShellState({
@@ -88,16 +100,10 @@ const WORKFLOW_GROUPS = [
         icon: 'swap_horiz',
       },
       {
-        id: 'ad-hoc-prompt',
-        route: 'ad-hoc-prompt',
-        name: 'Text prompt',
+        id: 'text-generation',
+        route: 'text-generation',
+        name: 'Text generation',
         icon: 'chat',
-      },
-      {
-        id: 'vlm-test',
-        route: 'vlm-test',
-        name: 'Vision prompt',
-        icon: 'image_search',
       },
       {
         id: 'chat',
@@ -115,6 +121,23 @@ const WORKFLOW_GROUPS = [
         route: 'tts-pool-models',
         name: 'Models',
         icon: 'record_voice_over',
+      },
+    ],
+  },
+  {
+    label: 'Image Pool',
+    items: [
+      {
+        id: 'image-pool-models',
+        route: 'image-pool-models',
+        name: 'Models',
+        icon: 'image_search',
+      },
+      {
+        id: 'image-generation',
+        route: 'image-generation',
+        name: 'Image generation',
+        icon: 'image',
       },
     ],
   },
@@ -188,17 +211,20 @@ function createWorkflowView(workflowId) {
   if (workflowId === 'tts-pool-models') {
     return createTtsPoolView();
   }
+  if (workflowId === 'image-pool-models') {
+    return createImagePoolView();
+  }
   if (workflowId === 'translation-requests') {
     return createTranslationRequestsView();
   }
   if (workflowId === 'prompt-library') {
     return createTranslationPromptsView();
   }
-  if (workflowId === 'ad-hoc-prompt') {
-    return createPromptRunnerView();
+  if (workflowId === 'text-generation') {
+    return createTextGenerationView();
   }
-  if (workflowId === 'vlm-test') {
-    return createVlmTestView();
+  if (workflowId === 'image-generation') {
+    return createImageGenerationView();
   }
   if (workflowId === 'chat') {
     return createChatView();
@@ -271,7 +297,7 @@ workflowList.addEventListener('click', (e) => {
   const item = e.target.closest('[data-route]');
   if (!item) return;
 
-  const route = item.dataset.route;
+  const route = normalizeRoute(item.dataset.route);
   if (router.has(route)) {
     router.navigate(route, null, { url: `#${route}` });
   }
@@ -294,14 +320,15 @@ function init() {
 
   router.bindPopState({
     parseHash: ({ hash }) => {
-      const view = hash.trim();
+      const view = normalizeRoute(hash);
       return router.has(view) ? { view, data: null } : null;
     }
   });
 
   const hash = window.location.hash.replace(/^#/, '');
   const defaultRoute = WORKFLOWS[0]?.route || 'replay-translate';
-  const initialRoute = router.has(hash) ? hash : defaultRoute;
+  const normalizedHash = normalizeRoute(hash);
+  const initialRoute = router.has(normalizedHash) ? normalizedHash : defaultRoute;
 
   router.start(initialRoute, null, { url: `#${initialRoute}` });
 }

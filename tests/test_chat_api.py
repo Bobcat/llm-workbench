@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from unittest import mock
 
 from fastapi import HTTPException
 
@@ -115,6 +116,26 @@ class ChatValidationTests(unittest.TestCase):
     def test_valid_turns_pass(self) -> None:
         turns = chat._validate_turns([_turn("user", "hi", images=[_TINY_PNG_DATA_URL])])
         self.assertEqual(len(turns), 1)
+
+
+class ChatRunTests(unittest.TestCase):
+    def test_run_chat_forwards_thinking_mode(self) -> None:
+        captured: dict[str, object] = {}
+
+        def fake_runner(payload):
+            captured["payload"] = payload
+            return {"id": "resp_1", "model": "m", "output_text": "ok", "metrics": {}}, 12.0
+
+        request = chat.ChatRunRequest(
+            model="m",
+            turns=[_turn("user", "hi")],
+            thinking="enabled",
+        )
+        with mock.patch.object(chat, "_run_prompt_runner_payload", side_effect=fake_runner):
+            response = chat.run_chat(request)
+
+        self.assertEqual(response.output_text, "ok")
+        self.assertEqual(captured["payload"]["thinking"], "enabled")
 
 
 if __name__ == "__main__":

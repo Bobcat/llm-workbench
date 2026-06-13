@@ -5,7 +5,7 @@ from typing import Any, Literal
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from app.prompt_testing.ad_hoc import _run_prompt_runner_payload
+from app.prompt_testing.pool_client import _run_prompt_runner_payload
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -36,6 +36,7 @@ class ChatRunRequest(BaseModel):
     # the conversation is flattened into a single prompt (Route A).
     multi_turn: bool = True
     allow_remote: bool = False
+    thinking: Literal["default", "enabled", "disabled"] = "default"
     max_tokens: int = Field(default=_DEFAULT_OUTPUT_TOKENS, ge=1, le=_MAX_OUTPUT_TOKENS)
     temperature: float | None = Field(default=None, ge=0.0, le=2.0)
     top_p: float | None = Field(default=None, gt=0.0, le=1.0)
@@ -150,6 +151,7 @@ def run_chat(request: ChatRunRequest) -> ChatRunResponse:
         "instructions": effective_system_prompt,
         "allow_remote": request.allow_remote,
         "stream": False,
+        "thinking": request.thinking,
         "decoding": _decoding(request),
     }
     if request.multi_turn:

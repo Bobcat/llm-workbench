@@ -2,6 +2,7 @@ import { api } from '../../api-client.js';
 import { escapeAttr, escapeHtml, formatApiError } from '../../shared/ui-helpers.js';
 
 const MAX_IMAGES_PER_TURN = 4;
+const THINKING_MODES = new Set(['default', 'enabled', 'disabled']);
 
 // System prompt + decode params persist across refreshes/boots (not the model
 // or allow-remote, which are per-session choices).
@@ -102,14 +103,22 @@ export function createChatView() {
             <span>Model</span>
             <select id="chatModelSelect"></select>
           </label>
-          <div class="translation-prompts-field prompt-runner-remote-field">
-            <label class="prompt-runner-remote-toggle">
-              <input id="chatAllowRemote" type="checkbox">
-              <span>Allow remote calls</span>
-            </label>
+          <div class="chat-toggle-row">
+            <div class="translation-prompts-field prompt-runner-remote-field">
+              <label class="prompt-runner-remote-toggle">
+                <input id="chatAllowRemote" type="checkbox">
+                <span>Allow remote calls</span>
+              </label>
+            </div>
+            <div class="translation-prompts-field prompt-runner-remote-field">
+              <label class="prompt-runner-remote-toggle">
+                <input id="chatEnableThinking" type="checkbox" disabled>
+                <span>Enable thinking</span>
+              </label>
+            </div>
           </div>
           <details class="translation-prompts-system-details">
-            <summary>System prompt &amp; decoding</summary>
+            <summary>System prompt &amp; decoding parameters</summary>
             <label class="translation-prompts-field">
               <span>System prompt</span>
               <textarea id="chatSystemPrompt" rows="2" placeholder="<Optional system prompt>"></textarea>
@@ -165,6 +174,7 @@ export function createChatView() {
   const temperatureInput = container.querySelector('#chatTemperature');
   const topPInput = container.querySelector('#chatTopP');
   const topKInput = container.querySelector('#chatTopK');
+  const enableThinkingInput = container.querySelector('#chatEnableThinking');
   const warningEl = container.querySelector('#chatWarning');
   const streamEl = container.querySelector('#chatStream');
   const attachmentsEl = container.querySelector('#chatAttachments');
@@ -184,6 +194,7 @@ export function createChatView() {
   let pendingImages = [];
   let pendingTextFiles = [];
   let isBusy = false;
+  let lastThinkingEnabled = false;
   // Shell-style recall of previously sent prompt text (Up/Down in the composer).
   let promptHistory = [];
   let historyIndex = null; // null = not navigating
@@ -213,6 +224,15 @@ export function createChatView() {
     topKInput.value = settings.topK;
   }
 
+  function normalizeThinkingModes(value) {
+    const modes = Array.isArray(value)
+      ? value
+        .map((mode) => String(mode).trim().toLowerCase())
+        .filter((mode) => THINKING_MODES.has(mode))
+      : [];
+    return modes.includes('default') ? [...new Set(modes)] : ['default', ...new Set(modes)];
+  }
+
   function normalizeAdminModelsPayload(payload) {
     const list = Array.isArray(payload?.models) ? payload.models : [];
     return list
@@ -230,6 +250,7 @@ export function createChatView() {
           isRemote: backend === 'openai_compatible',
           supportsImage: modalities.includes('image'),
           multiTurn: capabilities.multi_turn === true,
+          thinkingModes: normalizeThinkingModes(capabilities.thinking_modes),
           imageLimit: parseImageLimit(model?.definition),
         };
       })
@@ -264,6 +285,7 @@ export function createChatView() {
     temperatureInput.disabled = nextBusy;
     topPInput.disabled = nextBusy;
     topKInput.disabled = nextBusy;
+    enableThinkingInput.disabled = nextBusy || !selectedModelSupportsThinking();
     inputEl.disabled = nextBusy;
     const noModels = loadedModels().length === 0;
     sendBtn.disabled = nextBusy || noModels;
@@ -282,6 +304,23 @@ export function createChatView() {
     if (!model || !model.supportsImage) return 0;
     const used = (model.multiTurn ? committedImageCount() : 0) + pendingImages.length;
     return Math.max(0, model.imageLimit - used);
+  }
+
+  function selectedModelSupportsThinking() {
+    const model = selectedModel();
+    const modes = model?.thinkingModes || ['default'];
+    return modes.includes('enabled') && modes.includes('disabled');
+  }
+
+  function renderThinkingControl() {
+    const supportsThinking = selectedModelSupportsThinking();
+    enableThinkingInput.checked = supportsThinking ? lastThinkingEnabled : false;
+    enableThinkingInput.disabled = isBusy || !supportsThinking;
+  }
+
+  function selectedThinkingMode() {
+    if (!selectedModelSupportsThinking()) return 'default';
+    return enableThinkingInput.checked ? 'enabled' : 'disabled';
   }
 
   function updateWarning() {
@@ -314,6 +353,7 @@ export function createChatView() {
     if (models.some((model) => model.id === previous)) {
       modelSelect.value = previous;
     }
+    renderThinkingControl();
     updateWarning();
     setBusy(isBusy);
   }
@@ -501,7 +541,8 @@ export function createChatView() {
     renderStream();
 
     setBusy(true);
-    setStatus('Thinking...');
+    const thinkingMode = selectedThinkingMode();
+    setStatus(thinkingMode === 'enabled' ? 'Thinking...' : 'Generating...');
     try {
       const decode = readDecode();
       const result = await api.runChatPrompt({
@@ -509,6 +550,7 @@ export function createChatView() {
         system_prompt: String(systemPromptInput.value || ''),
         multi_turn: model.multiTurn,
         allow_remote: allowRemote,
+        thinking: thinkingMode,
         max_tokens: decode.max_tokens,
         temperature: decode.temperature,
         top_p: decode.top_p,
@@ -602,8 +644,15 @@ export function createChatView() {
 
   modelSelect.addEventListener('change', () => {
     saveStoredModel(modelSelect.value);
+    renderThinkingControl();
     updateWarning();
     setBusy(isBusy);
+  });
+
+  enableThinkingInput.addEventListener('change', () => {
+    if (!enableThinkingInput.disabled) {
+      lastThinkingEnabled = Boolean(enableThinkingInput.checked);
+    }
   });
 
   sendBtn.addEventListener('click', () => send());

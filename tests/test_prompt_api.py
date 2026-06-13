@@ -4,7 +4,7 @@ import json
 import unittest
 from unittest import mock
 
-from app.prompt_testing import ad_hoc
+from app.prompt_testing import pool_client
 from app.realtime_translation.prompt_library.prompts import _render_translation_prompt_template
 
 
@@ -24,21 +24,7 @@ class PromptApiTemplateRenderTests(unittest.TestCase):
         )
 
 
-class PromptRunnerApiTests(unittest.TestCase):
-    def test_prompt_runner_payload_includes_explicit_remote_gate(self) -> None:
-        payload = ad_hoc._prompt_runner_payload(
-            model="kimi-k2.6",
-            system_prompt="Translate.",
-            rendered_user_prompt="Hallo",
-            allow_remote=True,
-        )
-
-        self.assertEqual(payload["model"], "kimi-k2.6")
-        self.assertTrue(payload["allow_remote"])
-        self.assertEqual(payload["decoding"]["temperature"], 0.6)
-        self.assertEqual(payload["decoding"]["top_p"], 0.95)
-        self.assertNotIn("top_k", payload["decoding"])
-
+class PoolClientTests(unittest.TestCase):
     def test_prompt_runner_uses_llm_pool_base_url(self) -> None:
         captured: dict[str, str] = {}
 
@@ -58,10 +44,10 @@ class PromptRunnerApiTests(unittest.TestCase):
             return FakeResponse()
 
         with (
-            mock.patch.object(ad_hoc, "_llm_pool_base_url", return_value="http://pool:8012"),
-            mock.patch.object(ad_hoc.urllib_request, "urlopen", side_effect=fake_urlopen),
+            mock.patch.object(pool_client, "_llm_pool_base_url", return_value="http://pool:8012"),
+            mock.patch.object(pool_client.urllib_request, "urlopen", side_effect=fake_urlopen),
         ):
-            ad_hoc._run_prompt_runner_payload({"model": "kimi-k2.6"})
+            pool_client._run_prompt_runner_payload({"model": "kimi-k2.6"})
 
         self.assertEqual(captured["url"], "http://pool:8012/v1/responses")
         self.assertEqual(captured["timeout"], "120.0")

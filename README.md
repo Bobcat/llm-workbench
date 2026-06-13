@@ -56,14 +56,14 @@ Other parts are more exploratory. `Realtime Translation / Replay & Translate` st
 - `app/main.py` creates the FastAPI app, mounts API routes, exposes the replay websocket, and serves the frontend from `static/`.
 - `app/router.py` wires the `/api` router groups.
 - `app/llm_pool/` proxies model listing and model admin actions to `llm-pool`.
-- `app/prompt_testing/` implements the ad hoc prompt runner.
+- `app/prompt_testing/` implements text generation and chat proxy endpoints.
 - `app/realtime_translation/replay/` manages replay sessions, translation dispatch, runtime export, websocket transport, and metrics.
 - `app/realtime_translation/prompt_library/` manages translation prompt sets.
 - `promptlib/` contains prompt-library storage helpers.
 - `static/` contains the browser UI. It has no build step; the browser loads source files directly as ES modules.
 - `static/app.js` registers UI workflows and shell routing.
 - `static/src/api-client.js` contains the same-origin backend API client and replay websocket wrapper.
-- `static/src/workflows/` contains the replay, prompt-library, LLM-pool, TTS-pool, ad hoc prompt runner, and chat screens.
+- `static/src/workflows/` contains the replay, prompt-library, LLM-pool, TTS-pool, text generation, image generation, and chat screens.
 - `config/settings.json` contains committed defaults.
 - `data/realtime_translation/sample/` contains sample `.pc` replay files.
 - `deploy/systemd/` contains example service wiring for local deployments.
@@ -71,7 +71,7 @@ Other parts are more exploratory. `Realtime Translation / Replay & Translate` st
 ## API Surface
 
 - `/api/models*` exposes model listing and model admin proxy routes.
-- `/api/prompts/run` runs ad hoc prompts.
+- `/api/text-generation/run` runs single-shot text generation with optional files and images.
 - `/api/chat/run` runs a multi-turn chat turn (or a flattened single-prompt fallback) against a model.
 - `/api/prompts*` manages the realtime translation prompt library.
 - `/api/replay*` creates and controls replay sessions.

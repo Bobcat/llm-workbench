@@ -1107,6 +1107,33 @@
   text-align: center;
 }
 
+.image-pool-view .llm-pool-table-shell {
+  --llm-pool-table-columns: minmax(240px, 2fr) 90px 96px 64px 64px minmax(104px, 0.8fr) 92px;
+}
+
+.image-pool-view .llm-pool-table-header .llm-pool-header-cell:nth-child(6),
+.image-pool-view .llm-pool-table-header .llm-pool-header-cell:nth-child(6) .llm-pool-sort-btn {
+  justify-content: flex-start;
+}
+
+.image-pool-view .llm-pool-table-header .llm-pool-header-cell:nth-child(6) .llm-pool-sort-label {
+  text-align: left;
+}
+
+.image-pool-view .llm-pool-cell.meta {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.image-pool-view .llm-pool-backend-label {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 .llm-pool-view .llm-pool-header-cell:hover .llm-pool-sort-label,
 .llm-pool-view .llm-pool-sort-btn:focus-visible .llm-pool-sort-label,
 .llm-pool-view .llm-pool-sort-btn.is-active .llm-pool-sort-label {
@@ -1765,21 +1792,6 @@
   background: #ffedd5;
 }
 
-.translation-prompts-view .prompt-runner-files {
-  overflow-wrap: anywhere;
-}
-
-.translation-prompts-view .prompt-runner-files-label {
-  margin-right: 6px;
-}
-
-.translation-prompts-view .prompt-runner-file-list {
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  vertical-align: middle;
-}
-
 .translation-prompts-view .prompt-runner-file-item {
   display: inline-flex;
   align-items: center;
@@ -1812,29 +1824,71 @@
   border-color: #b7c5d6;
 }
 
-.vlm-test-view .vlm-image-strip {
+.text-generation-view .text-generation-options-row {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+}
+
+.text-generation-view .text-generation-settings-details,
+.image-generation-view .image-generation-parameters-details {
+  margin-top: 14px;
+  margin-bottom: 8px;
+  gap: 14px;
+}
+
+.text-generation-view .text-generation-settings-details .text-generation-decode-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-top: 8px;
+  margin-bottom: 0;
+}
+
+.text-generation-view .text-generation-settings-actions {
+  padding-top: 10px;
+  padding-left: 18px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.text-generation-view .text-generation-attachments {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
   margin: 4px 0 2px;
+  align-items: center;
 }
 
-.vlm-test-view .vlm-image-empty {
+.text-generation-view .text-generation-attachment-empty {
   font-size: 0.85rem;
   color: #5f6f84;
 }
 
-.vlm-test-view .vlm-image-item {
+.text-generation-view .text-generation-file-item {
+  min-height: 28px;
+  padding: 4px 6px;
+  border: 1px solid #c9d4e1;
+  border-radius: 6px;
+  background: #f7f9fc;
+  color: #5f6f84;
+}
+
+.text-generation-view .text-generation-file-item > .material-symbols-outlined {
+  font-size: 16px;
+  line-height: 1;
+}
+
+.text-generation-view .text-generation-image-item {
   position: relative;
   margin: 0;
   width: 120px;
   border: 1px solid #c9d4e1;
-  border-radius: 12px;
+  border-radius: 8px;
   background: #f7f9fc;
   overflow: hidden;
 }
 
-.vlm-test-view .vlm-image-item img {
+.text-generation-view .text-generation-image-item img {
   display: block;
   width: 100%;
   height: 90px;
@@ -1842,7 +1896,7 @@
   background: #eef2f7;
 }
 
-.vlm-test-view .vlm-image-item figcaption {
+.text-generation-view .text-generation-image-item figcaption {
   padding: 4px 6px;
   font-size: 0.74rem;
   color: #5f6f84;
@@ -1851,7 +1905,7 @@
   text-overflow: ellipsis;
 }
 
-.vlm-test-view .vlm-image-remove {
+.text-generation-view .text-generation-image-remove {
   position: absolute;
   top: 4px;
   right: 4px;
@@ -1869,12 +1923,12 @@
   cursor: pointer;
 }
 
-.vlm-test-view .vlm-image-remove .material-symbols-outlined {
+.text-generation-view .text-generation-image-remove .material-symbols-outlined {
   font-size: 14px;
   line-height: 1;
 }
 
-.vlm-test-view .vlm-image-remove:hover {
+.text-generation-view .text-generation-image-remove:hover {
   background: #edf2f8;
   border-color: #b7c5d6;
 }
@@ -1887,8 +1941,145 @@
   margin-bottom: 10px;
 }
 
-.translation-prompts-view .vlm-decode-grid {
+.translation-prompts-view .vlm-decode-grid,
+.translation-prompts-view .text-generation-decode-grid {
   grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.image-generation-view .image-generation-params-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.image-generation-view .image-generation-reference-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 4px 0 2px;
+  align-items: center;
+}
+
+.image-generation-view .image-generation-reference-empty,
+.image-generation-view .image-generation-output-empty {
+  font-size: 0.85rem;
+  color: #5f6f84;
+}
+
+.image-generation-view .image-generation-reference-item {
+  position: relative;
+  margin: 0;
+  width: 120px;
+  border: 1px solid #c9d4e1;
+  border-radius: 8px;
+  background: #f7f9fc;
+  overflow: hidden;
+}
+
+.image-generation-view .image-generation-reference-item img {
+  display: block;
+  width: 100%;
+  height: 90px;
+  object-fit: cover;
+  background: #eef2f7;
+}
+
+.image-generation-view .image-generation-reference-item figcaption {
+  padding: 4px 6px;
+  font-size: 0.74rem;
+  color: #5f6f84;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.image-generation-view .image-generation-reference-remove {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid #c9d4e1;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.92);
+  color: #5f6f84;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.image-generation-view .image-generation-reference-remove .material-symbols-outlined {
+  font-size: 14px;
+  line-height: 1;
+}
+
+.image-generation-view .image-generation-reference-remove:hover {
+  background: #edf2f8;
+  border-color: #b7c5d6;
+}
+
+.image-generation-view .image-generation-output-zoom {
+  display: grid;
+  grid-template-columns: auto minmax(120px, 1fr) 48px;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  color: #6b7a8c;
+  font-size: 0.78rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.image-generation-view .image-generation-output-zoom input[type="range"] {
+  width: 100%;
+}
+
+.image-generation-view .image-generation-output-zoom output {
+  color: #111827;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.image-generation-view .image-generation-output {
+  min-height: 360px;
+  padding: 16px;
+  border: 1px dashed #c9d4e1;
+  border-radius: 8px;
+  background: #f8fafc;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: center;
+  justify-content: center;
+  color: #5f6f84;
+  overflow: auto;
+  scrollbar-gutter: stable both-edges;
+}
+
+.image-generation-view .image-generation-output-item {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  margin: 0;
+}
+
+.image-generation-view .image-generation-output-item img {
+  display: block;
+  max-width: none;
+  height: auto;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 8px;
+  background: #eef2f7;
+}
+
+.image-generation-view .image-generation-output-item figcaption {
+  max-width: min(720px, 100%);
+  color: #5f6f84;
+  font-size: 0.78rem;
+  line-height: 1.25;
+  text-align: center;
+  overflow-wrap: anywhere;
 }
 
 .translation-prompts-view .translation-prompts-field {
@@ -1953,6 +2144,17 @@
   background: #ffffff;
 }
 
+.chat-view .chat-toggle-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+}
+
+.chat-view .chat-toggle-row .prompt-runner-remote-field {
+  max-width: none;
+}
+
 /* Group the expander with the chat below it: clear space above (away from
    Allow-remote), little below (close to the chat window). */
 .chat-view .chat-settings .translation-prompts-system-details {
@@ -1974,12 +2176,10 @@
 }
 
 .chat-view .chat-settings-actions {
+  padding-top: 10px;
   padding-left: 18px;
-}
-
-.chat-view #chatResetSettings {
-  font-size: 0.8rem;
-  padding: 4px 10px;
+  display: flex;
+  justify-content: flex-end;
 }
 
 .chat-view .chat-warning {
