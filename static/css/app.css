@@ -2020,11 +2020,15 @@
 }
 
 .image-generation-view .image-generation-output-zoom {
-  display: grid;
-  grid-template-columns: auto minmax(120px, 1fr) 48px;
+  flex: 0 0 40px;
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 8px;
+  justify-content: flex-start;
+  gap: 8px;
+  min-height: 0;
+  padding: 16px 0 10px;
   color: #6b7a8c;
   font-size: 0.78rem;
   font-weight: 600;
@@ -2032,17 +2036,31 @@
 }
 
 .image-generation-view .image-generation-output-zoom input[type="range"] {
-  width: 100%;
+  width: 30px;
+  height: 220px;
+  writing-mode: vertical-lr;
+  direction: rtl;
 }
 
 .image-generation-view .image-generation-output-zoom output {
   color: #111827;
   font-variant-numeric: tabular-nums;
-  text-align: right;
+  text-align: center;
+}
+
+.image-generation-view .image-generation-output-shell {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  height: clamp(360px, 58vh, 720px);
 }
 
 .image-generation-view .image-generation-output {
-  min-height: 360px;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
   padding: 16px;
   border: 1px dashed #c9d4e1;
   border-radius: 8px;
@@ -2055,6 +2073,11 @@
   color: #5f6f84;
   overflow: auto;
   scrollbar-gutter: stable both-edges;
+}
+
+.image-generation-view .image-generation-output:has(.image-generation-output-item) {
+  align-items: flex-start;
+  align-content: flex-start;
 }
 
 .image-generation-view .image-generation-output-item {
@@ -2080,6 +2103,33 @@
   line-height: 1.25;
   text-align: center;
   overflow-wrap: anywhere;
+}
+
+@media (max-width: 720px) {
+  .image-generation-view .image-generation-output-shell {
+    flex-direction: column;
+    height: auto;
+  }
+
+  .image-generation-view .image-generation-output-zoom {
+    flex: 0 0 auto;
+    align-self: stretch;
+    min-height: 0;
+    flex-direction: row;
+    justify-content: flex-end;
+    padding: 0;
+  }
+
+  .image-generation-view .image-generation-output {
+    min-height: 360px;
+  }
+
+  .image-generation-view .image-generation-output-zoom input[type="range"] {
+    width: min(220px, 100%);
+    height: auto;
+    writing-mode: horizontal-tb;
+    direction: ltr;
+  }
 }
 
 .translation-prompts-view .translation-prompts-field {

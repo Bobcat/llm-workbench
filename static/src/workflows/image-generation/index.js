@@ -66,14 +66,15 @@ export function createImageGenerationView() {
             <div class="translation-prompts-inline-status" id="imageGenerationStatus">Loading image-pool models...</div>
             <div class="image-generation-reference-strip" id="imageGenerationReferences"></div>
             <div class="translation-prompts-divider" aria-hidden="true"></div>
-            <label class="image-generation-output-zoom">
-              <span>Preview size</span>
-              <input id="imageGenerationOutputZoom" type="range" min="25" max="200" step="5" value="100">
-              <output id="imageGenerationOutputZoomValue">100%</output>
-            </label>
-            <section class="image-generation-output" id="imageGenerationOutput" aria-label="Output">
-              <span class="image-generation-output-empty">No image generated.</span>
-            </section>
+            <div class="image-generation-output-shell">
+              <section class="image-generation-output" id="imageGenerationOutput" aria-label="Output">
+                <span class="image-generation-output-empty">No image generated.</span>
+              </section>
+              <label class="image-generation-output-zoom" aria-label="Output preview size">
+                <input id="imageGenerationOutputZoom" type="range" min="25" max="200" step="5" value="100">
+                <output id="imageGenerationOutputZoomValue">100%</output>
+              </label>
+            </div>
           </section>
         </div>
       </div>
