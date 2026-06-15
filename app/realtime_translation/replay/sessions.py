@@ -29,8 +29,8 @@ from realtime_translation_engine import TranslationCore
 from realtime_translation_engine import TranslationDecision
 from realtime_translation_engine.translators import build_translator
 
-DEFAULT_FIRST_PASS_PROMPT_ID = "translation/first-pass/current-default"
-DEFAULT_SECOND_PASS_PROMPT_ID = "translation/second-pass/current-default"
+DEFAULT_FIRST_PASS_PROMPT_ID = "translate_realtime_first"
+DEFAULT_SECOND_PASS_PROMPT_ID = "translate_realtime_second"
 
 FIXED_DELAY_SPEEDS_MS = {
     "slow": 900,

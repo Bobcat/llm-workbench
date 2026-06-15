@@ -1,18 +1,5 @@
-export function isFirstPassPrompt(record) {
-  return String(record?.sections?.translation?.stage || '').trim().toLowerCase() === 'first_pass';
-}
-
-export function isSecondPassPrompt(record) {
-  return String(record?.sections?.translation?.stage || '').trim().toLowerCase() === 'second_pass';
-}
-
 export function formatPromptOptionLabel(record) {
-  const title = String(record?.title || '').trim();
-  const promptId = String(record?.id || '').trim();
-  if (title && promptId && title !== promptId) {
-    return `${title} - ${promptId}`;
-  }
-  return title || promptId || '(unnamed prompt)';
+  return String(record?.id || '').trim() || '(unnamed prompt)';
 }
 
 export function resolvePromptSelectionId(promptId, records, defaultPromptId = '') {

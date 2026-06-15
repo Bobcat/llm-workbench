@@ -1,5 +1,6 @@
 import { api } from '../../api-client.js';
 import { escapeAttr, escapeHtml, formatApiError } from '../../shared/ui-helpers.js';
+import { TRANSLATION_LANGUAGES } from '../../shared/translation-languages.js';
 
 const POLL_INTERVAL_MS = 800;
 const TERMINAL_STATES = new Set(['completed', 'failed', 'cancelled']);
@@ -39,7 +40,6 @@ export function createTranslationRequestsView() {
             <div class="translation-prompts-run-actions">
               <button type="button" id="translationRequestSubmit">Submit</button>
               <button type="button" id="translationRequestCancel" disabled>Cancel</button>
-              <button type="button" id="translationRequestFixture" style="margin-left:auto" title="Translate using the registered reference fixture for this image (no LLM) — for comparing render quality against a reference">Reference run</button>
             </div>
             <div class="translation-prompts-inline-status" id="translationRequestStatus"></div>
             <section class="translation-prompts-stats-block">
@@ -67,32 +67,30 @@ export function createTranslationRequestsView() {
               <div class="translation-requests-timings" id="translationRequestTimings"></div>
             </section>
             <label class="translation-prompts-field translation-prompts-field-response">
+              <span>LLM input (sent)</span>
+              <textarea id="translationRequestInput" rows="10" readonly placeholder="The user-prompt input sent to the LLM — copy into the Prompt Library to experiment."></textarea>
+            </label>
+            <label class="translation-prompts-field translation-prompts-field-response">
               <span>Raw response</span>
               <textarea id="translationRequestRaw" rows="10" readonly></textarea>
             </label>
-            <details class="translation-requests-advanced">
-              <summary>Advanced / overrides</summary>
-              <label class="translation-prompts-field">
-                <span>Translator model</span>
-                <input id="translationRequestTranslator" placeholder="leave empty for translation default">
-              </label>
-              <label class="translation-prompts-field">
-                <span>Translator mode</span>
-                <select id="translationRequestTranslatorMode">
-                  <option value="">(default)</option>
-                  <option value="translategemma">translategemma</option>
-                  <option value="generic">generic</option>
-                </select>
-              </label>
-              <label class="translation-prompts-field">
-                <span>Grouping model</span>
-                <input id="translationRequestGroupingModel" placeholder="leave empty for grouping default">
-              </label>
-              <label class="translation-prompts-field">
-                <span>Request id</span>
-                <input id="translationRequestId" placeholder="leave empty for automatic id">
-              </label>
-            </details>
+            <section class="translation-prompts-stats-block translation-requests-retranslate">
+              <div class="translation-requests-timings-title">Re-translate (cached units)</div>
+              <div class="translation-prompts-language-grid translation-requests-grid">
+                <label class="translation-prompts-field">
+                  <span>Target language</span>
+                  <select id="translationRetranslateLang"></select>
+                </label>
+                <label class="translation-prompts-field">
+                  <span>Prompt</span>
+                  <select id="translationRetranslatePrompt"></select>
+                </label>
+              </div>
+              <div class="translation-prompts-run-actions">
+                <button type="button" id="translationRetranslate" disabled title="Re-run translation + render on the last completed run's cached units with this prompt and language (no VLM/OCR/grouping)">Re-translate</button>
+              </div>
+              <div class="translation-prompts-inline-status" id="translationPromptStatus"></div>
+            </section>
           </section>
           <section class="translation-prompts-pane translation-requests-preview-pane">
             <div class="translation-prompts-pane-title">Preview</div>
@@ -135,12 +133,7 @@ export function createTranslationRequestsView() {
   const fileInput = container.querySelector('#translationRequestFile');
   const sourceInput = container.querySelector('#translationRequestSource');
   const targetInput = container.querySelector('#translationRequestTarget');
-  const translatorInput = container.querySelector('#translationRequestTranslator');
-  const translatorModeSelect = container.querySelector('#translationRequestTranslatorMode');
-  const groupingModelInput = container.querySelector('#translationRequestGroupingModel');
-  const requestIdInput = container.querySelector('#translationRequestId');
   const submitBtn = container.querySelector('#translationRequestSubmit');
-  const fixtureBtn = container.querySelector('#translationRequestFixture');
   const cancelBtn = container.querySelector('#translationRequestCancel');
   const statusEl = container.querySelector('#translationRequestStatus');
   const statIdEl = container.querySelector('#translationRequestStatId');
@@ -149,6 +142,7 @@ export function createTranslationRequestsView() {
   const statQueueEl = container.querySelector('#translationRequestStatQueue');
   const timingsEl = container.querySelector('#translationRequestTimings');
   const rawEl = container.querySelector('#translationRequestRaw');
+  const inputEl = container.querySelector('#translationRequestInput');
   const inputPreview = container.querySelector('#translationInputPreview');
   const inputEmpty = container.querySelector('#translationInputEmpty');
   const outputPreview = container.querySelector('#translationOutputPreview');
@@ -160,12 +154,17 @@ export function createTranslationRequestsView() {
   const comparePreview = container.querySelector('#translationComparePreview');
   const toggleInput = container.querySelector('#translationPreviewShowOriginal');
   const toggleLabel = container.querySelector('#translationPreviewToggleLabel');
+  const retranslateLangSelect = container.querySelector('#translationRetranslateLang');
+  const retranslatePromptSelect = container.querySelector('#translationRetranslatePrompt');
+  const retranslateBtn = container.querySelector('#translationRetranslate');
+  const promptStatusEl = container.querySelector('#translationPromptStatus');
 
   let isBusy = false;
   let currentRequestId = '';
   let pollTimer = null;
   let inputObjectUrl = '';
   let lastPreviewResult = null;
+  let savedPrompts = [];
 
   function setStatus(message, kind = '') {
     statusEl.textContent = String(message || '');
@@ -175,15 +174,23 @@ export function createTranslationRequestsView() {
   function setBusy(nextBusy) {
     isBusy = Boolean(nextBusy);
     submitBtn.disabled = isBusy || !selectedFile();
-    fixtureBtn.disabled = isBusy || !selectedFile();
     fileInput.disabled = isBusy;
     sourceInput.disabled = isBusy;
     targetInput.disabled = isBusy;
-    translatorInput.disabled = isBusy;
-    translatorModeSelect.disabled = isBusy;
-    groupingModelInput.disabled = isBusy;
-    requestIdInput.disabled = isBusy;
     cancelBtn.disabled = !currentRequestId || isTerminalState(currentState());
+    retranslateLangSelect.disabled = isBusy;
+    retranslatePromptSelect.disabled = isBusy;
+    updateRetranslateState();
+  }
+
+  function updateRetranslateState() {
+    const ready = Boolean(currentRequestId) && currentState() === 'completed';
+    retranslateBtn.disabled = isBusy || !ready;
+  }
+
+  function setPromptStatus(message, kind = '') {
+    promptStatusEl.textContent = String(message || '');
+    promptStatusEl.classList.toggle('is-error', kind === 'error');
   }
 
   function selectedFile() {
@@ -198,29 +205,19 @@ export function createTranslationRequestsView() {
     return TERMINAL_STATES.has(String(state || '').trim().toLowerCase());
   }
 
-  function buildRequestPayload(options = {}) {
+  function buildRequestPayload() {
     const payload = {
       task: 'translate_image',
       priority: 'normal',
     };
-    const requestId = String(requestIdInput.value || '').trim();
-    if (requestId) payload.request_id = requestId;
     const sourceLang = String(sourceInput.value || '').trim();
     if (sourceLang) payload.source_lang_code = sourceLang;
     const targetLang = String(targetInput.value || '').trim();
     if (targetLang) payload.target_lang_code = targetLang;
-    const translatorModel = String(translatorInput.value || '').trim();
-    if (translatorModel) payload.translator_model = translatorModel;
-    const translatorMode = String(translatorModeSelect.value || '').trim();
-    if (translatorMode) payload.translator_mode = translatorMode;
-    const groupingModel = String(groupingModelInput.value || '').trim();
-    if (groupingModel) payload.grouping_model = groupingModel;
-    // Reference run: pin the translation to the registered fixture for this image (no LLM).
-    if (options.fixture) payload.translation_fixture = 'auto';
     return payload;
   }
 
-  async function submitRequest(options = {}) {
+  async function submitRequest() {
     const file = selectedFile();
     if (!file) {
       setStatus('Select an image first.', 'error');
@@ -230,10 +227,10 @@ export function createTranslationRequestsView() {
     stopPolling();
     clearOutputPreview();
     setBusy(true);
-    setStatus(options.fixture ? 'Submitting reference run...' : 'Submitting image request...');
+    setStatus('Submitting image request...');
     try {
       const formData = new FormData();
-      formData.append('request_json', JSON.stringify(buildRequestPayload(options)));
+      formData.append('request_json', JSON.stringify(buildRequestPayload()));
       formData.append('image_file', file);
       const result = await api.submitImageRequest(formData);
       applyLifecycle(result);
@@ -298,6 +295,61 @@ export function createTranslationRequestsView() {
     }
   }
 
+  function populateLanguageSelect() {
+    retranslateLangSelect.innerHTML = TRANSLATION_LANGUAGES
+      .map((l) => `<option value="${escapeAttr(l.code)}">${escapeHtml(`${l.flag} ${l.name}`)}</option>`)
+      .join('');
+  }
+
+  // Prompts are authored in the prompt library (#prompt-library); this view only selects
+  // one from the flat list to re-translate the cached units with.
+  async function loadPromptChoices() {
+    try {
+      const result = await api.listTranslationPrompts();
+      savedPrompts = (result && result.prompts) || [];
+    } catch (err) {
+      savedPrompts = [];
+      setPromptStatus(formatApiError(err), 'error');
+    }
+    const previous = String(retranslatePromptSelect.value || '');
+    retranslatePromptSelect.innerHTML = savedPrompts.length
+      ? savedPrompts.map((p) => `<option value="${escapeAttr(p.id)}">${escapeHtml(p.id)}</option>`).join('')
+      : '<option value="">(no prompts)</option>';
+    if (savedPrompts.some((p) => p.id === previous)) retranslatePromptSelect.value = previous;
+    setBusy(isBusy);
+  }
+
+  async function retranslateRequest() {
+    const sourceRequestId = currentRequestId;
+    if (!sourceRequestId || currentState() !== 'completed') return;
+    const body = {};
+    const promptId = String(retranslatePromptSelect.value || '');
+    if (promptId) body.translation_prompt_id = promptId;
+    const lang = String(retranslateLangSelect.value || '');
+    if (lang) body.target_lang_code = lang;
+    stopPolling();
+    clearOutputPreview();
+    setBusy(true);
+    setStatus('Submitting re-translate...');
+    setPromptStatus('Re-translating cached units...');
+    try {
+      const result = await api.retranslateImageRequest(sourceRequestId, body);
+      applyLifecycle(result);
+      currentRequestId = String(result?.request_id || '');
+      setStatus('Re-translate submitted.');
+      if (currentRequestId && !isTerminalState(result?.state)) {
+        startPolling();
+      } else {
+        renderOutputPreview(result);
+      }
+    } catch (err) {
+      setStatus(formatApiError(err), 'error');
+      setPromptStatus(formatApiError(err), 'error');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function applyLifecycle(result) {
     const requestId = String(result?.request_id || '');
     if (requestId) currentRequestId = requestId;
@@ -307,6 +359,7 @@ export function createTranslationRequestsView() {
     statStageEl.textContent = String(result?.stage || '-');
     statQueueEl.textContent = result?.queue_position == null ? '-' : String(result.queue_position);
     rawEl.value = JSON.stringify(result || {}, null, 2);
+    inputEl.value = String(result?.response?.metadata?.translation_input || '');
     renderTimings(result);
     setBusy(isBusy);
   }
@@ -447,8 +500,8 @@ export function createTranslationRequestsView() {
     if (lastPreviewResult) renderOutputPreview(lastPreviewResult);
   });
   submitBtn.addEventListener('click', () => submitRequest());
-  fixtureBtn.addEventListener('click', () => submitRequest({ fixture: true }));
   cancelBtn.addEventListener('click', cancelRequest);
+  retranslateBtn.addEventListener('click', retranslateRequest);
 
   container.__onDeactivate = () => {
     stopPolling();
@@ -465,6 +518,9 @@ export function createTranslationRequestsView() {
   updatePreviewZoom();
   updateInputPreview();
   renderTimings(null);
+  populateLanguageSelect();
+  retranslateLangSelect.value = String(targetInput.value || 'nl').trim() || 'nl';
   setBusy(false);
+  loadPromptChoices();
   return container;
 }

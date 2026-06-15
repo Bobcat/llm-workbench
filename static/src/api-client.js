@@ -251,6 +251,44 @@ export const api = {
     });
   },
 
+  async retranslateImageRequest(sourceRequestId, body) {
+    return fetchJson(`/api/translation/requests/${encodeURIComponent(sourceRequestId)}/retranslate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body || {}),
+    });
+  },
+
+  async listTranslationPrompts() {
+    return fetchJson('/api/translation/prompts');
+  },
+
+  async getTranslationPrompt(promptId) {
+    return fetchJson(`/api/translation/prompts/${encodeURIComponent(promptId).replace(/%2F/g, '/')}`);
+  },
+
+  async createTranslationPrompt(body) {
+    return fetchJson('/api/translation/prompts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body || {}),
+    });
+  },
+
+  async updateTranslationPrompt(promptId, body) {
+    return fetchJson(`/api/translation/prompts/${encodeURIComponent(promptId).replace(/%2F/g, '/')}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body || {}),
+    });
+  },
+
+  async deleteTranslationPrompt(promptId) {
+    return fetchJson(`/api/translation/prompts/${encodeURIComponent(promptId).replace(/%2F/g, '/')}`, {
+      method: 'DELETE',
+    });
+  },
+
   async getTranslationStatus() {
     return fetchJson('/api/translation/status');
   },

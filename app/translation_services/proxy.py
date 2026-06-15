@@ -107,6 +107,17 @@ def cancel_request(request_id: str) -> dict:
     return _request_json(method="POST", path=f"/v1/requests/{safe_request_id}/cancel", timeout=10.0)
 
 
+@router.post("/requests/{request_id}/retranslate")
+def retranslate_request(request_id: str, body: dict | None = None) -> dict:
+    safe_request_id = parse.quote(request_id, safe="")
+    return _request_json(
+        method="POST",
+        path=f"/v1/requests/{safe_request_id}/retranslate",
+        payload=dict(body or {}),
+        timeout=60.0,
+    )
+
+
 @router.get("/requests/{request_id}/artifacts/{artifact_name}")
 def get_artifact(request_id: str, artifact_name: str) -> Response:
     safe_request_id = parse.quote(request_id, safe="")
@@ -116,6 +127,34 @@ def get_artifact(request_id: str, artifact_name: str) -> Response:
         timeout=10.0,
     )
     return Response(content=payload, media_type=media_type)
+
+
+@router.get("/prompts")
+def list_prompts() -> dict:
+    return _request_json(method="GET", path="/v1/prompts", timeout=5.0)
+
+
+@router.post("/prompts")
+def create_prompt(body: dict | None = None) -> dict:
+    return _request_json(method="POST", path="/v1/prompts", payload=dict(body or {}), timeout=5.0)
+
+
+@router.get("/prompts/{prompt_id:path}")
+def get_prompt(prompt_id: str) -> dict:
+    safe_id = parse.quote(prompt_id, safe="/")
+    return _request_json(method="GET", path=f"/v1/prompts/{safe_id}", timeout=5.0)
+
+
+@router.put("/prompts/{prompt_id:path}")
+def update_prompt(prompt_id: str, body: dict | None = None) -> dict:
+    safe_id = parse.quote(prompt_id, safe="/")
+    return _request_json(method="PUT", path=f"/v1/prompts/{safe_id}", payload=dict(body or {}), timeout=5.0)
+
+
+@router.delete("/prompts/{prompt_id:path}")
+def delete_prompt(prompt_id: str) -> dict:
+    safe_id = parse.quote(prompt_id, safe="/")
+    return _request_json(method="DELETE", path=f"/v1/prompts/{safe_id}", timeout=5.0)
 
 
 @router.get("/completions")

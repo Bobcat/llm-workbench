@@ -3,8 +3,6 @@ import { escapeHtml } from '../../shared/ui-helpers.js';
 import { normalizeTranslationLanguage as normalizeReplayLanguage } from '../../shared/translation-languages.js';
 import {
   formatPromptOptionLabel,
-  isFirstPassPrompt,
-  isSecondPassPrompt,
   resolvePromptSelectionId,
 } from './prompt-utils.js';
 import { closeDialog, openDialog, syncSelectTitle } from './ui.js';
@@ -343,21 +341,22 @@ export function createReplayPromptDialog(options) {
     firstPassPromptsBtn.disabled = true;
     firstPassPromptSelect.innerHTML = '';
     try {
-      const prompts = await api.getPrompts(false);
-      firstPassPromptRecords = prompts
-        .filter((record) => record.enabled !== false && isFirstPassPrompt(record))
-        .sort((a, b) => {
-          if (a.id === defaultFirstPassPromptId) return -1;
-          if (b.id === defaultFirstPassPromptId) return 1;
-          return formatPromptOptionLabel(a).localeCompare(formatPromptOptionLabel(b));
-        });
-      secondPassPromptRecords = prompts
-        .filter((record) => record.enabled !== false && isSecondPassPrompt(record))
-        .sort((a, b) => {
-          if (a.id === defaultSecondPassPromptId) return -1;
-          if (b.id === defaultSecondPassPromptId) return 1;
-          return formatPromptOptionLabel(a).localeCompare(formatPromptOptionLabel(b));
-        });
+      const result = await api.listTranslationPrompts();
+      // One flat library, shared with the image pipeline. A prompt has no pass of its own;
+      // both selectors show the full list and you pick whichever for each slot.
+      const prompts = ((result && result.prompts) || []).map((e) => ({
+        id: e.id,
+        enabled: true,
+        system_prompt: e.system,
+        prompt_text: e.user,
+      }));
+      const sortBy = (defaultId) => (a, b) => {
+        if (a.id === defaultId) return -1;
+        if (b.id === defaultId) return 1;
+        return formatPromptOptionLabel(a).localeCompare(formatPromptOptionLabel(b));
+      };
+      firstPassPromptRecords = [...prompts].sort(sortBy(defaultFirstPassPromptId));
+      secondPassPromptRecords = [...prompts].sort(sortBy(defaultSecondPassPromptId));
 
       currentFirstPassPromptId = resolvePromptSelectionId(
         currentFirstPassPromptId,

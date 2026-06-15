@@ -1,43 +1,48 @@
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING
+from urllib import error, parse, request
 
-from promptlib import PromptNotFoundError, PromptRecord
+from promptlib import PromptRecord
 
-from app.realtime_translation.prompt_library.store import get_prompt_library_store
+from app.translation_services.proxy import _base_url
 
 if TYPE_CHECKING:
     from app.realtime_translation.replay.sessions import ReplaySession
 
 
-def _is_translation_stage_prompt(record: PromptRecord, stage_name: str) -> bool:
-    translation_section = record.sections.get("translation", {})
-    if not isinstance(translation_section, dict):
-        return False
-    stage = str(translation_section.get("stage", "")).strip().lower()
-    return stage == str(stage_name or "").strip().lower()
-
-
-def _load_stage_prompt(prompt_id: str, *, stage_name: str) -> PromptRecord:
-    prompt_store = get_prompt_library_store()
-    prompt_store.reload()
+# Prompts live in the translation-services library (/v1/prompts), one flat list shared
+# with the image pipeline. A prompt has no first/second-pass property of its own — which
+# slot it serves is the caller's choice. The engine still receives plain prompt strings;
+# we fetch the {system, user} entry here and map it onto a PromptRecord.
+def _load_prompt(prompt_id: str) -> PromptRecord:
+    safe_id = parse.quote(str(prompt_id or ""), safe="")
+    url = f"{_base_url()}/v1/prompts/{safe_id}"
+    req = request.Request(url, method="GET", headers={"Accept": "application/json"})
     try:
-        record = prompt_store.get_prompt(prompt_id)
-    except PromptNotFoundError as exc:
-        raise ValueError(str(exc)) from exc
-    if not record.enabled:
-        raise ValueError(f"Prompt {prompt_id!r} is disabled.")
-    if not _is_translation_stage_prompt(record, stage_name):
-        raise ValueError(f"Prompt {prompt_id!r} is not a {stage_name.replace('_', '-')} translation prompt.")
-    return record
+        with request.urlopen(req, timeout=5.0) as response:
+            data = json.loads(response.read().decode("utf-8"))
+    except error.HTTPError as exc:
+        if exc.code == 404:
+            raise ValueError(f"Prompt {prompt_id!r} not found in translation-services.") from exc
+        raise ValueError(f"translation-services /v1/prompts HTTP {exc.code}") from exc
+    except (error.URLError, TimeoutError) as exc:
+        raise ValueError(f"translation-services unreachable: {exc}") from exc
+    return PromptRecord(
+        id=str(data.get("id") or prompt_id),
+        title=str(data.get("title") or ""),
+        prompt_text=str(data.get("user") or ""),
+        system_prompt=str(data.get("system") or ""),
+    )
 
 
 def _load_first_pass_prompt(prompt_id: str) -> PromptRecord:
-    return _load_stage_prompt(prompt_id, stage_name="first_pass")
+    return _load_prompt(prompt_id)
 
 
 def _load_second_pass_prompt(prompt_id: str) -> PromptRecord:
-    return _load_stage_prompt(prompt_id, stage_name="second_pass")
+    return _load_prompt(prompt_id)
 
 
 def _apply_first_pass_prompt(session: ReplaySession, prompt: PromptRecord) -> None:

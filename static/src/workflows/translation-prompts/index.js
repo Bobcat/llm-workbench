@@ -2,22 +2,17 @@ import { api } from '../../api-client.js';
 import { populateTranslationLanguageSelect } from '../../shared/translation-languages.js';
 import { escapeAttr, escapeHtml, formatApiError } from '../../shared/ui-helpers.js';
 
+// The prompt library now lives in translation-services (/v1/prompts), domain-agnostic:
+// image-translation prompts and the realtime first/second-pass prompts share one store.
+// A prompt is a {system, user} template pair with {{var}} placeholders; the variables a
+// template references depend on its domain (image uses {{category}}/{{target_lang}}/
+// {{source_window}}, realtime adds {{draft_translation}}/{{source_lang}}).
 const DEFAULT_SOURCE_TEXT = 'This is a sample source sentence.';
 const DEFAULT_SOURCE_LANGUAGE = 'English';
 const DEFAULT_TARGET_LANGUAGE = 'Dutch';
-const DEFAULT_DRAFT_TRANSLATION = '';
-const DEFAULT_USER_PROMPT_TEMPLATE = [
-  'Translate the attachment from {{source_lang}} to {{target_lang}}.',
-  'ATTACHMENTS:',
-  'Name: source.txt',
-  'Contents:',
-  '=====',
-  '{{source_window}}',
-  '=====',
-].join('\n');
-const DEFAULT_PROMPT_ID = 'translation/first-pass/current-default';
-const FIRST_PASS_TRANSLATION_SECTIONS = {translation: {stage: 'first_pass'}};
-const SECOND_PASS_TRANSLATION_SECTIONS = {translation: {stage: 'second_pass'}};
+const DEFAULT_CATEGORY = 'sign';
+const DEFAULT_USER_TEMPLATE = '{{source_window}}';
+const DEFAULT_PROMPT_ID = 'img_translate_default';
 
 export function createTranslationPromptsView() {
   const container = document.createElement('div');
@@ -28,7 +23,7 @@ export function createTranslationPromptsView() {
       <div class="translation-prompts-main">
         <div class="translation-prompts-content-area">
           <section class="translation-prompts-pane translation-prompts-pane-editor">
-            <details class="translation-prompts-system-details" id="promptLibraryDetails">
+            <details class="translation-prompts-system-details" id="promptLibraryDetails" open>
               <summary>Prompt library</summary>
               <div class="translation-prompts-library-block">
                 <div class="translation-prompts-library-picker">
@@ -39,19 +34,16 @@ export function createTranslationPromptsView() {
                   <div class="translation-prompts-library-actions">
                     <button type="button" id="loadPromptBtn">Load</button>
                     <button type="button" id="newPromptBtn">New</button>
+                    <button type="button" id="deletePromptBtn">Delete</button>
                   </div>
                 </div>
                 <label class="translation-prompts-field">
                   <span>Prompt ID</span>
-                  <input id="promptIdInput" type="text" placeholder="<translation/first-pass/example-v1>">
-                </label>
-                <label class="translation-prompts-field">
-                  <span>Title</span>
-                  <input id="promptTitleInput" type="text" placeholder="<Prompt title>">
+                  <input id="promptIdInput" type="text" placeholder="<translate_image_menu>">
                 </label>
               </div>
             </details>
-            <div class="translation-prompts-inline-status" id="promptEditorStatus">Loading models...</div>
+            <div class="translation-prompts-inline-status" id="promptEditorStatus">Loading...</div>
             <div class="translation-prompts-divider" aria-hidden="true"></div>
             <details class="translation-prompts-system-details">
               <summary>Model</summary>
@@ -60,16 +52,16 @@ export function createTranslationPromptsView() {
               </label>
             </details>
             <div class="translation-prompts-divider" aria-hidden="true"></div>
-            <details class="translation-prompts-system-details">
+            <details class="translation-prompts-system-details" open>
               <summary>System prompt</summary>
               <label class="translation-prompts-field">
-                <textarea id="systemPromptInput" rows="4" placeholder="<Optional system prompt>"></textarea>
+                <textarea id="systemPromptInput" rows="6" placeholder="<System prompt; use {{target_lang}}, {{category}}>"></textarea>
               </label>
             </details>
             <details class="translation-prompts-system-details">
               <summary>User prompt</summary>
               <label class="translation-prompts-field">
-                <textarea id="userPromptInput" rows="4" placeholder="<Use {{source_window}} and {{draft_translation}} where needed>"></textarea>
+                <textarea id="userPromptInput" rows="4" placeholder="<Use {{source_window}}, {{draft_translation}} where needed>"></textarea>
               </label>
             </details>
             <div class="translation-prompts-run-actions">
@@ -108,7 +100,7 @@ export function createTranslationPromptsView() {
             </details>
             <div class="translation-prompts-divider" aria-hidden="true"></div>
             <details class="translation-prompts-system-details">
-              <summary>Source, draft &amp; languages</summary>
+              <summary>Variables</summary>
               <div class="translation-prompts-language-grid">
                 <label class="translation-prompts-field">
                   <span>{{source_lang}}</span>
@@ -120,12 +112,16 @@ export function createTranslationPromptsView() {
                 </label>
               </div>
               <label class="translation-prompts-field">
+                <span>{{category}}</span>
+                <input id="categoryInput" type="text" placeholder="<image category, e.g. sign / menu>">
+              </label>
+              <label class="translation-prompts-field">
                 <span>{{source_window}}</span>
                 <textarea id="sourceInput" rows="4" placeholder="<Source text>"></textarea>
               </label>
               <label class="translation-prompts-field">
                 <span>{{draft_translation}}</span>
-                <textarea id="draftTranslationInput" rows="4" placeholder="<Draft translation>"></textarea>
+                <textarea id="draftTranslationInput" rows="4" placeholder="<Draft translation (realtime second pass)>"></textarea>
               </label>
             </details>
             <details class="translation-prompts-system-details">
@@ -141,18 +137,18 @@ export function createTranslationPromptsView() {
   `;
 
   const editorStatusEl = container.querySelector('#promptEditorStatus');
-  const promptLibraryDetails = container.querySelector('#promptLibraryDetails');
   const testBtn = container.querySelector('#testPromptBtn');
   const savePromptBtn = container.querySelector('#savePromptBtn');
   const loadPromptBtn = container.querySelector('#loadPromptBtn');
   const newPromptBtn = container.querySelector('#newPromptBtn');
+  const deletePromptBtn = container.querySelector('#deletePromptBtn');
   const promptLibrarySelect = container.querySelector('#promptLibrarySelect');
   const promptIdInput = container.querySelector('#promptIdInput');
-  const promptTitleInput = container.querySelector('#promptTitleInput');
   const systemPromptInput = container.querySelector('#systemPromptInput');
   const userPromptInput = container.querySelector('#userPromptInput');
   const sourceLanguageSelect = container.querySelector('#sourceLanguageSelect');
   const targetLanguageSelect = container.querySelector('#targetLanguageSelect');
+  const categoryInput = container.querySelector('#categoryInput');
   const sourceInput = container.querySelector('#sourceInput');
   const draftTranslationInput = container.querySelector('#draftTranslationInput');
   const testModelSelect = container.querySelector('#promptTestModelSelect');
@@ -166,83 +162,64 @@ export function createTranslationPromptsView() {
   let adminModels = [];
   let promptRecords = [];
   let currentPromptId = '';
-  let currentPromptEditable = true;
-  let currentPromptEnabled = true;
-  let currentGoodForModels = [];
-  let currentPromptTranslationStage = FIRST_PASS_TRANSLATION_SECTIONS.translation.stage;
+  let currentPromptBuiltin = false;
   let isBusy = false;
-  let hasRunCompleted = false;
-  let transientStatus = '';
-  let transientStatusTone = 'info';
   let savedPromptSnapshot = '';
 
-  userPromptInput.value = DEFAULT_USER_PROMPT_TEMPLATE;
+  userPromptInput.value = DEFAULT_USER_TEMPLATE;
   sourceInput.value = DEFAULT_SOURCE_TEXT;
-  draftTranslationInput.value = DEFAULT_DRAFT_TRANSLATION;
+  categoryInput.value = DEFAULT_CATEGORY;
   populateLanguageSelect(sourceLanguageSelect, DEFAULT_SOURCE_LANGUAGE);
   populateLanguageSelect(targetLanguageSelect, DEFAULT_TARGET_LANGUAGE);
 
-  function persistentStatus() {
-    const messages = [];
-    if (isPromptDirty()) {
-      messages.push('Unsaved changes');
-    }
-    if (currentPromptId !== '' && currentPromptEditable === false) {
-      messages.push(`Loaded locked prompt ${currentPromptId}.`);
-    }
-    return messages.join(' · ');
-  }
-
   function refreshStatus() {
-    editorStatusEl.textContent = transientStatus || persistentStatus();
-    editorStatusEl.classList.toggle('is-dirty', !transientStatus && isPromptDirty());
-    editorStatusEl.classList.toggle('is-error', Boolean(transientStatus) && transientStatusTone === 'error');
-    savePromptBtn.classList.toggle('is-unsaved', isPromptDirty());
+    const dirty = isPromptDirty();
+    if (!editorStatusEl.classList.contains('is-error')) {
+      const msgs = [];
+      if (dirty) msgs.push('Unsaved changes');
+      if (currentPromptBuiltin) msgs.push(`Built-in prompt ${currentPromptId} (edit saves an override)`);
+      editorStatusEl.textContent = msgs.join(' · ');
+    }
+    editorStatusEl.classList.toggle('is-dirty', dirty);
+    savePromptBtn.classList.toggle('is-unsaved', dirty);
+    deletePromptBtn.disabled = isBusy || !currentPromptId || currentPromptBuiltin;
   }
 
   function setBusy(nextBusy) {
     isBusy = nextBusy;
-    testBtn.disabled = nextBusy;
-    savePromptBtn.disabled = nextBusy;
-    loadPromptBtn.disabled = nextBusy;
-    newPromptBtn.disabled = nextBusy;
-    promptLibrarySelect.disabled = nextBusy;
-    promptIdInput.disabled = nextBusy;
-    promptTitleInput.disabled = nextBusy;
-    testModelSelect.disabled = nextBusy;
-    systemPromptInput.disabled = nextBusy;
-    userPromptInput.disabled = nextBusy;
-    sourceLanguageSelect.disabled = nextBusy;
-    targetLanguageSelect.disabled = nextBusy;
-    draftTranslationInput.disabled = nextBusy;
-    updateLoadButtonState();
-  }
-
-  function setStatus(message, tone = 'info') {
-    transientStatus = String(message || '');
-    transientStatusTone = transientStatus ? String(tone || 'info') : 'info';
+    [testBtn, savePromptBtn, loadPromptBtn, newPromptBtn, promptLibrarySelect, promptIdInput,
+      testModelSelect, systemPromptInput, userPromptInput, sourceLanguageSelect,
+      targetLanguageSelect, categoryInput, sourceInput, draftTranslationInput]
+      .forEach((el) => { el.disabled = nextBusy; });
     refreshStatus();
   }
 
-  function setActionErrorStatus(action, message) {
-    setStatus(`${action} failed: ${String(message || '').trim()}`, 'error');
+  function setStatus(message, isError = false) {
+    editorStatusEl.classList.toggle('is-error', Boolean(message) && isError);
+    if (message) {
+      editorStatusEl.textContent = String(message);
+    } else {
+      editorStatusEl.classList.remove('is-error');
+      refreshStatus();
+    }
   }
 
-  function setPromptLibrarySaveErrorStatus(openMessage, closedMessage) {
-    const libraryIsOpen = Boolean(promptLibraryDetails?.open);
-    setActionErrorStatus('Save', libraryIsOpen ? openMessage : closedMessage);
+  function setActionErrorStatus(action, message) {
+    setStatus(`${action} failed: ${String(message || '').trim()}`, true);
+  }
+
+  function renderVars() {
+    return {
+      sourceWindow: String(sourceInput.value || ''),
+      draftTranslation: String(draftTranslationInput.value || ''),
+      sourceLanguage: sourceLanguageSelect.value,
+      targetLanguage: targetLanguageSelect.value,
+      category: String(categoryInput.value || ''),
+    };
   }
 
   function renderUserPromptPreview() {
-    const template = String(userPromptInput.value || '');
-    const sourceText = String(sourceInput.value || '');
-    const draftTranslation = String(draftTranslationInput.value || '');
-    const rendered = renderTranslationPromptTemplate(template, {
-      sourceWindow: sourceText,
-      draftTranslation,
-      sourceLanguage: sourceLanguageSelect.value,
-      targetLanguage: targetLanguageSelect.value,
-    });
+    const rendered = renderTemplate(String(userPromptInput.value || ''), renderVars());
     renderedUserPromptEl.value = rendered;
     return rendered;
   }
@@ -255,7 +232,6 @@ export function createTranslationPromptsView() {
   }
 
   function clearRunResult() {
-    hasRunCompleted = false;
     testOutputEl.value = '';
     clearStats();
   }
@@ -287,116 +263,28 @@ export function createTranslationPromptsView() {
       .filter((model) => model.id !== '');
   }
 
-  function getSelectableModelIds() {
-    return new Set(adminModels.filter((model) => isLoadedRuntime(model.runtimeState)).map((model) => model.id));
-  }
-
-  function buildModelGroups() {
-    const byId = new Map(adminModels.map((model) => [model.id, model]));
-    const seen = new Set();
-    const groups = [];
-
-    const associated = currentGoodForModels.map((modelId) => {
-      const model = byId.get(modelId);
-      seen.add(modelId);
-      if (model) {
-        return model;
-      }
-      return {
-        id: modelId,
-        name: modelId,
-        runtimeState: 'unknown',
-      };
-    });
-
-    if (associated.length > 0) {
-      groups.push({
-        label: 'Good for prompt',
-        options: associated.sort(compareModelOptions),
-      });
-    }
-
-    const loaded = adminModels.filter((model) => isLoadedRuntime(model.runtimeState) && !seen.has(model.id));
-    loaded.forEach((model) => seen.add(model.id));
-    if (loaded.length > 0) {
-      groups.push({label: 'Loaded', options: loaded.sort(compareModelOptions)});
-    }
-
-    const otherKnown = adminModels.filter((model) => !seen.has(model.id));
-    if (otherKnown.length > 0) {
-      groups.push({label: 'Other known', options: otherKnown.sort(compareModelOptions)});
-    }
-
-    return groups;
-  }
-
-  function compareModelOptions(left, right) {
-    const leftLoaded = isLoadedRuntime(left.runtimeState) ? 0 : 1;
-    const rightLoaded = isLoadedRuntime(right.runtimeState) ? 0 : 1;
-    if (leftLoaded !== rightLoaded) return leftLoaded - rightLoaded;
-    return String(left.name || '').localeCompare(String(right.name || ''), 'nl', {sensitivity: 'base'});
-  }
-
-  function formatModelOptionLabel(model) {
-    if (model.runtimeState === 'unknown') {
-      return `${model.name} (unknown)`;
-    }
-    if (!isLoadedRuntime(model.runtimeState)) {
-      return `${model.name} (${model.runtimeState})`;
-    }
-    return model.name;
-  }
-
   function populateModelOptions() {
     const previousValue = String(testModelSelect.value || '').trim();
-    const selectableIds = getSelectableModelIds();
-    const groups = buildModelGroups();
-    let firstSelectable = '';
-
+    const loaded = adminModels.filter((m) => isLoadedRuntime(m.runtimeState));
+    const others = adminModels.filter((m) => !isLoadedRuntime(m.runtimeState));
     const markup = ['<option value="">Select model...</option>'];
-    groups.forEach((group) => {
-      markup.push(`<optgroup label="${escapeAttr(group.label)}">`);
-      group.options.forEach((model) => {
-        const isSelectable = selectableIds.has(model.id);
-        if (!firstSelectable && isSelectable) {
-          firstSelectable = model.id;
-        }
-        markup.push(
-          `<option value="${escapeAttr(model.id)}"${isSelectable ? '' : ' disabled'}>${escapeHtml(formatModelOptionLabel(model))}</option>`
-        );
-      });
+    if (loaded.length) {
+      markup.push('<optgroup label="Loaded">');
+      loaded.forEach((m) => markup.push(`<option value="${escapeAttr(m.id)}">${escapeHtml(m.name)}</option>`));
       markup.push('</optgroup>');
-    });
-
+    }
+    if (others.length) {
+      markup.push('<optgroup label="Other known">');
+      others.forEach((m) => markup.push(`<option value="${escapeAttr(m.id)}" disabled>${escapeHtml(`${m.name} (${m.runtimeState})`)}</option>`));
+      markup.push('</optgroup>');
+    }
     testModelSelect.innerHTML = markup.join('');
-
-    const nextValue = selectableIds.has(previousValue)
-      ? previousValue
-      : firstSelectable;
-    testModelSelect.value = nextValue || '';
-  }
-
-  function isTranslationFirstPassPrompt(record) {
-    return String(record?.sections?.translation?.stage || '').trim().toLowerCase() === 'first_pass';
-  }
-
-  function isTranslationSecondPassPrompt(record) {
-    return String(record?.sections?.translation?.stage || '').trim().toLowerCase() === 'second_pass';
-  }
-
-  function isSupportedTranslationPrompt(record) {
-    return isTranslationFirstPassPrompt(record) || isTranslationSecondPassPrompt(record);
+    testModelSelect.value = loaded.some((m) => m.id === previousValue) ? previousValue : (loaded[0]?.id || '');
   }
 
   function promptOptionLabel(record) {
     if (!record) return '';
-    const stage = isTranslationSecondPassPrompt(record)
-      ? '2nd pass'
-      : (isTranslationFirstPassPrompt(record) ? '1st pass' : '');
-    const title = String(record.title || '').trim();
-    const base = title && title !== record.id ? `${title} (${record.id})` : record.id;
-    const withStage = stage ? `${base} [${stage}]` : base;
-    const withLock = record.editable === false ? `${withStage} [locked]` : withStage;
+    const withLock = record.builtin ? `${record.id} [built-in]` : record.id;
     return isPromptDirty() && record.id === currentPromptId ? `${withLock} [unsaved]` : withLock;
   }
 
@@ -407,39 +295,21 @@ export function createTranslationPromptsView() {
       markup.push(`<option value="${escapeAttr(record.id)}">${escapeHtml(promptOptionLabel(record))}</option>`);
     });
     promptLibrarySelect.innerHTML = markup.join('');
-    promptLibrarySelect.value = promptRecords.some((record) => record.id === currentSelection)
+    promptLibrarySelect.value = promptRecords.some((r) => r.id === currentSelection)
       ? currentSelection
-      : (promptRecords.some((record) => record.id === currentPromptId) ? currentPromptId : '');
+      : (promptRecords.some((r) => r.id === currentPromptId) ? currentPromptId : '');
     updateLoadButtonState();
-  }
-
-  function normalizeModelList(value) {
-    if (!Array.isArray(value)) return [];
-    const seen = new Set();
-    const normalized = [];
-    value.forEach((item) => {
-      const cleaned = String(item || '').trim();
-      if (!cleaned || seen.has(cleaned)) return;
-      seen.add(cleaned);
-      normalized.push(cleaned);
-    });
-    return normalized;
   }
 
   function resetDraftFields() {
     currentPromptId = '';
-    currentPromptEditable = true;
-    currentPromptEnabled = true;
-    currentGoodForModels = [];
-    currentPromptTranslationStage = FIRST_PASS_TRANSLATION_SECTIONS.translation.stage;
+    currentPromptBuiltin = false;
     promptIdInput.value = '';
-    promptTitleInput.value = '';
     systemPromptInput.value = '';
-    userPromptInput.value = DEFAULT_USER_PROMPT_TEMPLATE;
+    userPromptInput.value = DEFAULT_USER_TEMPLATE;
     populatePromptLibraryOptions();
     promptLibrarySelect.value = '';
     updateLoadButtonState();
-    populateModelOptions();
     captureSavedPromptSnapshot();
     updateSaveButtonLabel();
     renderUserPromptPreview();
@@ -449,52 +319,28 @@ export function createTranslationPromptsView() {
 
   function applyPromptRecord(record) {
     currentPromptId = String(record?.id || '');
-    currentPromptEditable = record?.editable !== false;
-    currentPromptEnabled = Boolean(record?.enabled ?? true);
-    currentGoodForModels = normalizeModelList(record?.good_for_models || []);
-    currentPromptTranslationStage = isTranslationSecondPassPrompt(record)
-      ? SECOND_PASS_TRANSLATION_SECTIONS.translation.stage
-      : FIRST_PASS_TRANSLATION_SECTIONS.translation.stage;
+    currentPromptBuiltin = Boolean(record?.builtin);
     promptIdInput.value = currentPromptId;
-    promptTitleInput.value = String(record?.title || '');
-    systemPromptInput.value = String(record?.system_prompt || '');
-    userPromptInput.value = String(record?.prompt_text || DEFAULT_USER_PROMPT_TEMPLATE);
+    systemPromptInput.value = String(record?.system || '');
+    userPromptInput.value = String(record?.user || DEFAULT_USER_TEMPLATE);
     captureSavedPromptSnapshot();
     populatePromptLibraryOptions();
-    populateModelOptions();
     updateSaveButtonLabel();
     renderUserPromptPreview();
     clearRunResult();
     refreshStatus();
   }
 
-  function currentSectionsPayload() {
-    return {translation: {stage: currentPromptTranslationStage}};
-  }
-
   function currentPromptPayload() {
     return {
-      title: String(promptTitleInput.value || '').trim(),
-      prompt_text: String(userPromptInput.value || ''),
-      system_prompt: String(systemPromptInput.value || ''),
-      editable: currentPromptEditable,
-      enabled: currentPromptEnabled,
+      system: String(systemPromptInput.value || ''),
+      user: String(userPromptInput.value || ''),
       tags: [],
-      notes: '',
-      good_for_models: normalizeModelList(currentGoodForModels),
-      sections: currentSectionsPayload(),
-    };
-  }
-
-  function currentPromptSnapshot() {
-    return {
-      prompt_id: currentPromptIdInput(),
-      payload: currentPromptPayload(),
     };
   }
 
   function currentPromptSnapshotSignature() {
-    return JSON.stringify(currentPromptSnapshot());
+    return JSON.stringify({ prompt_id: currentPromptIdInput(), payload: currentPromptPayload() });
   }
 
   function captureSavedPromptSnapshot() {
@@ -512,28 +358,17 @@ export function createTranslationPromptsView() {
   function updateSaveButtonLabel() {
     const promptId = currentPromptIdInput();
     const isSamePrompt = currentPromptId !== '' && promptId !== '' && promptId === currentPromptId;
-    if (isSamePrompt && currentPromptEditable) {
-      savePromptBtn.textContent = 'Save changes';
-      return;
-    }
-    if (isSamePrompt && !currentPromptEditable) {
-      savePromptBtn.textContent = 'Save copy';
-      return;
-    }
-    savePromptBtn.textContent = 'Save new';
+    savePromptBtn.textContent = isSamePrompt ? 'Save changes' : 'Save new';
   }
 
   function updateLoadButtonState() {
     const selectedPromptId = String(promptLibrarySelect.value || '').trim();
-    const shouldHighlight = selectedPromptId !== '' && selectedPromptId !== currentPromptId;
-    loadPromptBtn.classList.toggle('is-pending-load', shouldHighlight);
+    loadPromptBtn.classList.toggle('is-pending-load', selectedPromptId !== '' && selectedPromptId !== currentPromptId);
   }
 
   async function loadPromptLibrary() {
-    const promptData = await api.getPrompts(false);
-    promptRecords = Array.isArray(promptData)
-      ? promptData.filter(isSupportedTranslationPrompt)
-      : [];
+    const result = await api.listTranslationPrompts();
+    promptRecords = (result && result.prompts) || [];
     populatePromptLibraryOptions();
   }
 
@@ -548,7 +383,7 @@ export function createTranslationPromptsView() {
     setStatus('Loading prompts and models...');
     try {
       await Promise.all([loadPromptLibrary(), loadAdminModels()]);
-      const defaultPrompt = promptRecords.find((record) => record.id === DEFAULT_PROMPT_ID);
+      const defaultPrompt = promptRecords.find((r) => r.id === DEFAULT_PROMPT_ID) || promptRecords[0];
       if (defaultPrompt) {
         applyPromptRecord(defaultPrompt);
         promptLibrarySelect.value = defaultPrompt.id;
@@ -556,10 +391,10 @@ export function createTranslationPromptsView() {
       } else {
         renderUserPromptPreview();
         clearRunResult();
-        setStatus(adminModels.length > 0 ? '' : 'No models available.');
+        setStatus('');
       }
     } catch (err) {
-      console.error('Failed to load prompt lab data:', err);
+      console.error('Failed to load prompt library data:', err);
       setActionErrorStatus('Load', formatApiError(err));
     } finally {
       setBusy(false);
@@ -572,11 +407,10 @@ export function createTranslationPromptsView() {
       setActionErrorStatus('Load', 'Choose a saved prompt first.');
       return;
     }
-
     setBusy(true);
     setStatus(`Loading prompt ${selectedPromptId}...`);
     try {
-      const record = await api.getPrompt(selectedPromptId);
+      const record = await api.getTranslationPrompt(selectedPromptId);
       applyPromptRecord(record);
       promptLibrarySelect.value = record.id;
       setStatus('');
@@ -588,59 +422,26 @@ export function createTranslationPromptsView() {
     }
   }
 
-  function startNewPrompt() {
-    resetDraftFields();
-    setStatus('');
-  }
-
   async function savePrompt() {
     const promptId = currentPromptIdInput();
-
     if (!promptId) {
-      setPromptLibrarySaveErrorStatus(
-        'Prompt ID is required.',
-        'Prompt ID is required. Open Prompt library and enter a Prompt ID.'
-      );
+      setActionErrorStatus('Save', 'Prompt ID is required.');
       promptIdInput.focus();
       return;
     }
-    const title = String(promptTitleInput.value || '').trim();
-    if (!title) {
-      setPromptLibrarySaveErrorStatus(
-        'Title is required.',
-        'Title is required. Open Prompt library and enter a Title.'
-      );
-      promptTitleInput.focus();
+    if (!String(systemPromptInput.value || '').trim()) {
+      setActionErrorStatus('Save', 'System prompt is required.');
+      systemPromptInput.focus();
       return;
     }
-    if (!String(userPromptInput.value || '').trim()) {
-      setActionErrorStatus('Save', 'User prompt is required.');
-      userPromptInput.focus();
-      return;
-    }
-
     const isSamePrompt = currentPromptId !== '' && promptId === currentPromptId;
-    if (isSamePrompt && !currentPromptEditable) {
-      setPromptLibrarySaveErrorStatus(
-        'This prompt is locked. Change Prompt ID to save a copy.',
-        'This prompt is locked. Open Prompt library and change Prompt ID to save a copy.'
-      );
-      promptIdInput.focus();
-      return;
-    }
-
-    const isSaveChanges = isSamePrompt && currentPromptEditable;
-    const payload = {
-      ...currentPromptPayload(),
-      title,
-      editable: isSaveChanges ? currentPromptEditable : true,
-    };
+    const payload = currentPromptPayload();
     setBusy(true);
-    setStatus(isSaveChanges ? `Saving changes to ${promptId}...` : `Saving new prompt ${promptId}...`);
+    setStatus(isSamePrompt ? `Saving changes to ${promptId}...` : `Saving new prompt ${promptId}...`);
     try {
-      const savedRecord = isSaveChanges
-        ? await api.updatePrompt(promptId, payload)
-        : await api.createPrompt({prompt_id: promptId, ...payload});
+      const savedRecord = isSamePrompt
+        ? await api.updateTranslationPrompt(promptId, payload)
+        : await api.createTranslationPrompt({ id: promptId, ...payload });
       await loadPromptLibrary();
       applyPromptRecord(savedRecord);
       promptLibrarySelect.value = savedRecord.id;
@@ -653,38 +454,52 @@ export function createTranslationPromptsView() {
     }
   }
 
+  async function deletePrompt() {
+    if (!currentPromptId || currentPromptBuiltin) return;
+    setBusy(true);
+    setStatus(`Deleting ${currentPromptId}...`);
+    try {
+      await api.deleteTranslationPrompt(currentPromptId);
+      await loadPromptLibrary();
+      resetDraftFields();
+      setStatus('');
+    } catch (err) {
+      console.error('Failed to delete prompt:', err);
+      setActionErrorStatus('Delete', formatApiError(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function runPromptTest() {
     const model = String(testModelSelect.value || '').trim();
-    const userPromptTemplate = String(userPromptInput.value || '');
-    const renderedUserPrompt = renderUserPromptPreview();
     if (!model) {
       setActionErrorStatus('Run', 'Choose a model first.');
       return;
     }
-    if (!userPromptTemplate.trim()) {
+    const vars = renderVars();
+    // {{category}} is image-domain only; the realtime test endpoint substitutes the other
+    // variables, so resolve {{category}} client-side before sending.
+    const system = String(systemPromptInput.value || '').replaceAll('{{category}}', vars.category);
+    const userTemplate = String(userPromptInput.value || '').replaceAll('{{category}}', vars.category);
+    const renderedUserPrompt = renderUserPromptPreview();
+    if (!userTemplate.trim()) {
       setActionErrorStatus('Run', 'User prompt is required.');
       userPromptInput.focus();
       return;
     }
-    if (!renderedUserPrompt.trim()) {
-      setActionErrorStatus('Run', 'Rendered user prompt is empty.');
-      sourceInput.focus();
-      return;
-    }
-
     setBusy(true);
     setStatus('Running prompt test...');
     try {
       const result = await api.testTranslationPrompt({
         model,
-        system_prompt: String(systemPromptInput.value || ''),
-        user_prompt_template: userPromptTemplate,
-        source_text: String(sourceInput.value || ''),
-        draft_translation: String(draftTranslationInput.value || ''),
-        source_language: String(sourceLanguageSelect.value || ''),
-        target_language: String(targetLanguageSelect.value || ''),
+        system_prompt: system,
+        user_prompt_template: userTemplate,
+        source_text: vars.sourceWindow,
+        draft_translation: vars.draftTranslation,
+        source_language: vars.sourceLanguage,
+        target_language: vars.targetLanguage,
       });
-      hasRunCompleted = true;
       renderedUserPromptEl.value = result.rendered_user_prompt || renderedUserPrompt;
       testOutputEl.value = result.output_text || '';
       applyStats(result);
@@ -699,65 +514,39 @@ export function createTranslationPromptsView() {
     }
   }
 
-  [promptIdInput, promptTitleInput].forEach((element) => {
+  [promptIdInput].forEach((element) => {
     element.addEventListener('input', () => {
       populatePromptLibraryOptions();
       updateSaveButtonLabel();
-      if (!isBusy) {
-        refreshStatus();
-      }
+      if (!isBusy) refreshStatus();
     });
   });
 
-  promptLibrarySelect.addEventListener('change', () => {
-    updateLoadButtonState();
-  });
+  promptLibrarySelect.addEventListener('change', updateLoadButtonState);
 
-  [systemPromptInput, userPromptInput, sourceInput, draftTranslationInput].forEach((element) => {
+  [systemPromptInput, userPromptInput].forEach((element) => {
     element.addEventListener('input', () => {
-      if (element === systemPromptInput || element === userPromptInput) {
-        populatePromptLibraryOptions();
-        updateSaveButtonLabel();
-      }
+      populatePromptLibraryOptions();
+      updateSaveButtonLabel();
       renderUserPromptPreview();
-      if (hasRunCompleted && !isBusy) {
-        setStatus('');
-      } else if (!isBusy) {
-        refreshStatus();
-      }
+      if (!isBusy) refreshStatus();
     });
+  });
+
+  [sourceInput, draftTranslationInput, categoryInput].forEach((element) => {
+    element.addEventListener('input', renderUserPromptPreview);
   });
 
   [sourceLanguageSelect, targetLanguageSelect].forEach((element) => {
-    element.addEventListener('change', () => {
-      renderUserPromptPreview();
-      if (hasRunCompleted && !isBusy) {
-        setStatus('');
-      }
-    });
+    element.addEventListener('change', renderUserPromptPreview);
   });
 
-  testModelSelect.addEventListener('change', () => {
-    if (hasRunCompleted && !isBusy) {
-      setStatus('');
-    }
-  });
+  loadPromptBtn.addEventListener('click', loadSelectedPrompt);
+  newPromptBtn.addEventListener('click', () => { resetDraftFields(); setStatus(''); });
+  deletePromptBtn.addEventListener('click', deletePrompt);
+  savePromptBtn.addEventListener('click', savePrompt);
+  testBtn.addEventListener('click', runPromptTest);
 
-  loadPromptBtn.addEventListener('click', () => {
-    loadSelectedPrompt();
-  });
-
-  newPromptBtn.addEventListener('click', () => {
-    startNewPrompt();
-  });
-
-  savePromptBtn.addEventListener('click', () => {
-    savePrompt();
-  });
-
-  testBtn.addEventListener('click', () => {
-    runPromptTest();
-  });
   renderUserPromptPreview();
   clearStats();
   captureSavedPromptSnapshot();
@@ -767,14 +556,16 @@ export function createTranslationPromptsView() {
 
   return container;
 }
+
 function populateLanguageSelect(select, selectedName) {
   populateTranslationLanguageSelect(select, selectedName);
 }
 
-function renderTranslationPromptTemplate(template, {sourceWindow, draftTranslation, sourceLanguage, targetLanguage}) {
+function renderTemplate(template, { sourceWindow, draftTranslation, sourceLanguage, targetLanguage, category }) {
   return String(template || '')
     .replaceAll('{{source_window}}', String(sourceWindow || ''))
     .replaceAll('{{draft_translation}}', String(draftTranslation || ''))
     .replaceAll('{{source_lang}}', String(sourceLanguage || ''))
-    .replaceAll('{{target_lang}}', String(targetLanguage || ''));
+    .replaceAll('{{target_lang}}', String(targetLanguage || ''))
+    .replaceAll('{{category}}', String(category || ''));
 }

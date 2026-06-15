@@ -71,12 +71,6 @@ const WORKFLOW_GROUPS = [
         name: 'Replay & Translate',
         icon: 'translate',
       },
-      {
-        id: 'prompt-library',
-        route: 'prompt-library',
-        name: 'Prompt Library',
-        icon: 'edit_note',
-      },
     ],
   },
   {
@@ -149,6 +143,12 @@ const WORKFLOW_GROUPS = [
         route: 'translation-requests',
         name: 'Image translation',
         icon: 'upload_file',
+      },
+      {
+        id: 'prompt-library',
+        route: 'prompt-library',
+        name: 'Prompt Library',
+        icon: 'edit_note',
       },
     ],
   },
