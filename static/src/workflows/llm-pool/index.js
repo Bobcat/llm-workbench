@@ -296,7 +296,7 @@ export function createLlmPoolView() {
     const modelName = String(control.dataset.model || '');
     const settingKey = String(control.dataset.loadSetting || '');
     const value = parseLoadSettingControlValue(settingKey, control.value);
-    if (!modelName || !settingKey || value == null) return;
+    if (!modelName || !settingKey || value === undefined) return;
     deferAutoRefresh();
     setLoadSettingDraft(loadSettingDrafts, modelName, settingKey, value);
     const valueEl = control
@@ -703,6 +703,30 @@ function buildLocalDefinitionFields(model, definition, backend) {
     ];
   }
 
+  if (normalizedBackend === 'vllm' || normalizedBackend === 'vllm_serve') {
+    const fields = [
+      { label: 'Path', value: definition.model_path, code: true },
+      { label: 'Backend', value: formatBackendLabel(backend) },
+      { label: 'vLLM model', value: definition.vllm_model, code: true },
+    ];
+    if (normalizedBackend === 'vllm_serve') {
+      fields.push(
+        { label: 'Binary', value: definition.vllm_serve_binary, code: true },
+        { label: 'Library path', value: formatLibraryPath(definition.vllm_serve_library_path), code: true },
+      );
+    }
+    fields.push(
+      { label: 'Spec method', value: definition.vllm_speculative_method },
+      { label: 'Spec model', value: definition.vllm_speculative_model, code: true },
+      { label: 'Spec tokens', value: definition.vllm_num_speculative_tokens },
+      { label: 'Prompt format', value: definition.prompt_format },
+      { label: 'Configured enabled', value: model.configured_enabled },
+      { label: 'Last error', value: model.last_error || 'none' },
+      { label: 'VRAM source', value: model.vram_estimate_source || 'unavailable' },
+    );
+    return fields;
+  }
+
   return [
     { label: 'Path', value: definition.model_path, code: true },
     { label: 'Backend', value: formatBackendLabel(backend) },
@@ -940,6 +964,60 @@ function buildLoadSettingsMarkup(model, draft, runtimeState) {
     ));
   }
 
+  const vllmSpeculativeMethodConstraint = getStringConstraint(model, 'vllm_speculative_method');
+  if (vllmSpeculativeMethodConstraint) {
+    compactControls.push(buildTextSettingMarkup({
+      modelName: model.name,
+      key: 'vllm_speculative_method',
+      label: 'vllm_speculative_method',
+      value: getDraftOrEffectiveStringValue(
+        model,
+        draft,
+        'vllm_speculative_method',
+        vllmSpeculativeMethodConstraint.defaultValue,
+      ),
+      placeholder: vllmSpeculativeMethodConstraint.examples[0] || '',
+      disabled: !canConfigure,
+    }));
+  }
+
+  const vllmSpeculativeModelConstraint = getStringConstraint(model, 'vllm_speculative_model');
+  if (vllmSpeculativeModelConstraint) {
+    wideControls.push(buildTextSettingMarkup({
+      modelName: model.name,
+      key: 'vllm_speculative_model',
+      label: 'vllm_speculative_model',
+      value: getDraftOrEffectiveStringValue(
+        model,
+        draft,
+        'vllm_speculative_model',
+        vllmSpeculativeModelConstraint.defaultValue,
+      ),
+      placeholder: vllmSpeculativeModelConstraint.examples[0] || '',
+      disabled: !canConfigure,
+      wide: true,
+    }));
+  }
+
+  const vllmNumSpeculativeTokensConstraint = getIntegerConstraint(model, 'vllm_num_speculative_tokens');
+  if (vllmNumSpeculativeTokensConstraint) {
+    compactControls.push(buildNumberSettingMarkup({
+      modelName: model.name,
+      key: 'vllm_num_speculative_tokens',
+      label: 'vllm_num_speculative_tokens',
+      value: getDraftOrEffectiveIntegerValue(
+        model,
+        draft,
+        'vllm_num_speculative_tokens',
+        vllmNumSpeculativeTokensConstraint.minimum,
+      ),
+      minimum: vllmNumSpeculativeTokensConstraint.minimum,
+      maximum: vllmNumSpeculativeTokensConstraint.maximum,
+      step: vllmNumSpeculativeTokensConstraint.step,
+      disabled: !canConfigure,
+    }));
+  }
+
   const llamaServerNctxConstraint = getIntegerConstraint(model, 'llama_server_n_ctx');
   if (llamaServerNctxConstraint) {
     wideControls.push(buildNumberSettingMarkup({
@@ -1134,6 +1212,36 @@ function buildNumberSettingMarkup({
   `;
 }
 
+function buildTextSettingMarkup({
+  modelName,
+  key,
+  label,
+  value,
+  placeholder,
+  disabled,
+  wide = false,
+}) {
+  const placeholderAttr = placeholder == null || placeholder === ''
+    ? ''
+    : ` placeholder="${escapeAttr(String(placeholder))}"`;
+  return `
+    <div class="llm-pool-load-setting${wide ? ' llm-pool-load-setting-wide' : ''}">
+      <span>${escapeHtml(label)}</span>
+      <input
+        class="llm-pool-load-input"
+        type="text"
+        value="${escapeAttr(String(value ?? ''))}"
+        ${placeholderAttr}
+        data-load-setting="${escapeAttr(key)}"
+        data-model="${escapeAttr(modelName)}"
+        autocomplete="off"
+        spellcheck="false"
+        ${disabled ? 'disabled' : ''}
+      />
+    </div>
+  `;
+}
+
 function buildPresetSelectSettingMarkup({modelName, presetKind, label, fields, options, currentPair, disabled, wide = true}) {
   const optionList = [...options];
   const selectedValue = serializeLoadPresetValue(currentPair);
@@ -1217,6 +1325,19 @@ function getEnumConstraint(model, key) {
   return { allowedValues, defaultValue };
 }
 
+function getStringConstraint(model, key) {
+  const raw = model?.load_constraints?.[key];
+  if (!raw || typeof raw !== 'object') return null;
+  if (raw.kind !== 'string_or_null') return null;
+  const examples = Array.isArray(raw.examples)
+    ? raw.examples.map((value) => String(value || '').trim()).filter(Boolean)
+    : [];
+  return {
+    defaultValue: normalizeNullableStringValue(raw.default) ?? '',
+    examples,
+  };
+}
+
 function getDraftOrEffectiveIntegerValue(model, draft, key, fallbackMinimum) {
   const draftValue = toPositiveInt(draft?.[key]);
   if (draftValue != null) return draftValue;
@@ -1241,6 +1362,15 @@ function getDraftOrEffectiveNumberValue(model, draft, key, fallbackDefault) {
   const draftValue = toFiniteNumber(draft?.[key]);
   if (draftValue != null) return draftValue;
   const effectiveValue = toFiniteNumber(getEffectiveLoadValue(model, key));
+  if (effectiveValue != null) return effectiveValue;
+  return fallbackDefault;
+}
+
+function getDraftOrEffectiveStringValue(model, draft, key, fallbackDefault) {
+  if (draft && Object.prototype.hasOwnProperty.call(draft, key)) {
+    return normalizeNullableStringValue(draft[key]) ?? '';
+  }
+  const effectiveValue = normalizeNullableStringValue(getEffectiveLoadValue(model, key));
   if (effectiveValue != null) return effectiveValue;
   return fallbackDefault;
 }
@@ -1381,6 +1511,12 @@ function normalizeExllamaCacheQuantValue(value) {
   return null;
 }
 
+function normalizeNullableStringValue(value) {
+  if (value == null) return null;
+  const normalized = String(value).trim();
+  return normalized === '' ? null : normalized;
+}
+
 function toExllamaCacheQuant(payload) {
   const kBits = toNullablePositiveInt(payload?.exllama_cache_k_bits);
   const vBits = toNullablePositiveInt(payload?.exllama_cache_v_bits);
@@ -1518,6 +1654,37 @@ function buildLoadPayload(model, draft) {
     && vllmMaxPixels !== getMmProcessorMaxPixels(model)
   ) {
     payload.vllm_max_pixels = vllmMaxPixels;
+  }
+
+  if (
+    Object.prototype.hasOwnProperty.call(draft, 'vllm_speculative_method')
+    && hasLoadConstraint(model, 'vllm_speculative_method')
+  ) {
+    const draftSpeculativeMethod = normalizeNullableStringValue(draft.vllm_speculative_method);
+    const effectiveSpeculativeMethod = normalizeNullableStringValue(getEffectiveLoadValue(model, 'vllm_speculative_method'));
+    if (draftSpeculativeMethod !== effectiveSpeculativeMethod) {
+      payload.vllm_speculative_method = draftSpeculativeMethod;
+    }
+  }
+
+  if (
+    Object.prototype.hasOwnProperty.call(draft, 'vllm_speculative_model')
+    && hasLoadConstraint(model, 'vllm_speculative_model')
+  ) {
+    const draftSpeculativeModel = normalizeNullableStringValue(draft.vllm_speculative_model);
+    const effectiveSpeculativeModel = normalizeNullableStringValue(getEffectiveLoadValue(model, 'vllm_speculative_model'));
+    if (draftSpeculativeModel !== effectiveSpeculativeModel) {
+      payload.vllm_speculative_model = draftSpeculativeModel;
+    }
+  }
+
+  const vllmNumSpeculativeTokens = toPositiveInt(draft.vllm_num_speculative_tokens);
+  if (
+    vllmNumSpeculativeTokens != null
+    && hasLoadConstraint(model, 'vllm_num_speculative_tokens')
+    && vllmNumSpeculativeTokens !== toPositiveInt(getEffectiveLoadValue(model, 'vllm_num_speculative_tokens'))
+  ) {
+    payload.vllm_num_speculative_tokens = vllmNumSpeculativeTokens;
   }
 
   const llamaServerNctx = toPositiveInt(draft.llama_server_n_ctx);
@@ -1689,10 +1856,17 @@ function toFiniteNumber(value) {
 }
 
 function parseLoadSettingControlValue(key, rawValue) {
+  if (isStringLoadSettingKey(key)) {
+    return normalizeNullableStringValue(rawValue);
+  }
   if (key === 'llama_server_spec_draft_p_min') {
-    return toFiniteNumber(rawValue);
+    return toFiniteNumber(rawValue) ?? undefined;
   }
   const parsed = Number(rawValue);
-  if (!Number.isFinite(parsed)) return null;
+  if (!Number.isFinite(parsed)) return undefined;
   return Math.trunc(parsed);
+}
+
+function isStringLoadSettingKey(key) {
+  return key === 'vllm_speculative_method' || key === 'vllm_speculative_model';
 }

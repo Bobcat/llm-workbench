@@ -1187,6 +1187,7 @@
   font-weight: 600;
   letter-spacing: 0;
   text-transform: none;
+  overflow-wrap: anywhere;
 }
 
 .llm-pool-view .llm-pool-definition-grid strong,
