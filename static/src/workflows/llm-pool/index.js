@@ -7,6 +7,7 @@ const LLM_POOL_ADDRESS_LABEL = 'llm-pool';
 const LOAD_SETTING_SLIDER_MAX = 65536;
 const VLLM_KV_CACHE_STEP_MIB = 256;
 const VLLM_KV_CACHE_MAX_MIB = 64 * 1024;
+const LLAMA_SERVER_SPEC_DRAFT_P_MIN_STEP = 0.05;
 
 const FILTERS = [
   { id: 'all', label: 'All' },
@@ -294,15 +295,15 @@ export function createLlmPoolView() {
     if (!control || !container.contains(control)) return;
     const modelName = String(control.dataset.model || '');
     const settingKey = String(control.dataset.loadSetting || '');
-    const value = Number(control.value);
-    if (!modelName || !settingKey || !Number.isFinite(value)) return;
+    const value = parseLoadSettingControlValue(settingKey, control.value);
+    if (!modelName || !settingKey || value == null) return;
     deferAutoRefresh();
-    setLoadSettingDraft(loadSettingDrafts, modelName, settingKey, Math.trunc(value));
+    setLoadSettingDraft(loadSettingDrafts, modelName, settingKey, value);
     const valueEl = control
       .closest('.llm-pool-load-setting')
       ?.querySelector('[data-load-setting-value]');
     if (valueEl) {
-      valueEl.textContent = formatSliderSettingValue(settingKey, Math.trunc(value));
+      valueEl.textContent = formatSliderSettingValue(settingKey, value);
     }
   });
 
@@ -494,6 +495,7 @@ function normalizeBackend(value) {
 function formatBackendLabel(value) {
   const normalized = normalizeBackend(value);
   if (normalized === 'openai_compatible') return 'OpenAI compatible';
+  if (normalized === 'llama_server') return 'llama-server';
   return String(value || '-');
 }
 
@@ -662,21 +664,54 @@ function buildDefinitionGridMarkup(model, definitionGridClass) {
       { label: 'Configured enabled', value: model.configured_enabled },
       { label: 'Last error', value: model.last_error || 'none' },
     ]
-    : [
-      { label: 'Path', value: definition.model_path, code: true },
-      { label: 'Backend', value: formatBackendLabel(backend) },
-      { label: 'Device', value: definition.device },
-      { label: 'Prompt format', value: definition.prompt_format },
-      { label: 'Configured enabled', value: model.configured_enabled },
-      { label: 'Last error', value: model.last_error || 'none' },
-      { label: 'VRAM source', value: model.vram_estimate_source || 'unavailable' },
-    ];
+    : buildLocalDefinitionFields(model, definition, backend);
 
   return `
     <div class="${definitionGridClass}">
       ${fields.map((field) => buildDefinitionItemMarkup(field)).join('')}
     </div>
   `;
+}
+
+function buildLocalDefinitionFields(model, definition, backend) {
+  const normalizedBackend = normalizeBackend(backend);
+  if (normalizedBackend === 'llama_server') {
+    return [
+      { label: 'Path', value: definition.model_path, code: true },
+      { label: 'Backend', value: formatBackendLabel(backend) },
+      { label: 'Binary', value: definition.llama_server_binary, code: true },
+      { label: 'Library path', value: formatLibraryPath(definition.llama_server_library_path), code: true },
+      { label: 'MMProj', value: definition.llama_server_mmproj_path, code: true },
+      { label: 'Draft model', value: definition.llama_server_draft_model_path, code: true },
+      { label: 'Context size', value: definition.llama_server_n_ctx },
+      { label: 'Image tokens', value: definition.llama_server_image_max_tokens },
+      { label: 'Spec type', value: definition.llama_server_spec_type },
+      { label: 'Draft tokens', value: definition.llama_server_spec_draft_n_max },
+      { label: 'Draft p min', value: definition.llama_server_spec_draft_p_min },
+      { label: 'GPU layers', value: definition.llama_server_n_gpu_layers },
+      { label: 'Draft GPU layers', value: definition.llama_server_spec_draft_ngl },
+      { label: 'Flash attn', value: definition.llama_server_flash_attn },
+      { label: 'Reasoning', value: definition.llama_server_reasoning },
+      { label: 'Host', value: definition.llama_server_host },
+      { label: 'Port', value: definition.llama_server_port },
+      { label: 'Alias', value: definition.llama_server_model_alias },
+      { label: 'Timeout', value: formatSecondsValue(definition.llama_server_timeout_s) },
+      { label: 'Prompt format', value: definition.prompt_format },
+      { label: 'Configured enabled', value: model.configured_enabled },
+      { label: 'Last error', value: model.last_error || 'none' },
+      { label: 'VRAM source', value: model.vram_estimate_source || 'unavailable' },
+    ];
+  }
+
+  return [
+    { label: 'Path', value: definition.model_path, code: true },
+    { label: 'Backend', value: formatBackendLabel(backend) },
+    { label: 'Device', value: definition.device },
+    { label: 'Prompt format', value: definition.prompt_format },
+    { label: 'Configured enabled', value: model.configured_enabled },
+    { label: 'Last error', value: model.last_error || 'none' },
+    { label: 'VRAM source', value: model.vram_estimate_source || 'unavailable' },
+  ];
 }
 
 function buildDefinitionItemMarkup({label, value, code = false}) {
@@ -694,6 +729,11 @@ function formatDefinitionValue(value) {
   if (value == null || value === '') return '-';
   if (typeof value === 'boolean') return String(value);
   return String(value);
+}
+
+function formatLibraryPath(value) {
+  if (Array.isArray(value)) return value.join(':');
+  return value;
 }
 
 function configuredTargetInflightForDisplay(model) {
@@ -900,6 +940,108 @@ function buildLoadSettingsMarkup(model, draft, runtimeState) {
     ));
   }
 
+  const llamaServerNctxConstraint = getIntegerConstraint(model, 'llama_server_n_ctx');
+  if (llamaServerNctxConstraint) {
+    wideControls.push(buildNumberSettingMarkup({
+      modelName: model.name,
+      key: 'llama_server_n_ctx',
+      label: 'Context size',
+      value: getDraftOrEffectiveIntegerValue(
+        model,
+        draft,
+        'llama_server_n_ctx',
+        llamaServerNctxConstraint.minimum
+      ),
+      minimum: llamaServerNctxConstraint.minimum,
+      step: llamaServerNctxConstraint.step,
+      disabled: !canConfigure,
+      wide: true,
+    }));
+  }
+
+  const llamaServerImageTokensConstraint = getIntegerConstraint(model, 'llama_server_image_max_tokens');
+  if (llamaServerImageTokensConstraint) {
+    compactControls.push(buildNumberSettingMarkup({
+      modelName: model.name,
+      key: 'llama_server_image_max_tokens',
+      label: 'Image tokens',
+      value: getDraftOrEffectiveIntegerValue(
+        model,
+        draft,
+        'llama_server_image_max_tokens',
+        llamaServerImageTokensConstraint.minimum
+      ),
+      minimum: llamaServerImageTokensConstraint.minimum,
+      step: llamaServerImageTokensConstraint.step,
+      disabled: !canConfigure,
+    }));
+  }
+
+  const llamaServerSpecTypeConstraint = getEnumConstraint(model, 'llama_server_spec_type');
+  if (llamaServerSpecTypeConstraint) {
+    compactControls.push(buildEnumSelectSettingMarkup({
+      modelName: model.name,
+      key: 'llama_server_spec_type',
+      label: 'MTP type',
+      options: llamaServerSpecTypeConstraint.allowedValues,
+      value: getDraftOrEffectiveEnumValue(
+        model,
+        draft,
+        'llama_server_spec_type',
+        llamaServerSpecTypeConstraint.defaultValue,
+      ),
+      disabled: !canConfigure,
+    }));
+  }
+
+  const llamaServerDraftMaxConstraint = getIntegerConstraint(model, 'llama_server_spec_draft_n_max');
+  if (llamaServerDraftMaxConstraint) {
+    compactControls.push(buildNumberSettingMarkup({
+      modelName: model.name,
+      key: 'llama_server_spec_draft_n_max',
+      label: 'Draft tokens',
+      value: getDraftOrEffectiveIntegerValue(
+        model,
+        draft,
+        'llama_server_spec_draft_n_max',
+        llamaServerDraftMaxConstraint.minimum
+      ),
+      minimum: llamaServerDraftMaxConstraint.minimum,
+      maximum: llamaServerDraftMaxConstraint.maximum,
+      step: llamaServerDraftMaxConstraint.step,
+      disabled: !canConfigure,
+    }));
+  }
+
+  const llamaServerDraftPMinConstraint = getFloatConstraint(model, 'llama_server_spec_draft_p_min');
+  if (llamaServerDraftPMinConstraint) {
+    compactControls.push(buildNumberSettingMarkup({
+      modelName: model.name,
+      key: 'llama_server_spec_draft_p_min',
+      label: 'Draft p min',
+      value: getDraftOrEffectiveNumberValue(
+        model,
+        draft,
+        'llama_server_spec_draft_p_min',
+        llamaServerDraftPMinConstraint.defaultValue
+      ),
+      minimum: llamaServerDraftPMinConstraint.minimum,
+      maximum: llamaServerDraftPMinConstraint.maximum,
+      step: LLAMA_SERVER_SPEC_DRAFT_P_MIN_STEP,
+      disabled: !canConfigure,
+    }));
+  }
+
+  if (
+    llamaServerSpecTypeConstraint
+    || llamaServerDraftMaxConstraint
+    || llamaServerDraftPMinConstraint
+  ) {
+    notes.push(buildLoadSettingNoteMarkup(
+      'llama-server MTP settings are native server startup flags; unload before changing them.'
+    ));
+  }
+
   if (replicaControlMarkup) {
     compactControls.push(replicaControlMarkup);
   }
@@ -962,6 +1104,36 @@ function buildEnumSelectSettingMarkup({modelName, key, label, options, value, di
   `;
 }
 
+function buildNumberSettingMarkup({
+  modelName,
+  key,
+  label,
+  value,
+  minimum,
+  maximum,
+  step,
+  disabled,
+  wide = false,
+}) {
+  const maxAttr = maximum == null ? '' : ` max="${escapeAttr(String(maximum))}"`;
+  return `
+    <div class="llm-pool-load-setting${wide ? ' llm-pool-load-setting-wide' : ''}">
+      <span>${escapeHtml(label)}</span>
+      <input
+        class="llm-pool-load-input"
+        type="number"
+        min="${escapeAttr(String(minimum))}"
+        ${maxAttr}
+        step="${escapeAttr(String(step))}"
+        value="${escapeAttr(String(value))}"
+        data-load-setting="${escapeAttr(key)}"
+        data-model="${escapeAttr(modelName)}"
+        ${disabled ? 'disabled' : ''}
+      />
+    </div>
+  `;
+}
+
 function buildPresetSelectSettingMarkup({modelName, presetKind, label, fields, options, currentPair, disabled, wide = true}) {
   const optionList = [...options];
   const selectedValue = serializeLoadPresetValue(currentPair);
@@ -1018,7 +1190,19 @@ function getIntegerConstraint(model, key) {
   const minimum = toPositiveInt(raw.minimum);
   const step = toPositiveInt(raw.step);
   if (minimum == null || step == null) return null;
-  return { minimum, step };
+  const maximum = toPositiveInt(raw.maximum);
+  return { minimum, step, maximum };
+}
+
+function getFloatConstraint(model, key) {
+  const raw = model?.load_constraints?.[key];
+  if (!raw || typeof raw !== 'object') return null;
+  if (raw.kind !== 'float') return null;
+  const minimum = toFiniteNumber(raw.minimum);
+  const maximum = toFiniteNumber(raw.maximum);
+  const defaultValue = toFiniteNumber(raw.default) ?? minimum ?? 0;
+  if (minimum == null || maximum == null) return null;
+  return { minimum, maximum, defaultValue };
 }
 
 function getEnumConstraint(model, key) {
@@ -1050,6 +1234,14 @@ function getDraftOrEffectiveEnumValue(model, draft, key, fallbackDefault) {
   if (effectiveValue != null && String(effectiveValue).trim() !== '') {
     return String(effectiveValue).trim();
   }
+  return fallbackDefault;
+}
+
+function getDraftOrEffectiveNumberValue(model, draft, key, fallbackDefault) {
+  const draftValue = toFiniteNumber(draft?.[key]);
+  if (draftValue != null) return draftValue;
+  const effectiveValue = toFiniteNumber(getEffectiveLoadValue(model, key));
+  if (effectiveValue != null) return effectiveValue;
   return fallbackDefault;
 }
 
@@ -1328,6 +1520,52 @@ function buildLoadPayload(model, draft) {
     payload.vllm_max_pixels = vllmMaxPixels;
   }
 
+  const llamaServerNctx = toPositiveInt(draft.llama_server_n_ctx);
+  if (
+    llamaServerNctx != null
+    && hasLoadConstraint(model, 'llama_server_n_ctx')
+    && llamaServerNctx !== toPositiveInt(getEffectiveLoadValue(model, 'llama_server_n_ctx'))
+  ) {
+    payload.llama_server_n_ctx = llamaServerNctx;
+  }
+
+  const llamaServerImageTokens = toPositiveInt(draft.llama_server_image_max_tokens);
+  if (
+    llamaServerImageTokens != null
+    && hasLoadConstraint(model, 'llama_server_image_max_tokens')
+    && llamaServerImageTokens !== toPositiveInt(getEffectiveLoadValue(model, 'llama_server_image_max_tokens'))
+  ) {
+    payload.llama_server_image_max_tokens = llamaServerImageTokens;
+  }
+
+  if (
+    Object.prototype.hasOwnProperty.call(draft, 'llama_server_spec_type')
+    && hasLoadConstraint(model, 'llama_server_spec_type')
+  ) {
+    const draftSpecType = String(draft.llama_server_spec_type || '').trim();
+    if (draftSpecType && draftSpecType !== String(getEffectiveLoadValue(model, 'llama_server_spec_type') || '')) {
+      payload.llama_server_spec_type = draftSpecType;
+    }
+  }
+
+  const llamaServerDraftMax = toPositiveInt(draft.llama_server_spec_draft_n_max);
+  if (
+    llamaServerDraftMax != null
+    && hasLoadConstraint(model, 'llama_server_spec_draft_n_max')
+    && llamaServerDraftMax !== toPositiveInt(getEffectiveLoadValue(model, 'llama_server_spec_draft_n_max'))
+  ) {
+    payload.llama_server_spec_draft_n_max = llamaServerDraftMax;
+  }
+
+  const llamaServerDraftPMin = toFiniteNumber(draft.llama_server_spec_draft_p_min);
+  if (
+    llamaServerDraftPMin != null
+    && hasLoadConstraint(model, 'llama_server_spec_draft_p_min')
+    && llamaServerDraftPMin !== toFiniteNumber(getEffectiveLoadValue(model, 'llama_server_spec_draft_p_min'))
+  ) {
+    payload.llama_server_spec_draft_p_min = llamaServerDraftPMin;
+  }
+
   return Object.keys(payload).length ? payload : null;
 }
 
@@ -1441,4 +1679,20 @@ function toPositiveInt(value) {
 function toNullablePositiveInt(value) {
   if (value == null || value === '') return null;
   return toPositiveInt(value);
+}
+
+function toFiniteNumber(value) {
+  if (value == null || value === '') return null;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return null;
+  return parsed;
+}
+
+function parseLoadSettingControlValue(key, rawValue) {
+  if (key === 'llama_server_spec_draft_p_min') {
+    return toFiniteNumber(rawValue);
+  }
+  const parsed = Number(rawValue);
+  if (!Number.isFinite(parsed)) return null;
+  return Math.trunc(parsed);
 }

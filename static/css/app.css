@@ -1264,7 +1264,8 @@
   line-height: 1.35;
 }
 
-.llm-pool-view .llm-pool-load-setting .llm-pool-load-select {
+.llm-pool-view .llm-pool-load-setting .llm-pool-load-select,
+.llm-pool-view .llm-pool-load-setting .llm-pool-load-input {
   width: 100%;
   min-height: 34px;
   border: 1px solid var(--border-color, var(--color-slate-200, var(--border)));
@@ -1276,7 +1277,8 @@
   line-height: 1.2;
 }
 
-.llm-pool-view .llm-pool-load-setting .llm-pool-load-select:disabled {
+.llm-pool-view .llm-pool-load-setting .llm-pool-load-select:disabled,
+.llm-pool-view .llm-pool-load-setting .llm-pool-load-input:disabled {
   opacity: 0.65;
   cursor: not-allowed;
 }
