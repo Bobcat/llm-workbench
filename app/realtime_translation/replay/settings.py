@@ -9,9 +9,6 @@ from realtime_translation_engine import PreviewTranslationSettings
 
 
 DEFAULT_SETTINGS_PATH = Path(__file__).resolve().parents[3] / "config" / "settings.json"
-PROMPT_LIBRARY_ROOT = (
-    Path(__file__).resolve().parents[3] / "data" / "realtime_translation" / "prompts"
-)
 
 
 @dataclass(frozen=True)

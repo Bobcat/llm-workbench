@@ -58,59 +58,6 @@ export const api = {
     return fetchJson('/api/models');
   },
 
-  async getPrompts(includeDisabled = true) {
-    const query = includeDisabled ? '?include_disabled=true' : '?include_disabled=false';
-    return fetchJson(`/api/prompts${query}`);
-  },
-
-  async getPrompt(promptId) {
-    return fetchJson(`/api/prompts/${encodeURIComponent(promptId).replace(/%2F/g, '/')}`);
-  },
-
-  async getPromptLoadIssues() {
-    return fetchJson('/api/prompts/load-issues');
-  },
-
-  async createPrompt(payload) {
-    return fetchJson('/api/prompts', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify(payload)
-    });
-  },
-
-  async updatePrompt(promptId, payload) {
-    return fetchJson(`/api/prompts/${encodeURIComponent(promptId).replace(/%2F/g, '/')}`, {
-      method: 'PUT',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify(payload)
-    });
-  },
-
-  async renamePrompt(promptId, newPromptId) {
-    return fetchJson('/api/prompts/rename', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({prompt_id: promptId, new_prompt_id: newPromptId})
-    });
-  },
-
-  async duplicatePrompt(promptId, newPromptId) {
-    return fetchJson('/api/prompts/duplicate', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({prompt_id: promptId, new_prompt_id: newPromptId})
-    });
-  },
-
-  async archivePrompt(promptId) {
-    return fetchJson('/api/prompts/archive', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({prompt_id: promptId})
-    });
-  },
-
   async testTranslationPrompt(payload) {
     return fetchJson('/api/prompts/test-translation', {
       method: 'POST',
