@@ -2600,6 +2600,38 @@
   flex: 0 0 auto;
 }
 
+/* Collapsible prompts/responses inspector: editable, selectable text boxes fed from
+   response.llm_calls (grouping VLM + translation + fallbacks). */
+.translation-requests-view .translation-requests-details {
+  margin-top: 12px;
+}
+
+.translation-requests-view .translation-requests-details-body {
+  display: grid;
+  gap: 10px;
+  padding-top: 10px;
+}
+
+.translation-requests-view .translation-requests-details-body textarea {
+  font-family: var(--mono-font, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 0.78rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  resize: vertical;
+}
+
+/* Model dropdown: each model coloured by load state (green = loaded, red = not),
+   and the closed select mirrors the picked option's state. */
+.translation-requests-view #translationRequestModel.is-loaded,
+.translation-requests-view #translationRequestModel option.is-loaded {
+  color: #15803d;
+}
+
+.translation-requests-view #translationRequestModel.is-unloaded,
+.translation-requests-view #translationRequestModel option.is-unloaded {
+  color: #dc2626;
+}
+
 /* Request id on its own full-width line above State/Stage/Queue */
 .translation-requests-view .translation-requests-id-stat #translationRequestStatId {
   font-size: 0.92rem;

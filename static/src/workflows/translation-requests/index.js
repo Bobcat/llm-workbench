@@ -4,12 +4,11 @@ import { TRANSLATION_LANGUAGES } from '../../shared/translation-languages.js';
 
 const POLL_INTERVAL_MS = 800;
 const TERMINAL_STATES = new Set(['completed', 'failed', 'cancelled']);
-const IMAGE_ARTIFACT_ORDER = ['rendered', 'grouping_overlay_debug', 'projected_overlay_debug', 'output', 'rectified_debug', 'debug_overlay'];
+const IMAGE_ARTIFACT_ORDER = ['rendered', 'grouping_overlay_debug', 'projected_overlay_debug', 'rectified_debug', 'debug_overlay'];
 const IMAGE_ARTIFACT_LABELS = {
   rendered: 'Translated',
   grouping_overlay_debug: 'Grouping',
   projected_overlay_debug: 'Text planes',
-  output: 'Output',
   rectified_debug: 'Rectified debug',
   debug_overlay: 'Debug overlay',
 };
@@ -37,6 +36,10 @@ export function createTranslationRequestsView() {
                 <input id="translationRequestTarget" value="nl" placeholder="nl" autocomplete="off">
               </label>
             </div>
+            <label class="translation-prompts-field">
+              <span>Model (grouping + translation)</span>
+              <select id="translationRequestModel"><option value="">Loading models…</option></select>
+            </label>
             <div class="translation-prompts-run-actions">
               <button type="button" id="translationRequestSubmit">Submit</button>
               <button type="button" id="translationRequestCancel" disabled>Cancel</button>
@@ -66,10 +69,35 @@ export function createTranslationRequestsView() {
               <div class="translation-requests-timings-title">Timings</div>
               <div class="translation-requests-timings" id="translationRequestTimings"></div>
             </section>
-            <label class="translation-prompts-field translation-prompts-field-response">
-              <span>LLM input (sent)</span>
-              <textarea id="translationRequestInput" rows="10" readonly placeholder="The user-prompt input sent to the LLM — copy into the Prompt Library to experiment."></textarea>
-            </label>
+            <details class="translation-prompts-system-details translation-requests-details">
+              <summary>Prompts &amp; responses</summary>
+              <div class="translation-requests-details-body">
+                <label class="translation-prompts-field translation-prompts-field-response">
+                  <span>VLM grouping — input</span>
+                  <textarea id="trtVlmInput" rows="6" spellcheck="false" placeholder="The user prompt sent to the grouping VLM."></textarea>
+                </label>
+                <label class="translation-prompts-field translation-prompts-field-response">
+                  <span>VLM grouping — response</span>
+                  <textarea id="trtVlmResponse" rows="6" spellcheck="false"></textarea>
+                </label>
+                <label class="translation-prompts-field translation-prompts-field-response">
+                  <span>Translation — system / instructions</span>
+                  <textarea id="trtXlateSystem" rows="6" spellcheck="false"></textarea>
+                </label>
+                <label class="translation-prompts-field translation-prompts-field-response">
+                  <span>Translation — input</span>
+                  <textarea id="trtXlateInput" rows="6" spellcheck="false"></textarea>
+                </label>
+                <label class="translation-prompts-field translation-prompts-field-response">
+                  <span>Translation — response</span>
+                  <textarea id="trtXlateResponse" rows="6" spellcheck="false"></textarea>
+                </label>
+                <label class="translation-prompts-field translation-prompts-field-response">
+                  <span>Fallback calls (prompts + responses)</span>
+                  <textarea id="trtFallbacks" rows="6" spellcheck="false" placeholder="Any per-unit / batch fallback calls, with their prompts and responses."></textarea>
+                </label>
+              </div>
+            </details>
             <label class="translation-prompts-field translation-prompts-field-response">
               <span>Raw response</span>
               <textarea id="translationRequestRaw" rows="10" readonly></textarea>
@@ -142,7 +170,15 @@ export function createTranslationRequestsView() {
   const statQueueEl = container.querySelector('#translationRequestStatQueue');
   const timingsEl = container.querySelector('#translationRequestTimings');
   const rawEl = container.querySelector('#translationRequestRaw');
-  const inputEl = container.querySelector('#translationRequestInput');
+  const modelSelect = container.querySelector('#translationRequestModel');
+  const detailEls = {
+    vlmInput: container.querySelector('#trtVlmInput'),
+    vlmResponse: container.querySelector('#trtVlmResponse'),
+    xlateSystem: container.querySelector('#trtXlateSystem'),
+    xlateInput: container.querySelector('#trtXlateInput'),
+    xlateResponse: container.querySelector('#trtXlateResponse'),
+    fallbacks: container.querySelector('#trtFallbacks'),
+  };
   const inputPreview = container.querySelector('#translationInputPreview');
   const inputEmpty = container.querySelector('#translationInputEmpty');
   const outputPreview = container.querySelector('#translationOutputPreview');
@@ -177,6 +213,7 @@ export function createTranslationRequestsView() {
     fileInput.disabled = isBusy;
     sourceInput.disabled = isBusy;
     targetInput.disabled = isBusy;
+    modelSelect.disabled = isBusy;
     cancelBtn.disabled = !currentRequestId || isTerminalState(currentState());
     retranslateLangSelect.disabled = isBusy;
     retranslatePromptSelect.disabled = isBusy;
@@ -209,11 +246,22 @@ export function createTranslationRequestsView() {
     const payload = {
       task: 'translate_image',
       priority: 'normal',
+      // Ask the pipeline for the OCR ("Text planes") + grouping debug overlays. They are off by
+      // default (a non-debug caller like the asr app skips that ~1s of full-image rendering); the
+      // workbench is the debug surface, so it opts in to populate those artifact previews.
+      debug_overlays: true,
     };
     const sourceLang = String(sourceInput.value || '').trim();
     if (sourceLang) payload.source_lang_code = sourceLang;
     const targetLang = String(targetInput.value || '').trim();
     if (targetLang) payload.target_lang_code = targetLang;
+    // One picked model drives both grouping (VLM) and translation. Empty = the
+    // service's configured defaults.
+    const model = String(modelSelect.value || '').trim();
+    if (model) {
+      payload.grouping_model = model;
+      payload.translator_model = model;
+    }
     return payload;
   }
 
@@ -327,6 +375,9 @@ export function createTranslationRequestsView() {
     if (promptId) body.translation_prompt_id = promptId;
     const lang = String(retranslateLangSelect.value || '');
     if (lang) body.target_lang_code = lang;
+    // Re-translate reuses cached grouping, so only the translator model applies.
+    const model = String(modelSelect.value || '').trim();
+    if (model) body.translator_model = model;
     stopPolling();
     clearOutputPreview();
     setBusy(true);
@@ -359,9 +410,101 @@ export function createTranslationRequestsView() {
     statStageEl.textContent = String(result?.stage || '-');
     statQueueEl.textContent = result?.queue_position == null ? '-' : String(result.queue_position);
     rawEl.value = JSON.stringify(result || {}, null, 2);
-    inputEl.value = String(result?.response?.metadata?.translation_input || '');
+    fillCallDetails(result);
     renderTimings(result);
     setBusy(isBusy);
+  }
+
+  // The grouping/translation prompts + responses come from response.llm_calls, which the
+  // service carries only on the terminal response. While running it's absent, so we only
+  // fill when present and never clobber what the user may be editing after completion.
+  function fillCallDetails(result) {
+    const calls = result?.response?.llm_calls;
+    if (!Array.isArray(calls) || calls.length === 0) return;
+    const grouping = calls.find((c) => String(c?.role) === 'grouping_vlm');
+    const main = calls.find((c) => {
+      const role = String(c?.role);
+      return role === 'translation_main' || role === 'translation_main_numbered';
+    });
+    const fallbacks = calls.filter((c) => c !== grouping && c !== main);
+    detailEls.vlmInput.value = grouping ? callInputText(grouping) : '';
+    detailEls.vlmResponse.value = grouping ? callResponseText(grouping) : '';
+    detailEls.xlateSystem.value = main ? String(main?.payload?.instructions || '') : '';
+    detailEls.xlateInput.value = main ? callInputText(main) : '';
+    detailEls.xlateResponse.value = main ? callResponseText(main) : '';
+    detailEls.fallbacks.value = fallbacks.length ? fallbacks.map(formatCall).join('\n\n──────────\n\n') : '';
+  }
+
+  function clearCallDetails() {
+    for (const el of Object.values(detailEls)) el.value = '';
+  }
+
+  function callInputText(call) {
+    const input = call?.payload?.input;
+    if (Array.isArray(input)) {
+      return input.filter((p) => p && p.type === 'text').map((p) => String(p.text || '')).join('\n');
+    }
+    return String(input || '');
+  }
+
+  function callResponseText(call) {
+    return String(call?.response?.output_text || '');
+  }
+
+  function formatCall(call) {
+    const system = String(call?.payload?.instructions || '');
+    return [
+      `# ${String(call?.role || 'call')}`,
+      system ? `[system]\n${system}` : '',
+      `[input]\n${callInputText(call)}`,
+      `[response]\n${callResponseText(call)}`,
+    ].filter(Boolean).join('\n');
+  }
+
+  // Only the currently-loaded pool models (green). The service's configured default model
+  // always appears too: green if it happens to be loaded, otherwise added in red so it's
+  // clear the default isn't loaded right now. One pick drives grouping + translation.
+  async function loadModelChoices() {
+    let models = [];
+    let defaultModel = '';
+    try {
+      const [adminPayload, statusPayload] = await Promise.all([
+        api.getAdminModels(),
+        api.getTranslationStatus().catch(() => null),
+      ]);
+      models = Array.isArray(adminPayload?.models) ? adminPayload.models : [];
+      defaultModel = String(statusPayload?.llm_pool?.translator_model || '');
+    } catch {
+      models = [];
+    }
+    const loaded = models
+      .filter((m) => String(m?.runtime_state || '').toLowerCase() === 'loaded')
+      .map((m) => String(m?.name || ''))
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b, 'nl', { sensitivity: 'base' }));
+    const entries = loaded.map((name) => ({ name, loaded: true }));
+    if (defaultModel && !loaded.includes(defaultModel)) {
+      entries.push({ name: defaultModel, loaded: false });
+    }
+    const previous = String(modelSelect.value || '');
+    modelSelect.innerHTML = entries.length
+      ? entries.map((m) => `<option value="${escapeAttr(m.name)}" class="${m.loaded ? 'is-loaded' : 'is-unloaded'}">${escapeHtml(m.name)}</option>`).join('')
+      : '<option value="">(no models)</option>';
+    if (previous && entries.some((m) => m.name === previous)) {
+      modelSelect.value = previous;
+    } else if (defaultModel && entries.some((m) => m.name === defaultModel)) {
+      modelSelect.value = defaultModel;
+    } else {
+      modelSelect.value = entries[0]?.name || '';
+    }
+    updateModelSelectColor();
+    setBusy(isBusy);
+  }
+
+  function updateModelSelectColor() {
+    const option = modelSelect.selectedOptions && modelSelect.selectedOptions[0];
+    modelSelect.classList.toggle('is-loaded', Boolean(option && option.classList.contains('is-loaded')));
+    modelSelect.classList.toggle('is-unloaded', Boolean(option && option.classList.contains('is-unloaded')));
   }
 
   function renderTimings(result) {
@@ -369,20 +512,32 @@ export function createTranslationRequestsView() {
     const metrics = result?.response?.metrics || {};
     const secMs = (s) => (typeof s === 'number' ? `${Math.round(s * 1000)} ms` : '—');
     const ms = (v) => (typeof v === 'number' ? `${Math.round(v)} ms` : '—');
+    const total = metrics.translate_image_total_wall_ms;
     const hasData = ['pool_queue_wait_s', 'pool_run_wall_s'].some((k) => typeof timings[k] === 'number')
-      || typeof metrics.translate_image_total_wall_ms === 'number';
+      || typeof total === 'number';
     if (!hasData) {
       timingsEl.innerHTML = '<div class="trt-row trt-placeholder"><span>Run a request to see stage timings.</span></div>';
       return;
     }
     const row = (label, value, cls = '') => `<div class="trt-row ${cls}"><span>${label}</span><strong>${value}</strong></div>`;
+    // Stage row with its share of the pipeline total — so the breakdown reads as "what does the
+    // pipeline itself cost". grouping = the VLM hint (inference); align = our cell->unit matching;
+    // render = re-placement; the two overlays are 0 unless debug_overlays was requested.
+    const stage = (label, v) => {
+      if (typeof v !== 'number') return row(label, '—', 'trt-l1');
+      const pct = typeof total === 'number' && total > 0 ? ` · ${Math.round((v / total) * 100)}%` : '';
+      return row(label, `${Math.round(v)} ms${pct}`, 'trt-l1');
+    };
     timingsEl.innerHTML = [
       row('Queue wait', secMs(timings.pool_queue_wait_s)),
-      row('Pool run', secMs(timings.pool_run_wall_s), 'trt-total'),
-      row('Pipeline total', ms(metrics.translate_image_total_wall_ms), 'trt-l1'),
-      row('OCR', ms(metrics.ocr_wall_ms), 'trt-l2'),
-      row('Grouping', ms(metrics.grouping_wall_ms), 'trt-l2'),
-      row('Translation', ms(metrics.translation_wall_ms), 'trt-l2'),
+      row('Pipeline total', ms(total), 'trt-total'),
+      stage('OCR', metrics.ocr_wall_ms),
+      stage('Grouping (VLM)', metrics.grouping_wall_ms),
+      stage('Align', metrics.align_wall_ms),
+      stage('Translation', metrics.translation_wall_ms),
+      stage('Render', metrics.replacement_wall_ms),
+      stage('OCR overlay', metrics.ocr_overlay_wall_ms),
+      stage('Grouping overlay', metrics.grouping_overlay_wall_ms),
     ].join('');
   }
 
@@ -407,6 +562,7 @@ export function createTranslationRequestsView() {
   }
 
   function clearOutputPreview() {
+    clearCallDetails();
     lastPreviewResult = null;
     previewArtifactSelect.innerHTML = '<option value="">No artifact</option>';
     previewArtifactSelect.disabled = true;
@@ -499,6 +655,7 @@ export function createTranslationRequestsView() {
   previewArtifactSelect.addEventListener('change', () => {
     if (lastPreviewResult) renderOutputPreview(lastPreviewResult);
   });
+  modelSelect.addEventListener('change', updateModelSelectColor);
   submitBtn.addEventListener('click', () => submitRequest());
   cancelBtn.addEventListener('click', cancelRequest);
   retranslateBtn.addEventListener('click', retranslateRequest);
@@ -522,5 +679,6 @@ export function createTranslationRequestsView() {
   retranslateLangSelect.value = String(targetInput.value || 'nl').trim() || 'nl';
   setBusy(false);
   loadPromptChoices();
+  loadModelChoices();
   return container;
 }
