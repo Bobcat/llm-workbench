@@ -40,6 +40,16 @@ export function createTranslationRequestsView() {
               <span>Model (grouping + translation)</span>
               <select id="translationRequestModel"><option value="">Loading models…</option></select>
             </label>
+            <div class="translation-requests-options-row">
+              <label class="translation-requests-option">
+                <input id="translationPreserveHeuristicText" type="checkbox" checked>
+                <span>Preserve heuristic text</span>
+              </label>
+              <label class="translation-requests-option">
+                <input id="translationPreserveUnchangedText" type="checkbox">
+                <span>Preserve unchanged text</span>
+              </label>
+            </div>
             <div class="translation-prompts-run-actions">
               <button type="button" id="translationRequestSubmit">Submit</button>
               <button type="button" id="translationRequestCancel" disabled>Cancel</button>
@@ -171,6 +181,8 @@ export function createTranslationRequestsView() {
   const timingsEl = container.querySelector('#translationRequestTimings');
   const rawEl = container.querySelector('#translationRequestRaw');
   const modelSelect = container.querySelector('#translationRequestModel');
+  const preserveHeuristicTextInput = container.querySelector('#translationPreserveHeuristicText');
+  const preserveUnchangedTextInput = container.querySelector('#translationPreserveUnchangedText');
   const detailEls = {
     vlmInput: container.querySelector('#trtVlmInput'),
     vlmResponse: container.querySelector('#trtVlmResponse'),
@@ -214,6 +226,8 @@ export function createTranslationRequestsView() {
     sourceInput.disabled = isBusy;
     targetInput.disabled = isBusy;
     modelSelect.disabled = isBusy;
+    preserveHeuristicTextInput.disabled = isBusy;
+    preserveUnchangedTextInput.disabled = isBusy;
     cancelBtn.disabled = !currentRequestId || isTerminalState(currentState());
     retranslateLangSelect.disabled = isBusy;
     retranslatePromptSelect.disabled = isBusy;
@@ -250,6 +264,8 @@ export function createTranslationRequestsView() {
       // default (a non-debug caller like the asr app skips that ~1s of full-image rendering); the
       // workbench is the debug surface, so it opts in to populate those artifact previews.
       debug_overlays: true,
+      preserve_heuristic_text: Boolean(preserveHeuristicTextInput.checked),
+      preserve_unchanged_text: Boolean(preserveUnchangedTextInput.checked),
     };
     const sourceLang = String(sourceInput.value || '').trim();
     if (sourceLang) payload.source_lang_code = sourceLang;
@@ -378,6 +394,8 @@ export function createTranslationRequestsView() {
     // Re-translate reuses cached grouping, so only the translator model applies.
     const model = String(modelSelect.value || '').trim();
     if (model) body.translator_model = model;
+    body.preserve_heuristic_text = Boolean(preserveHeuristicTextInput.checked);
+    body.preserve_unchanged_text = Boolean(preserveUnchangedTextInput.checked);
     stopPolling();
     clearOutputPreview();
     setBusy(true);

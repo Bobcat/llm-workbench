@@ -2595,6 +2595,32 @@
   background: #f6f8fb;
 }
 
+.translation-requests-view .translation-requests-options-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 16px;
+  margin-bottom: 10px;
+  min-width: 0;
+}
+
+.translation-requests-view .translation-requests-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #5b6b80;
+  font-size: 0.82rem;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.translation-requests-view .translation-requests-option input {
+  margin: 0;
+}
+
 /* Raw response sits right under its label (no stretched gap) */
 .translation-requests-view .translation-prompts-field-response {
   flex: 0 0 auto;
