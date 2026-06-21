@@ -49,6 +49,10 @@ export function createTranslationRequestsView() {
                 <input id="translationPreserveUnchangedText" type="checkbox">
                 <span>Preserve unchanged text</span>
               </label>
+              <label class="translation-requests-option">
+                <input id="translationUseGeometryColumns" type="checkbox" checked>
+                <span>Geometry columns</span>
+              </label>
             </div>
             <div class="translation-prompts-run-actions">
               <button type="button" id="translationRequestSubmit">Submit</button>
@@ -89,6 +93,10 @@ export function createTranslationRequestsView() {
                 <label class="translation-prompts-field translation-prompts-field-response">
                   <span>VLM grouping — response</span>
                   <textarea id="trtVlmResponse" rows="6" spellcheck="false"></textarea>
+                </label>
+                <label class="translation-prompts-field translation-prompts-field-response">
+                  <span>Geometry-adjusted columns (py)</span>
+                  <textarea id="trtGeometryColumns" rows="6" spellcheck="false" placeholder="Lines where the geometry pass injected a column | the VLM missed (raw → adjusted). Fed to translation only with 'Geometry columns' on."></textarea>
                 </label>
                 <label class="translation-prompts-field translation-prompts-field-response">
                   <span>Translation — system / instructions</span>
@@ -183,9 +191,11 @@ export function createTranslationRequestsView() {
   const modelSelect = container.querySelector('#translationRequestModel');
   const preserveHeuristicTextInput = container.querySelector('#translationPreserveHeuristicText');
   const preserveUnchangedTextInput = container.querySelector('#translationPreserveUnchangedText');
+  const useGeometryColumnsInput = container.querySelector('#translationUseGeometryColumns');
   const detailEls = {
     vlmInput: container.querySelector('#trtVlmInput'),
     vlmResponse: container.querySelector('#trtVlmResponse'),
+    geometryColumns: container.querySelector('#trtGeometryColumns'),
     xlateSystem: container.querySelector('#trtXlateSystem'),
     xlateInput: container.querySelector('#trtXlateInput'),
     xlateResponse: container.querySelector('#trtXlateResponse'),
@@ -228,6 +238,7 @@ export function createTranslationRequestsView() {
     modelSelect.disabled = isBusy;
     preserveHeuristicTextInput.disabled = isBusy;
     preserveUnchangedTextInput.disabled = isBusy;
+    useGeometryColumnsInput.disabled = isBusy;
     cancelBtn.disabled = !currentRequestId || isTerminalState(currentState());
     retranslateLangSelect.disabled = isBusy;
     retranslatePromptSelect.disabled = isBusy;
@@ -266,6 +277,7 @@ export function createTranslationRequestsView() {
       debug_overlays: true,
       preserve_heuristic_text: Boolean(preserveHeuristicTextInput.checked),
       preserve_unchanged_text: Boolean(preserveUnchangedTextInput.checked),
+      use_geometry_columns: Boolean(useGeometryColumnsInput.checked),
     };
     const sourceLang = String(sourceInput.value || '').trim();
     if (sourceLang) payload.source_lang_code = sourceLang;
@@ -396,6 +408,7 @@ export function createTranslationRequestsView() {
     if (model) body.translator_model = model;
     body.preserve_heuristic_text = Boolean(preserveHeuristicTextInput.checked);
     body.preserve_unchanged_text = Boolean(preserveUnchangedTextInput.checked);
+    body.use_geometry_columns = Boolean(useGeometryColumnsInput.checked);
     stopPolling();
     clearOutputPreview();
     setBusy(true);
@@ -451,6 +464,12 @@ export function createTranslationRequestsView() {
     detailEls.xlateInput.value = main ? callInputText(main) : '';
     detailEls.xlateResponse.value = main ? callResponseText(main) : '';
     detailEls.fallbacks.value = fallbacks.length ? fallbacks.map(formatCall).join('\n\n──────────\n\n') : '';
+    const changes = result?.response?.ocr?.field_geometry_changes;
+    if (Array.isArray(changes)) {
+      detailEls.geometryColumns.value = changes.length
+        ? changes.map((c) => `${c.raw}\n  → ${c.adjusted}${c.mapped_into_vlm_line ? '' : '   [cell-segmented]'}`).join('\n\n')
+        : '(no column | the VLM missed — geometry changed nothing)';
+    }
   }
 
   function clearCallDetails() {
