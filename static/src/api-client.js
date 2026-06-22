@@ -206,6 +206,26 @@ export const api = {
     });
   },
 
+  async getRegressionStatus(name) {
+    return fetchJson(`/api/translation/regression/status?name=${encodeURIComponent(name || '')}`);
+  },
+
+  async addRegressionTestset(body) {
+    return fetchJson('/api/translation/regression/testset', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body || {}),
+    });
+  },
+
+  async captureRegressionFixture(body) {
+    return fetchJson('/api/translation/regression/fixtures', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body || {}),
+    });
+  },
+
   async listTranslationPrompts() {
     return fetchJson('/api/translation/prompts');
   },

@@ -137,6 +137,19 @@ export function createTranslationRequestsView() {
               </div>
               <div class="translation-prompts-inline-status" id="translationPromptStatus"></div>
             </section>
+            <section class="translation-prompts-stats-block translation-requests-regression">
+              <div class="translation-requests-timings-title">Regression fixture</div>
+              <label class="translation-prompts-field">
+                <span>Name</span>
+                <input id="translationRegressionName" placeholder="image name" autocomplete="off">
+              </label>
+              <div class="translation-prompts-inline-status" id="translationRegressionInfo"></div>
+              <div class="translation-prompts-run-actions">
+                <button type="button" id="translationRegressionAddTestset" disabled title="Copy this image into the testset">Add to testset</button>
+                <button type="button" id="translationRegressionCapture" disabled title="Freeze this completed result as a regression fixture (frozen units + re-OCR snapshot)">Capture fixture</button>
+              </div>
+              <div class="translation-prompts-inline-status" id="translationRegressionStatus"></div>
+            </section>
           </section>
           <section class="translation-prompts-pane translation-requests-preview-pane">
             <div class="translation-prompts-pane-title">Preview</div>
@@ -216,9 +229,15 @@ export function createTranslationRequestsView() {
   const retranslatePromptSelect = container.querySelector('#translationRetranslatePrompt');
   const retranslateBtn = container.querySelector('#translationRetranslate');
   const promptStatusEl = container.querySelector('#translationPromptStatus');
+  const regressionNameInput = container.querySelector('#translationRegressionName');
+  const regressionInfoEl = container.querySelector('#translationRegressionInfo');
+  const regressionAddTestsetBtn = container.querySelector('#translationRegressionAddTestset');
+  const regressionCaptureBtn = container.querySelector('#translationRegressionCapture');
+  const regressionStatusEl = container.querySelector('#translationRegressionStatus');
 
   let isBusy = false;
   let currentRequestId = '';
+  let regressionStatus = null;
   let pollTimer = null;
   let inputObjectUrl = '';
   let lastPreviewResult = null;
@@ -243,6 +262,7 @@ export function createTranslationRequestsView() {
     retranslateLangSelect.disabled = isBusy;
     retranslatePromptSelect.disabled = isBusy;
     updateRetranslateState();
+    renderRegressionInfo();
   }
 
   function updateRetranslateState() {
@@ -621,6 +641,7 @@ export function createTranslationRequestsView() {
 
   function renderOutputPreview(result) {
     lastPreviewResult = result || null;
+    refreshRegression();
     const requestId = String(result?.request_id || currentRequestId || '');
     const entries = updateArtifactOptions(result);
     const artifactName = String(previewArtifactSelect.value || '');
@@ -686,7 +707,95 @@ export function createTranslationRequestsView() {
     return IMAGE_ARTIFACT_LABELS[name] || String(name || 'Artifact');
   }
 
+  function regressionName() {
+    return String(regressionNameInput.value || '').trim();
+  }
+
+  function setRegressionStatus(message, kind = '') {
+    regressionStatusEl.textContent = String(message || '');
+    regressionStatusEl.classList.toggle('is-error', kind === 'error');
+  }
+
+  function renderRegressionInfo() {
+    const status = regressionStatus;
+    const hasName = Boolean(regressionName());
+    const ready = Boolean(currentRequestId) && currentState() === 'completed';
+    const langs = (status && status.langs) || {};
+    const langKeys = Object.keys(langs);
+    if (!hasName || !status) {
+      regressionInfoEl.textContent = '';
+    } else if (!status.in_testset) {
+      regressionInfoEl.textContent = 'Not in testset';
+    } else if (!langKeys.length) {
+      regressionInfoEl.textContent = 'In testset · no fixture yet';
+    } else {
+      regressionInfoEl.textContent = langKeys.map((lang) => `${lang}: ${langs[lang].join(',')}`).join(' · ');
+    }
+    const inTestset = Boolean(status && status.in_testset);
+    const targetLang = String(targetInput.value || '').trim();
+    const hasForLang = Boolean(langs[targetLang] && langs[targetLang].length);
+    regressionAddTestsetBtn.disabled = isBusy || !ready || !hasName || inTestset;
+    regressionCaptureBtn.disabled = isBusy || !ready || !hasName || !inTestset;
+    regressionCaptureBtn.textContent = `${hasForLang ? 'Capture variant' : 'Capture fixture'} (${targetLang || '?'})`;
+  }
+
+  async function refreshRegression() {
+    const name = regressionName();
+    if (!name) {
+      regressionStatus = null;
+      renderRegressionInfo();
+      return;
+    }
+    try {
+      regressionStatus = await api.getRegressionStatus(name);
+    } catch (err) {
+      regressionStatus = null;
+      setRegressionStatus(formatApiError(err), 'error');
+    }
+    renderRegressionInfo();
+  }
+
+  async function addToTestset() {
+    if (!currentRequestId || !regressionName()) return;
+    setRegressionStatus('Adding to testset…');
+    try {
+      regressionStatus = await api.addRegressionTestset({ request_id: currentRequestId, name: regressionName() });
+      setRegressionStatus('Added to testset.');
+    } catch (err) {
+      setRegressionStatus(formatApiError(err), 'error');
+    }
+    renderRegressionInfo();
+  }
+
+  async function captureFixture() {
+    if (!currentRequestId || !regressionName()) return;
+    setRegressionStatus('Capturing… (re-OCR)');
+    setBusy(true);
+    try {
+      // The server places it under <name>/<target_lang>/ and assigns the next variant.
+      regressionStatus = await api.captureRegressionFixture({
+        request_id: currentRequestId,
+        name: regressionName(),
+      });
+      const where = `${regressionStatus.target_lang || ''}/${regressionStatus.variant || ''}`;
+      setRegressionStatus(regressionStatus.duplicate ? `Already captured as ${where} (no duplicate).` : `Captured ${where}.`);
+    } catch (err) {
+      setRegressionStatus(formatApiError(err), 'error');
+    } finally {
+      setBusy(false);
+    }
+    renderRegressionInfo();
+  }
+
   fileInput.addEventListener('change', updateInputPreview);
+  fileInput.addEventListener('change', () => {
+    const file = selectedFile();
+    if (file) regressionNameInput.value = String(file.name || '').replace(/\.[^.]+$/, '');
+    refreshRegression();
+  });
+  regressionNameInput.addEventListener('change', refreshRegression);
+  regressionAddTestsetBtn.addEventListener('click', addToTestset);
+  regressionCaptureBtn.addEventListener('click', captureFixture);
   toggleInput.addEventListener('change', applyToggle);
   previewZoomInput.addEventListener('input', updatePreviewZoom);
   previewArtifactSelect.addEventListener('change', () => {

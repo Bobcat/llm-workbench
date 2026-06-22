@@ -168,6 +168,23 @@ def get_status() -> dict:
     return _request_json(method="GET", path="/v1/status", timeout=3.0)
 
 
+@router.get("/regression/status")
+def regression_status(name: str = "") -> dict:
+    query = parse.urlencode({"name": name})
+    return _request_json(method="GET", path=f"/v1/regression/status?{query}", timeout=5.0)
+
+
+@router.post("/regression/testset")
+def regression_testset(body: dict | None = None) -> dict:
+    return _request_json(method="POST", path="/v1/regression/testset", payload=dict(body or {}), timeout=15.0)
+
+
+@router.post("/regression/fixtures")
+def regression_fixtures(body: dict | None = None) -> dict:
+    # The capture re-OCRs the rendered image server-side, so allow a generous timeout.
+    return _request_json(method="POST", path="/v1/regression/fixtures", payload=dict(body or {}), timeout=90.0)
+
+
 def _request_multipart_json(
     *,
     path: str,
