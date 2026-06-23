@@ -34,6 +34,9 @@ export function createRegressionView() {
   let runningAll = false;
   let detailView = 'snapshot';  // 'snapshot' | 'source' | 'actual'
   const collapsed = new Set();  // collapsed image (name) nodes
+  let snapshotVer = 0;          // bumped when snapshot.png changes (resnapshot), for cache-busting
+  let actualVer = 0;            // bumped when actual.png changes (a run)
+  let imgZoom = 100;            // detail image size (%)
 
   const key = (n, l, v) => `${n}/${l}/${v}`;
 
@@ -112,7 +115,11 @@ export function createRegressionView() {
   }
 
   function imageUrl(name, lang, variant, file) {
-    return `${REG_BASE}/fixtures/${encodeURIComponent(name)}/${encodeURIComponent(lang)}/${encodeURIComponent(variant)}/${file}?ts=${Date.now()}`;
+    // Stable per-file version (not Date.now): re-renders and toggles reuse the cached image instead
+    // of re-fetching it — the re-fetch was the black flash. Bumped only when the file changes.
+    const version = file === 'actual.png' ? actualVer : (file === 'snapshot.png' ? snapshotVer : null);
+    const base = `${REG_BASE}/fixtures/${encodeURIComponent(name)}/${encodeURIComponent(lang)}/${encodeURIComponent(variant)}/${file}`;
+    return version === null ? base : `${base}?v=${version}`;
   }
 
   function renderDetail() {
@@ -144,8 +151,9 @@ export function createRegressionView() {
         <button type="button" data-view="snapshot" class="${detailView === 'snapshot' ? 'is-active' : ''}">Snapshot</button>
         <button type="button" data-view="source" class="${detailView === 'source' ? 'is-active' : ''}">Source</button>
         ${hasActual ? `<button type="button" data-view="actual" class="${detailView === 'actual' ? 'is-active' : ''}">Actual</button>` : ''}
+        <label class="reg-zoom" title="Image size"><input id="regZoom" type="range" min="25" max="200" step="5" value="${imgZoom}"><output>${imgZoom}%</output></label>
       </div>
-      <div class="reg-detail-frame"><img alt="render" src="${src}"></div>
+      <div class="reg-detail-frame"><img alt="render" src="${src}" style="width:${imgZoom}%"></div>
       <div class="reg-detail-meta">${meta ? `${escapeHtml(meta.target_lang)} · ${meta.units} units · ${meta.reocr_rows} ocr-rows` : ''}</div>
       <div class="translation-prompts-run-actions">
         <button type="button" id="regRun">Run replay</button>
@@ -180,6 +188,7 @@ export function createRegressionView() {
     } catch (err) {
       results.set(key(name, lang, variant), { passed: false, diffs: [formatApiError(err)], has_actual: false });
     }
+    actualVer += 1;  // a run may have written/changed actual.png
     renderTree();
     if (selected && selected.name === name && selected.lang === lang && selected.variant === variant) renderDetail();
   }
@@ -219,6 +228,7 @@ export function createRegressionView() {
       return;
     }
     setStatus('Re-snapshotted.');
+    snapshotVer += 1;  // snapshot.png was overwritten
     // The fixture now matches its new baseline — re-run to confirm the green and refresh the image.
     await runOne(name, lang, variant);
   }
@@ -271,6 +281,16 @@ export function createRegressionView() {
     if (toggle) { detailView = toggle.dataset.view; renderDetail(); return; }
     if (event.target.id === 'regRun' && selected) runOne(selected.name, selected.lang, selected.variant);
     if (event.target.id === 'regAccept' && selected) accept(selected.name, selected.lang, selected.variant);
+  });
+
+  // Live image resize — update the img/output directly so dragging never rebuilds the DOM.
+  detailEl.addEventListener('input', (event) => {
+    if (event.target.id !== 'regZoom') return;
+    imgZoom = Number(event.target.value);
+    const img = detailEl.querySelector('.reg-detail-frame img');
+    if (img) img.style.width = `${imgZoom}%`;
+    const output = detailEl.querySelector('.reg-zoom output');
+    if (output) output.textContent = `${imgZoom}%`;
   });
 
   runAllBtn.addEventListener('click', runAll);

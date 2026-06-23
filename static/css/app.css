@@ -3007,9 +3007,11 @@
 .reg-del { margin-left: auto; background: none; border: none; color: inherit; opacity: 0.35; cursor: pointer; font-size: 0.8em; padding: 0 4px; }
 .reg-del:hover { opacity: 1; color: #e05555; }
 .reg-detail-head { font-weight: 600; margin-bottom: 8px; }
-.reg-toggles { display: flex; gap: 4px; margin-bottom: 8px; }
+.reg-toggles { display: flex; gap: 4px; margin-bottom: 8px; align-items: center; }
 .reg-toggles button.is-active { background: rgba(80, 140, 255, 0.30); border-color: var(--accent, #5a8cff); }
-.reg-detail-frame { border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 6px; overflow: auto; max-height: 60vh; background: #111; }
-.reg-detail-frame img { display: block; max-width: 100%; }
+.reg-zoom { display: flex; align-items: center; gap: 6px; margin-left: auto; font-size: 0.8em; opacity: 0.85; }
+.reg-zoom input[type="range"] { width: 110px; }
+.reg-detail-frame { border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 6px; overflow: auto; max-height: 70vh; background: #111; }
+.reg-detail-frame img { display: block; }
 .reg-detail-meta { opacity: 0.8; margin: 8px 0; font-size: 0.9em; }
 .reg-diffs { margin-top: 8px; color: #e0a0a0; font-family: monospace; font-size: 0.85em; padding-left: 18px; }
