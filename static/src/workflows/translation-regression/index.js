@@ -33,6 +33,7 @@ export function createRegressionView() {
   const results = new Map();    // "name/lang/variant" -> {passed, diffs, has_actual}  (this session only)
   let runningAll = false;
   let detailView = 'snapshot';  // 'snapshot' | 'source' | 'actual'
+  const collapsed = new Set();  // collapsed image (name) nodes
 
   const key = (n, l, v) => `${n}/${l}/${v}`;
 
@@ -52,6 +53,24 @@ export function createRegressionView() {
     return result.passed ? '<span class="reg-glyph reg-pass">✓</span>' : '<span class="reg-glyph reg-fail">✗</span>';
   }
 
+  // Aggregate state for a lang / image node: a language counts as passed if ≥1 of its variants is
+  // green; an image as passed if every language has a green variant.
+  function aggGlyph(state) {
+    if (state === 'pass') return '<span class="reg-glyph reg-pass">✓</span>';
+    if (state === 'fail') return '<span class="reg-glyph reg-fail">✗</span>';
+    return '<span class="reg-glyph reg-glyph-none">—</span>';
+  }
+  function langState(image, lang) {
+    const run = image.langs[lang].map((v) => results.get(key(image.name, lang, v.variant))).filter(Boolean);
+    if (!run.length) return 'none';
+    return run.some((r) => r.passed) ? 'pass' : 'fail';
+  }
+  function nameState(image) {
+    const states = Object.keys(image.langs).map((lang) => langState(image, lang));
+    if (states.every((s) => s === 'none')) return 'none';
+    return states.every((s) => s === 'pass') ? 'pass' : 'fail';
+  }
+
   function delButton(kind, name, lang, variant) {
     const attrs = `data-del="${kind}" data-name="${escapeAttr(name)}"`
       + (lang ? ` data-lang="${escapeAttr(lang)}"` : '')
@@ -65,24 +84,30 @@ export function createRegressionView() {
       return;
     }
     treeEl.innerHTML = images.map((image) => {
-      const langs = Object.keys(image.langs).map((lang) => {
-        const variants = image.langs[lang].map((vr) => {
-          const isSel = selected && selected.name === image.name && selected.lang === lang && selected.variant === vr.variant;
-          return `<li class="reg-variant ${isSel ? 'is-selected' : ''}"
-              data-name="${escapeAttr(image.name)}" data-lang="${escapeAttr(lang)}" data-variant="${escapeAttr(vr.variant)}">
-            ${glyph(image.name, lang, vr.variant)}
-            <span class="reg-label">${escapeHtml(vr.variant)}</span>
-            ${delButton('variant', image.name, lang, vr.variant)}
-          </li>`;
+      const isCollapsed = collapsed.has(image.name);
+      let body = '';
+      if (!isCollapsed) {
+        const langs = Object.keys(image.langs).map((lang) => {
+          const variants = image.langs[lang].map((vr) => {
+            const isSel = selected && selected.name === image.name && selected.lang === lang && selected.variant === vr.variant;
+            return `<li class="reg-variant ${isSel ? 'is-selected' : ''}"
+                data-name="${escapeAttr(image.name)}" data-lang="${escapeAttr(lang)}" data-variant="${escapeAttr(vr.variant)}">
+              ${glyph(image.name, lang, vr.variant)}
+              <span class="reg-label">${escapeHtml(vr.variant)}</span>
+              ${delButton('variant', image.name, lang, vr.variant)}
+            </li>`;
+          }).join('');
+          return `<li class="reg-lang">
+            <div class="reg-row reg-lang-head">${aggGlyph(langState(image, lang))}<span class="reg-label">${escapeHtml(lang)}</span>${delButton('lang', image.name, lang)}</div>
+            <ul>${variants}</ul></li>`;
         }).join('');
-        return `<li class="reg-lang">
-          <div class="reg-row reg-lang-head"><span class="reg-label">${escapeHtml(lang)}</span>${delButton('lang', image.name, lang)}</div>
-          <ul>${variants}</ul></li>`;
-      }).join('');
+        body = `<ul>${langs}</ul>`;
+      }
       const badge = image.in_testset ? '' : '<span class="reg-warn" title="not in testset">⚠</span>';
+      const caret = `<span class="reg-caret" data-collapse="${escapeAttr(image.name)}">${isCollapsed ? '▸' : '▾'}</span>`;
       return `<li class="reg-name">
-        <div class="reg-row reg-name-head"><span class="reg-label">${escapeHtml(image.name)}</span>${badge}${delButton('name', image.name)}</div>
-        <ul>${langs}</ul></li>`;
+        <div class="reg-row reg-name-head">${caret}${aggGlyph(nameState(image))}<span class="reg-label">${escapeHtml(image.name)}</span>${badge}${delButton('name', image.name)}</div>
+        ${body}</li>`;
     }).join('');
   }
 
@@ -125,7 +150,6 @@ export function createRegressionView() {
       <div class="translation-prompts-run-actions">
         <button type="button" id="regRun">Run replay</button>
         <button type="button" id="regAccept" title="Re-baseline: overwrite the snapshot with the current replay">Accept (re-snapshot)</button>
-        <button type="button" id="regDelVariant">Delete</button>
       </div>
       ${diffs}
     `;
@@ -220,6 +244,13 @@ export function createRegressionView() {
   }
 
   treeEl.addEventListener('click', (event) => {
+    const caret = event.target.closest('[data-collapse]');
+    if (caret) {
+      const name = caret.dataset.collapse;
+      if (collapsed.has(name)) collapsed.delete(name); else collapsed.add(name);
+      renderTree();
+      return;
+    }
     const delBtn = event.target.closest('[data-del]');
     if (delBtn) {
       event.stopPropagation();
@@ -240,7 +271,6 @@ export function createRegressionView() {
     if (toggle) { detailView = toggle.dataset.view; renderDetail(); return; }
     if (event.target.id === 'regRun' && selected) runOne(selected.name, selected.lang, selected.variant);
     if (event.target.id === 'regAccept' && selected) accept(selected.name, selected.lang, selected.variant);
-    if (event.target.id === 'regDelVariant' && selected) del(selected.name, selected.lang, selected.variant);
   });
 
   runAllBtn.addEventListener('click', runAll);

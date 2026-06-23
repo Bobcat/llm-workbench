@@ -2999,6 +2999,7 @@
 .reg-name-head > .reg-label { font-weight: 600; }
 .reg-lang-head > .reg-label { opacity: 0.8; }
 .reg-glyph { width: 1em; text-align: center; }
+.reg-caret { cursor: pointer; width: 1em; text-align: center; opacity: 0.7; user-select: none; }
 .reg-pass { color: #4caf50; }
 .reg-fail { color: #e05555; }
 .reg-glyph-none { opacity: 0.45; }
