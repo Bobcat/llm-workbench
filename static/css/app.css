@@ -2988,8 +2988,8 @@
 }
 .translation-regression-view button:not(.reg-del):hover { border-color: var(--accent, #5a8cff); }
 .translation-regression-view button:disabled { opacity: 0.45; cursor: default; }
-.translation-regression-tree-pane { width: 320px; overflow: auto; border-right: 1px solid rgba(255, 255, 255, 0.12); padding: 8px; background: rgba(0, 0, 0, 0.18); }
-.translation-regression-detail-pane { flex: 1; overflow: auto; padding: 12px; }
+.translation-regression-tree-pane { width: 240px; overflow: auto; border-right: 1px solid rgba(255, 255, 255, 0.12); padding: 8px; background: rgba(255, 255, 255, 0.04); }
+.translation-regression-detail-pane { flex: 1; overflow: auto; padding: 8px 12px 12px; font-size: 0.82rem; }
 .translation-regression-tree, .translation-regression-tree ul { list-style: none; margin: 0; padding-left: 12px; font-size: 0.82rem; }
 .translation-regression-tree > .reg-name { margin-bottom: 6px; }
 .reg-row, .reg-variant { display: flex; align-items: center; gap: 6px; padding: 2px 4px; border-radius: 4px; }
@@ -3007,10 +3007,11 @@
 .reg-del { margin-left: auto; background: none; border: none; color: inherit; opacity: 0.35; cursor: pointer; font-size: 0.8em; padding: 0 4px; }
 .reg-del:hover { opacity: 1; color: #e05555; }
 .reg-detail-head { font-weight: 600; margin-bottom: 8px; }
+.reg-detail-verdict { margin-left: 14px; }
 .reg-toggles { display: flex; gap: 4px; margin-bottom: 8px; align-items: center; }
 .reg-toggles button.is-active { background: rgba(80, 140, 255, 0.30); border-color: var(--accent, #5a8cff); }
 .reg-zoom { display: flex; align-items: center; gap: 6px; margin-left: auto; font-size: 0.8em; opacity: 0.85; }
-.reg-zoom input[type="range"] { width: 110px; }
+.reg-zoom input[type="range"] { width: 220px; }
 .reg-detail-frame { border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 6px; overflow: auto; max-height: 70vh; background: #111; }
 .reg-detail-frame img { display: block; }
 .reg-detail-meta { opacity: 0.8; margin: 8px 0; font-size: 0.9em; }

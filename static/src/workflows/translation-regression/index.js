@@ -40,6 +40,27 @@ export function createRegressionView() {
 
   const key = (n, l, v) => `${n}/${l}/${v}`;
 
+  // One persistent <img>, re-appended into each rebuilt detail frame so it keeps showing its last
+  // decoded pixels until the next image is fully loaded — that swap is what removes the black flash
+  // on fixture/view switches (rebuilding a fresh <img> blanks while the new bytes fetch).
+  const detailImg = document.createElement('img');
+  detailImg.alt = 'render';
+  detailImg.hidden = true;  // stay hidden until the first image actually decodes (no broken-icon band)
+  let detailImgToken = 0;
+  function loadDetailImage(src) {
+    const token = (detailImgToken += 1);
+    const apply = () => {
+      if (token !== detailImgToken) return;
+      detailImg.src = src;
+      detailImg.hidden = false;
+    };
+    const pre = new Image();
+    pre.onload = apply;
+    pre.onerror = () => { if (token === detailImgToken) { detailImg.removeAttribute('src'); detailImg.hidden = true; } };
+    pre.src = src;
+    if (pre.complete) apply();  // already cached: onload may not fire
+  }
+
   function setStatus(message, kind = '') {
     statusEl.textContent = String(message || '');
     statusEl.classList.toggle('is-error', kind === 'error');
@@ -146,14 +167,14 @@ export function createRegressionView() {
       : '';
 
     detailEl.innerHTML = `
-      <div class="reg-detail-head">${escapeHtml(name)} / ${escapeHtml(lang)} / ${escapeHtml(variant)} ${resultLabel}</div>
+      <div class="reg-detail-head">${escapeHtml(name)} / ${escapeHtml(lang)} / ${escapeHtml(variant)} <span class="reg-detail-verdict">${resultLabel}</span></div>
       <div class="reg-toggles">
         <button type="button" data-view="snapshot" class="${detailView === 'snapshot' ? 'is-active' : ''}">Snapshot</button>
         <button type="button" data-view="source" class="${detailView === 'source' ? 'is-active' : ''}">Source</button>
         ${hasActual ? `<button type="button" data-view="actual" class="${detailView === 'actual' ? 'is-active' : ''}">Actual</button>` : ''}
         <label class="reg-zoom" title="Image size"><input id="regZoom" type="range" min="25" max="200" step="5" value="${imgZoom}"><output>${imgZoom}%</output></label>
       </div>
-      <div class="reg-detail-frame"><img alt="render" src="${src}" style="width:${imgZoom}%"></div>
+      <div class="reg-detail-frame"></div>
       <div class="reg-detail-meta">${meta ? `${escapeHtml(meta.target_lang)} · ${meta.units} units · ${meta.reocr_rows} ocr-rows` : ''}</div>
       <div class="translation-prompts-run-actions">
         <button type="button" id="regRun">Run replay</button>
@@ -161,6 +182,9 @@ export function createRegressionView() {
       </div>
       ${diffs}
     `;
+    detailImg.style.width = `${imgZoom}%`;
+    detailEl.querySelector('.reg-detail-frame').appendChild(detailImg);
+    loadDetailImage(src);
   }
 
   async function refresh() {
