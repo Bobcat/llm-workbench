@@ -67,3 +67,34 @@
     z-index: 10050 !important;
   }
 }
+
+/* Collapsed sidebar: show the item name as a tooltip on hover (the labels are hidden when
+   collapsed, so without this you can't tell items apart without expanding). The foundation
+   reserves the [data-tooltip] hook (and disables it on mobile); this is its desktop styling.
+   The tooltip must escape the clipping ancestors, so overflow is opened up in collapsed state. */
+@media (min-width: 601px) {
+  #sidebar:not(.expanded) .sidebar-content,
+  #sidebar:not(.expanded) .sidebar-content > .nav-links > li[data-tooltip] {
+    overflow: visible !important;
+  }
+  #sidebar:not(.expanded) .sidebar-content > .nav-links > li[data-tooltip] {
+    position: relative;
+  }
+  #sidebar:not(.expanded) .sidebar-content > .nav-links > li[data-tooltip]:hover::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    left: calc(100% + 10px);
+    top: 50%;
+    transform: translateY(-50%);
+    white-space: nowrap;
+    background: #1f2733;
+    color: #fff;
+    padding: 4px 9px;
+    border-radius: 6px;
+    font-size: 0.78rem;
+    line-height: 1.2;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+    pointer-events: none;
+    z-index: 200;
+  }
+}

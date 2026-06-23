@@ -180,7 +180,7 @@ const WORKFLOWS = [
 function renderWorkflows() {
   const groupedMarkup = WORKFLOW_GROUPS.map((group) => {
     const sectionItems = group.items.map((wf) => `
-      <li data-route="${wf.route}">
+      <li data-route="${wf.route}" data-tooltip="${wf.name}">
         <span class="material-symbols-outlined" aria-hidden="true">${wf.icon}</span>
         <span class="link-text">${wf.name}</span>
       </li>
@@ -192,7 +192,7 @@ function renderWorkflows() {
   }).join('');
 
   const auxiliaryMarkup = AUXILIARY_WORKFLOWS.map((wf) => `
-    <li data-route="${wf.route}" class="sidebar-route-bottom">
+    <li data-route="${wf.route}" data-tooltip="${wf.name}" class="sidebar-route-bottom">
       <span class="material-symbols-outlined" aria-hidden="true">${wf.icon}</span>
       <span class="link-text">${wf.name}</span>
     </li>

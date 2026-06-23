@@ -475,7 +475,9 @@ export function createTranslationRequestsView() {
   function finishRetranslate(result) {
     if (!retranslatePending) return;
     retranslatePending = false;
-    setPromptStatus(String(result?.state) === 'completed' ? 'Re-translated.' : `Re-translate ${String(result?.state || 'ended')}.`);
+    setPromptStatus(String(result?.state) === 'completed'
+      ? `Re-translated to ${lastTargetLang || '?'}.`
+      : `Re-translate ${String(result?.state || 'ended')}.`);
   }
 
   function applyLifecycle(result) {

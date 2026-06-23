@@ -128,9 +128,9 @@ export function createRegressionView() {
         body = `<ul>${langs}</ul>`;
       }
       const badge = image.in_testset ? '' : '<span class="reg-warn" title="not in testset">⚠</span>';
-      const caret = `<span class="reg-caret" data-collapse="${escapeAttr(image.name)}">${isCollapsed ? '▸' : '▾'}</span>`;
+      const caret = `<span class="reg-caret">${isCollapsed ? '▸' : '▾'}</span>`;
       return `<li class="reg-name">
-        <div class="reg-row reg-name-head">${caret}${aggGlyph(nameState(image))}<span class="reg-label">${escapeHtml(image.name)}</span>${badge}${delButton('name', image.name)}</div>
+        <div class="reg-row reg-name-head" data-collapse="${escapeAttr(image.name)}">${caret}${aggGlyph(nameState(image))}<span class="reg-label">${escapeHtml(image.name)}</span>${badge}${delButton('name', image.name)}</div>
         ${body}</li>`;
     }).join('');
   }
@@ -278,17 +278,18 @@ export function createRegressionView() {
   }
 
   treeEl.addEventListener('click', (event) => {
-    const caret = event.target.closest('[data-collapse]');
-    if (caret) {
-      const name = caret.dataset.collapse;
-      if (collapsed.has(name)) collapsed.delete(name); else collapsed.add(name);
-      renderTree();
-      return;
-    }
+    // Delete first: its ✕ sits inside the collapsible name row, so it must win over the toggle.
     const delBtn = event.target.closest('[data-del]');
     if (delBtn) {
       event.stopPropagation();
       del(delBtn.dataset.name, delBtn.dataset.lang, delBtn.dataset.variant);
+      return;
+    }
+    const collapseEl = event.target.closest('[data-collapse]');
+    if (collapseEl) {
+      const name = collapseEl.dataset.collapse;
+      if (collapsed.has(name)) collapsed.delete(name); else collapsed.add(name);
+      renderTree();
       return;
     }
     const variantEl = event.target.closest('.reg-variant');

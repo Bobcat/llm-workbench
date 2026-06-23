@@ -2978,6 +2978,7 @@
 /* === Translation Regression view === */
 .translation-regression-view { display: flex; flex-direction: column; height: 100%; min-height: 0; }
 .translation-regression-toolbar { display: flex; gap: 8px; align-items: center; padding: 8px 12px; border-bottom: 1px solid rgba(255, 255, 255, 0.12); }
+.translation-regression-toolbar #regStatus { font-size: 0.78rem; }
 .translation-regression-body { display: flex; flex: 1; min-height: 0; }
 .translation-regression-view button:not(.reg-del) {
   border: 1px solid var(--border-color, var(--color-slate-200, var(--border, rgba(255, 255, 255, 0.18))));
@@ -2996,6 +2997,7 @@
 .reg-variant { cursor: pointer; }
 .reg-variant:hover { background: rgba(255, 255, 255, 0.06); }
 .reg-variant.is-selected { background: rgba(80, 140, 255, 0.20); }
+.reg-name-head { cursor: pointer; }
 .reg-name-head > .reg-label { font-weight: 600; }
 .reg-lang-head > .reg-label { opacity: 0.8; }
 .reg-glyph { width: 1em; text-align: center; }
@@ -3012,7 +3014,13 @@
 .reg-toggles button.is-active { background: rgba(80, 140, 255, 0.30); border-color: var(--accent, #5a8cff); }
 .reg-zoom { display: flex; align-items: center; gap: 6px; margin-left: auto; font-size: 0.8em; opacity: 0.85; }
 .reg-zoom input[type="range"] { width: 220px; }
-.reg-detail-frame { border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 6px; overflow: auto; max-height: 70vh; background: #111; }
-.reg-detail-frame img { display: block; }
+/* outline (not border): the scrollbar of a tall receipt is painted inside the border box and
+   overpaints a border at the corners it touches, so the frame looked broken there. An outline is
+   drawn just OUTSIDE the box, untouched by the scrollbar, so the frame stays whole. No radius —
+   the scrollbar would clip rounded corners anyway. */
+.reg-detail-frame { outline: 1px solid rgba(255, 255, 255, 0.12); overflow: auto; max-height: 70vh; background: #111; }
+/* :not([hidden]) so the detail <img> can be truly hidden until its first decode — a plain
+   `img { display: block }` overrides the hidden attribute and shows the broken-image icon while loading. */
+.reg-detail-frame img:not([hidden]) { display: block; }
 .reg-detail-meta { opacity: 0.8; margin: 8px 0; font-size: 0.9em; }
 .reg-diffs { margin-top: 8px; color: #e0a0a0; font-family: monospace; font-size: 0.85em; padding-left: 18px; }
