@@ -102,7 +102,7 @@ export function createRegressionView() {
     if (detailView === 'actual' && !hasActual) detailView = 'snapshot';
 
     let src;
-    if (detailView === 'source') src = `${REG_BASE}/source/${encodeURIComponent(name)}?ts=${Date.now()}`;
+    if (detailView === 'source') src = imageUrl(name, lang, variant, 'source');
     else if (detailView === 'actual') src = imageUrl(name, lang, variant, 'actual.png');
     else src = imageUrl(name, lang, variant, 'snapshot.png');
 

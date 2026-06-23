@@ -190,12 +190,6 @@ def regression_fixtures_list() -> dict:
     return _request_json(method="GET", path="/v1/regression/fixtures", timeout=5.0)
 
 
-@router.get("/regression/source/{name}")
-def regression_source(name: str) -> Response:
-    payload, media_type = _request_binary(path=f"/v1/regression/source/{parse.quote(name, safe='')}", timeout=10.0)
-    return Response(content=payload, media_type=media_type)
-
-
 @router.get("/regression/fixtures/{name}/{lang}/{variant}/{artifact}")
 def regression_variant_artifact(name: str, lang: str, variant: str, artifact: str) -> Response:
     seg = lambda value: parse.quote(value, safe="")
