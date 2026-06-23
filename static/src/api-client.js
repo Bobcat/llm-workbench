@@ -238,6 +238,14 @@ export const api = {
     });
   },
 
+  async resnapshotRegression(body) {
+    return fetchJson('/api/translation/regression/resnapshot', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body || {}),
+    });
+  },
+
   async deleteRegressionFixture(name, lang, variant) {
     const segments = [name, lang, variant].filter(Boolean).map(encodeURIComponent).join('/');
     return fetchJson(`/api/translation/regression/fixtures/${segments}`, { method: 'DELETE' });

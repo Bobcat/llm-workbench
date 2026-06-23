@@ -212,6 +212,12 @@ def regression_run(body: dict | None = None) -> dict:
     return _request_json(method="POST", path="/v1/regression/run", payload=dict(body or {}), timeout=90.0)
 
 
+@router.post("/regression/resnapshot")
+def regression_resnapshot(body: dict | None = None) -> dict:
+    # Re-baselines one fixture (replay + re-OCR server-side); generous timeout.
+    return _request_json(method="POST", path="/v1/regression/resnapshot", payload=dict(body or {}), timeout=90.0)
+
+
 @router.delete("/regression/fixtures/{name}")
 def regression_delete_name(name: str) -> dict:
     return _request_json(method="DELETE", path=f"/v1/regression/fixtures/{parse.quote(name, safe='')}", timeout=10.0)

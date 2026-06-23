@@ -124,6 +124,7 @@ export function createRegressionView() {
       <div class="reg-detail-meta">${meta ? `${escapeHtml(meta.target_lang)} · ${meta.units} units · ${meta.reocr_rows} ocr-rows` : ''}</div>
       <div class="translation-prompts-run-actions">
         <button type="button" id="regRun">Run replay</button>
+        <button type="button" id="regAccept" title="Re-baseline: overwrite the snapshot with the current replay">Accept (re-snapshot)</button>
         <button type="button" id="regDelVariant">Delete</button>
       </div>
       ${diffs}
@@ -183,6 +184,21 @@ export function createRegressionView() {
     runAllBtn.disabled = false;
   }
 
+  async function accept(name, lang, variant) {
+    if (!window.confirm(`Re-snapshot ${name}/${lang}/${variant} from the current replay?`)) return;
+    setStatus(`Re-snapshotting ${name}/${lang}/${variant}… (re-OCR)`);
+    try {
+      const out = await api.resnapshotRegression({ name, lang, variant });
+      if (!out.ok) { setStatus(out.error || 'Re-snapshot failed', 'error'); return; }
+    } catch (err) {
+      setStatus(formatApiError(err), 'error');
+      return;
+    }
+    setStatus('Re-snapshotted.');
+    // The fixture now matches its new baseline — re-run to confirm the green and refresh the image.
+    await runOne(name, lang, variant);
+  }
+
   async function del(name, lang, variant) {
     const label = [name, lang, variant].filter(Boolean).join('/');
     if (!window.confirm(`Delete ${label}?`)) return;
@@ -223,6 +239,7 @@ export function createRegressionView() {
     const toggle = event.target.closest('[data-view]');
     if (toggle) { detailView = toggle.dataset.view; renderDetail(); return; }
     if (event.target.id === 'regRun' && selected) runOne(selected.name, selected.lang, selected.variant);
+    if (event.target.id === 'regAccept' && selected) accept(selected.name, selected.lang, selected.variant);
     if (event.target.id === 'regDelVariant' && selected) del(selected.name, selected.lang, selected.variant);
   });
 
