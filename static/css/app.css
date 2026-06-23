@@ -2979,9 +2979,18 @@
 .translation-regression-view { display: flex; flex-direction: column; height: 100%; min-height: 0; }
 .translation-regression-toolbar { display: flex; gap: 8px; align-items: center; padding: 8px 12px; border-bottom: 1px solid rgba(255, 255, 255, 0.12); }
 .translation-regression-body { display: flex; flex: 1; min-height: 0; }
-.translation-regression-tree-pane { width: 320px; overflow: auto; border-right: 1px solid rgba(255, 255, 255, 0.12); padding: 8px; }
+.translation-regression-view button:not(.reg-del) {
+  border: 1px solid var(--border-color, var(--color-slate-200, var(--border, rgba(255, 255, 255, 0.18))));
+  background: var(--done-bg, var(--panel, rgba(255, 255, 255, 0.06)));
+  color: var(--text-main, var(--text-color, inherit));
+  border-radius: 8px; padding: 6px 14px; font-size: 0.85rem; font-weight: 500; line-height: 1.2;
+  cursor: pointer; transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+.translation-regression-view button:not(.reg-del):hover { border-color: var(--accent, #5a8cff); }
+.translation-regression-view button:disabled { opacity: 0.45; cursor: default; }
+.translation-regression-tree-pane { width: 320px; overflow: auto; border-right: 1px solid rgba(255, 255, 255, 0.12); padding: 8px; background: rgba(0, 0, 0, 0.18); }
 .translation-regression-detail-pane { flex: 1; overflow: auto; padding: 12px; }
-.translation-regression-tree, .translation-regression-tree ul { list-style: none; margin: 0; padding-left: 12px; }
+.translation-regression-tree, .translation-regression-tree ul { list-style: none; margin: 0; padding-left: 12px; font-size: 0.82rem; }
 .translation-regression-tree > .reg-name { margin-bottom: 6px; }
 .reg-row, .reg-variant { display: flex; align-items: center; gap: 6px; padding: 2px 4px; border-radius: 4px; }
 .reg-variant { cursor: pointer; }
@@ -2998,7 +3007,7 @@
 .reg-del:hover { opacity: 1; color: #e05555; }
 .reg-detail-head { font-weight: 600; margin-bottom: 8px; }
 .reg-toggles { display: flex; gap: 4px; margin-bottom: 8px; }
-.reg-toggles button.is-active { background: rgba(80, 140, 255, 0.30); }
+.reg-toggles button.is-active { background: rgba(80, 140, 255, 0.30); border-color: var(--accent, #5a8cff); }
 .reg-detail-frame { border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 6px; overflow: auto; max-height: 60vh; background: #111; }
 .reg-detail-frame img { display: block; max-width: 100%; }
 .reg-detail-meta { opacity: 0.8; margin: 8px 0; font-size: 0.9em; }
