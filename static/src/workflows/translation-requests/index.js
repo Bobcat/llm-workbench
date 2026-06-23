@@ -29,11 +29,11 @@ export function createTranslationRequestsView() {
             <div class="translation-prompts-language-grid translation-requests-grid">
               <label class="translation-prompts-field">
                 <span>Source language</span>
-                <input id="translationRequestSource" value="en" placeholder="en" autocomplete="off">
+                <select id="translationRequestSource"></select>
               </label>
               <label class="translation-prompts-field">
                 <span>Target language</span>
-                <input id="translationRequestTarget" value="nl" placeholder="nl" autocomplete="off">
+                <select id="translationRequestTarget"></select>
               </label>
             </div>
             <label class="translation-prompts-field">
@@ -59,6 +59,32 @@ export function createTranslationRequestsView() {
               <button type="button" id="translationRequestCancel" disabled>Cancel</button>
             </div>
             <div class="translation-prompts-inline-status" id="translationRequestStatus"></div>
+            <section class="translation-prompts-stats-block translation-requests-regression">
+              <div class="translation-requests-timings-title">Regression fixture</div>
+              <div class="translation-prompts-inline-status" id="translationRegressionInfo"></div>
+              <div class="translation-prompts-run-actions">
+                <button type="button" id="translationRegressionAddTestset" disabled title="Copy this image into the testset">Add to testset</button>
+                <button type="button" id="translationRegressionCapture" disabled title="Freeze this completed result as a regression fixture (frozen units + re-OCR snapshot)">Capture fixture</button>
+              </div>
+              <div class="translation-prompts-inline-status" id="translationRegressionStatus"></div>
+            </section>
+            <section class="translation-prompts-stats-block translation-requests-retranslate">
+              <div class="translation-requests-timings-title">Re-translate (cached units)</div>
+              <div class="translation-prompts-language-grid translation-requests-grid">
+                <label class="translation-prompts-field">
+                  <span>Target language</span>
+                  <select id="translationRetranslateLang"></select>
+                </label>
+                <label class="translation-prompts-field">
+                  <span>Prompt</span>
+                  <select id="translationRetranslatePrompt"></select>
+                </label>
+              </div>
+              <div class="translation-prompts-run-actions">
+                <button type="button" id="translationRetranslate" disabled title="Re-run translation + render on the last completed run's cached units with this prompt and language (no VLM/OCR/grouping)">Re-translate</button>
+              </div>
+              <div class="translation-prompts-inline-status" id="translationPromptStatus"></div>
+            </section>
             <section class="translation-prompts-stats-block">
               <div class="translation-prompts-stat translation-requests-id-stat">
                 <span>Request</span>
@@ -120,36 +146,6 @@ export function createTranslationRequestsView() {
               <span>Raw response</span>
               <textarea id="translationRequestRaw" rows="10" readonly></textarea>
             </label>
-            <section class="translation-prompts-stats-block translation-requests-retranslate">
-              <div class="translation-requests-timings-title">Re-translate (cached units)</div>
-              <div class="translation-prompts-language-grid translation-requests-grid">
-                <label class="translation-prompts-field">
-                  <span>Target language</span>
-                  <select id="translationRetranslateLang"></select>
-                </label>
-                <label class="translation-prompts-field">
-                  <span>Prompt</span>
-                  <select id="translationRetranslatePrompt"></select>
-                </label>
-              </div>
-              <div class="translation-prompts-run-actions">
-                <button type="button" id="translationRetranslate" disabled title="Re-run translation + render on the last completed run's cached units with this prompt and language (no VLM/OCR/grouping)">Re-translate</button>
-              </div>
-              <div class="translation-prompts-inline-status" id="translationPromptStatus"></div>
-            </section>
-            <section class="translation-prompts-stats-block translation-requests-regression">
-              <div class="translation-requests-timings-title">Regression fixture</div>
-              <label class="translation-prompts-field">
-                <span>Name</span>
-                <input id="translationRegressionName" placeholder="image name" autocomplete="off">
-              </label>
-              <div class="translation-prompts-inline-status" id="translationRegressionInfo"></div>
-              <div class="translation-prompts-run-actions">
-                <button type="button" id="translationRegressionAddTestset" disabled title="Copy this image into the testset">Add to testset</button>
-                <button type="button" id="translationRegressionCapture" disabled title="Freeze this completed result as a regression fixture (frozen units + re-OCR snapshot)">Capture fixture</button>
-              </div>
-              <div class="translation-prompts-inline-status" id="translationRegressionStatus"></div>
-            </section>
           </section>
           <section class="translation-prompts-pane translation-requests-preview-pane">
             <div class="translation-prompts-pane-title">Preview</div>
@@ -229,7 +225,9 @@ export function createTranslationRequestsView() {
   const retranslatePromptSelect = container.querySelector('#translationRetranslatePrompt');
   const retranslateBtn = container.querySelector('#translationRetranslate');
   const promptStatusEl = container.querySelector('#translationPromptStatus');
-  const regressionNameInput = container.querySelector('#translationRegressionName');
+  // The fixture name is derived from the uploaded file name (the visible input was removed); shown
+  // back to the user in the regression info line.
+  let regressionNameValue = '';
   const regressionInfoEl = container.querySelector('#translationRegressionInfo');
   const regressionAddTestsetBtn = container.querySelector('#translationRegressionAddTestset');
   const regressionCaptureBtn = container.querySelector('#translationRegressionCapture');
@@ -242,6 +240,12 @@ export function createTranslationRequestsView() {
   let inputObjectUrl = '';
   let lastPreviewResult = null;
   let savedPrompts = [];
+  // The target language the last completed run actually produced — set on submit and on
+  // re-translate so the capture-fixture button reflects what would be captured, not the form.
+  let lastTargetLang = '';
+  // True between a re-translate submit and its terminal poll, so the shared poller can replace the
+  // lingering "Re-translating…" prompt status with a done message when the run completes.
+  let retranslatePending = false;
 
   function setStatus(message, kind = '') {
     statusEl.textContent = String(message || '');
@@ -303,6 +307,7 @@ export function createTranslationRequestsView() {
     if (sourceLang) payload.source_lang_code = sourceLang;
     const targetLang = String(targetInput.value || '').trim();
     if (targetLang) payload.target_lang_code = targetLang;
+    lastTargetLang = targetLang;
     // One picked model drives both grouping (VLM) and translation. Empty = the
     // service's configured defaults.
     const model = String(modelSelect.value || '').trim();
@@ -322,6 +327,7 @@ export function createTranslationRequestsView() {
 
     stopPolling();
     clearOutputPreview();
+    setRegressionStatus('');
     setBusy(true);
     setStatus('Submitting image request...');
     try {
@@ -352,6 +358,7 @@ export function createTranslationRequestsView() {
       if (isTerminalState(result?.state)) {
         stopPolling();
         renderOutputPreview(result);
+        finishRetranslate(result);
       }
     } catch (err) {
       stopPolling();
@@ -392,9 +399,14 @@ export function createTranslationRequestsView() {
   }
 
   function populateLanguageSelect() {
-    retranslateLangSelect.innerHTML = TRANSLATION_LANGUAGES
+    const options = TRANSLATION_LANGUAGES
       .map((l) => `<option value="${escapeAttr(l.code)}">${escapeHtml(`${l.flag} ${l.name}`)}</option>`)
       .join('');
+    for (const select of [sourceInput, targetInput, retranslateLangSelect]) {
+      select.innerHTML = options;
+    }
+    sourceInput.value = 'en';
+    targetInput.value = 'nl';
   }
 
   // Prompts are authored in the prompt library (#prompt-library); this view only selects
@@ -422,7 +434,10 @@ export function createTranslationRequestsView() {
     const promptId = String(retranslatePromptSelect.value || '');
     if (promptId) body.translation_prompt_id = promptId;
     const lang = String(retranslateLangSelect.value || '');
-    if (lang) body.target_lang_code = lang;
+    if (lang) {
+      body.target_lang_code = lang;
+      lastTargetLang = lang;
+    }
     // Re-translate reuses cached grouping, so only the translator model applies.
     const model = String(modelSelect.value || '').trim();
     if (model) body.translator_model = model;
@@ -430,10 +445,13 @@ export function createTranslationRequestsView() {
     body.preserve_unchanged_text = Boolean(preserveUnchangedTextInput.checked);
     body.use_geometry_columns = Boolean(useGeometryColumnsInput.checked);
     stopPolling();
-    clearOutputPreview();
+    // Keep the previous render visible until the new one replaces it — re-translate reuses the
+    // same image, so blanking the preview here only produces a flash.
+    setRegressionStatus('');  // a new run invalidates any prior "captured / already captured" notice
     setBusy(true);
     setStatus('Submitting re-translate...');
     setPromptStatus('Re-translating cached units...');
+    retranslatePending = true;
     try {
       const result = await api.retranslateImageRequest(sourceRequestId, body);
       applyLifecycle(result);
@@ -443,13 +461,21 @@ export function createTranslationRequestsView() {
         startPolling();
       } else {
         renderOutputPreview(result);
+        finishRetranslate(result);
       }
     } catch (err) {
+      retranslatePending = false;
       setStatus(formatApiError(err), 'error');
       setPromptStatus(formatApiError(err), 'error');
     } finally {
       setBusy(false);
     }
+  }
+
+  function finishRetranslate(result) {
+    if (!retranslatePending) return;
+    retranslatePending = false;
+    setPromptStatus(String(result?.state) === 'completed' ? 'Re-translated.' : `Re-translate ${String(result?.state || 'ended')}.`);
   }
 
   function applyLifecycle(result) {
@@ -708,7 +734,7 @@ export function createTranslationRequestsView() {
   }
 
   function regressionName() {
-    return String(regressionNameInput.value || '').trim();
+    return regressionNameValue;
   }
 
   function setRegressionStatus(message, kind = '') {
@@ -717,22 +743,25 @@ export function createTranslationRequestsView() {
   }
 
   function renderRegressionInfo() {
+    const name = regressionName();
     const status = regressionStatus;
-    const hasName = Boolean(regressionName());
+    const hasName = Boolean(name);
     const ready = Boolean(currentRequestId) && currentState() === 'completed';
     const langs = (status && status.langs) || {};
     const langKeys = Object.keys(langs);
-    if (!hasName || !status) {
+    if (!hasName) {
       regressionInfoEl.textContent = '';
+    } else if (!status) {
+      regressionInfoEl.textContent = name;
     } else if (!status.in_testset) {
-      regressionInfoEl.textContent = 'Not in testset';
+      regressionInfoEl.textContent = `${name} · not in testset`;
     } else if (!langKeys.length) {
-      regressionInfoEl.textContent = 'In testset · no fixture yet';
+      regressionInfoEl.textContent = `${name} · in testset · no fixture yet`;
     } else {
-      regressionInfoEl.textContent = langKeys.map((lang) => `${lang}: ${langs[lang].join(',')}`).join(' · ');
+      regressionInfoEl.textContent = `${name} · ` + langKeys.map((lang) => `${lang}: ${langs[lang].join(',')}`).join(' · ');
     }
     const inTestset = Boolean(status && status.in_testset);
-    const targetLang = String(targetInput.value || '').trim();
+    const targetLang = (lastTargetLang || String(targetInput.value || '')).trim();
     const hasForLang = Boolean(langs[targetLang] && langs[targetLang].length);
     regressionAddTestsetBtn.disabled = isBusy || !ready || !hasName || inTestset;
     regressionCaptureBtn.disabled = isBusy || !ready || !hasName || !inTestset;
@@ -790,10 +819,9 @@ export function createTranslationRequestsView() {
   fileInput.addEventListener('change', updateInputPreview);
   fileInput.addEventListener('change', () => {
     const file = selectedFile();
-    if (file) regressionNameInput.value = String(file.name || '').replace(/\.[^.]+$/, '');
+    regressionNameValue = file ? String(file.name || '').replace(/\.[^.]+$/, '').trim() : '';
     refreshRegression();
   });
-  regressionNameInput.addEventListener('change', refreshRegression);
   regressionAddTestsetBtn.addEventListener('click', addToTestset);
   regressionCaptureBtn.addEventListener('click', captureFixture);
   toggleInput.addEventListener('change', applyToggle);
