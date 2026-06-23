@@ -226,6 +226,23 @@ export const api = {
     });
   },
 
+  async listRegressionFixtures() {
+    return fetchJson('/api/translation/regression/fixtures');
+  },
+
+  async runRegressionVariant(body) {
+    return fetchJson('/api/translation/regression/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body || {}),
+    });
+  },
+
+  async deleteRegressionFixture(name, lang, variant) {
+    const segments = [name, lang, variant].filter(Boolean).map(encodeURIComponent).join('/');
+    return fetchJson(`/api/translation/regression/fixtures/${segments}`, { method: 'DELETE' });
+  },
+
   async listTranslationPrompts() {
     return fetchJson('/api/translation/prompts');
   },

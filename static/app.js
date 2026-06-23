@@ -11,6 +11,7 @@ import { createTtsPoolView } from './src/workflows/tts-pool/index.js';
 import { createImagePoolView } from './src/workflows/image-pool/index.js';
 import { createTranslationRequestsView } from './src/workflows/translation-requests/index.js';
 import { createTranslationPromptsView } from './src/workflows/translation-prompts/index.js';
+import { createRegressionView } from './src/workflows/translation-regression/index.js';
 import { createTextGenerationView } from './src/workflows/text-generation/index.js';
 import { createImageGenerationView } from './src/workflows/image-generation/index.js';
 import { createChatView } from './src/workflows/chat/index.js';
@@ -37,6 +38,7 @@ const PERSISTENT_WORKFLOW_IDS = new Set([
   'image-pool-models',
   'image-generation',
   'translation-requests',
+  'translation-regression',
 ]);
 
 const ROUTE_ALIASES = new Map([
@@ -150,6 +152,12 @@ const WORKFLOW_GROUPS = [
         name: 'Prompt Library',
         icon: 'edit_note',
       },
+      {
+        id: 'translation-regression',
+        route: 'translation-regression',
+        name: 'Regression',
+        icon: 'fact_check',
+      },
     ],
   },
 ];
@@ -219,6 +227,9 @@ function createWorkflowView(workflowId) {
   }
   if (workflowId === 'prompt-library') {
     return createTranslationPromptsView();
+  }
+  if (workflowId === 'translation-regression') {
+    return createRegressionView();
   }
   if (workflowId === 'text-generation') {
     return createTextGenerationView();

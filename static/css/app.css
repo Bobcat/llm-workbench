@@ -2974,3 +2974,32 @@
   font-weight: 600;
   line-height: 1.1;
 }
+
+/* === Translation Regression view === */
+.translation-regression-view { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.translation-regression-toolbar { display: flex; gap: 8px; align-items: center; padding: 8px 12px; border-bottom: 1px solid rgba(255, 255, 255, 0.12); }
+.translation-regression-body { display: flex; flex: 1; min-height: 0; }
+.translation-regression-tree-pane { width: 320px; overflow: auto; border-right: 1px solid rgba(255, 255, 255, 0.12); padding: 8px; }
+.translation-regression-detail-pane { flex: 1; overflow: auto; padding: 12px; }
+.translation-regression-tree, .translation-regression-tree ul { list-style: none; margin: 0; padding-left: 12px; }
+.translation-regression-tree > .reg-name { margin-bottom: 6px; }
+.reg-row, .reg-variant { display: flex; align-items: center; gap: 6px; padding: 2px 4px; border-radius: 4px; }
+.reg-variant { cursor: pointer; }
+.reg-variant:hover { background: rgba(255, 255, 255, 0.06); }
+.reg-variant.is-selected { background: rgba(80, 140, 255, 0.20); }
+.reg-name-head > .reg-label { font-weight: 600; }
+.reg-lang-head > .reg-label { opacity: 0.8; }
+.reg-glyph { width: 1em; text-align: center; }
+.reg-pass { color: #4caf50; }
+.reg-fail { color: #e05555; }
+.reg-glyph-none { opacity: 0.45; }
+.reg-warn { color: #e0a000; margin-left: 4px; }
+.reg-del { margin-left: auto; background: none; border: none; color: inherit; opacity: 0.35; cursor: pointer; font-size: 0.8em; padding: 0 4px; }
+.reg-del:hover { opacity: 1; color: #e05555; }
+.reg-detail-head { font-weight: 600; margin-bottom: 8px; }
+.reg-toggles { display: flex; gap: 4px; margin-bottom: 8px; }
+.reg-toggles button.is-active { background: rgba(80, 140, 255, 0.30); }
+.reg-detail-frame { border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 6px; overflow: auto; max-height: 60vh; background: #111; }
+.reg-detail-frame img { display: block; max-width: 100%; }
+.reg-detail-meta { opacity: 0.8; margin: 8px 0; font-size: 0.9em; }
+.reg-diffs { margin-top: 8px; color: #e0a0a0; font-family: monospace; font-size: 0.85em; padding-left: 18px; }
