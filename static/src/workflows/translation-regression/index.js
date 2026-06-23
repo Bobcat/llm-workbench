@@ -37,8 +37,10 @@ export function createRegressionView() {
   let snapshotVer = 0;          // bumped when snapshot.png changes (resnapshot), for cache-busting
   let actualVer = 0;            // bumped when actual.png changes (a run)
   let imgZoom = 100;            // detail image size (%)
+  const scrollByView = new Map(); // `${name/lang/variant}|${view}` -> {top, left}; per-view scroll memory
 
   const key = (n, l, v) => `${n}/${l}/${v}`;
+  const scrollKey = () => (selected ? `${key(selected.name, selected.lang, selected.variant)}|${detailView}` : null);
 
   // One persistent <img>, re-appended into each rebuilt detail frame so it keeps showing its last
   // decoded pixels until the next image is fully loaded — that swap is what removes the black flash
@@ -47,12 +49,13 @@ export function createRegressionView() {
   detailImg.alt = 'render';
   detailImg.hidden = true;  // stay hidden until the first image actually decodes (no broken-icon band)
   let detailImgToken = 0;
-  function loadDetailImage(src) {
+  function loadDetailImage(src, onShown) {
     const token = (detailImgToken += 1);
     const apply = () => {
       if (token !== detailImgToken) return;
       detailImg.src = src;
       detailImg.hidden = false;
+      if (onShown) onShown();  // restore scroll only once the image (and thus its scroll extent) is up
     };
     const pre = new Image();
     pre.onload = apply;
@@ -184,8 +187,8 @@ export function createRegressionView() {
       <div class="reg-detail-head">${escapeHtml(name)} / ${escapeHtml(lang)} / ${escapeHtml(variant)} <span class="reg-detail-verdict">${resultLabel}</span></div>
       <div class="reg-toggles">
         <button type="button" data-view="snapshot" class="${detailView === 'snapshot' ? 'is-active' : ''}">Snapshot</button>
-        <button type="button" data-view="source" class="${detailView === 'source' ? 'is-active' : ''}">Source</button>
         ${hasActual ? `<button type="button" data-view="actual" class="${detailView === 'actual' ? 'is-active' : ''}">Actual</button>` : ''}
+        <button type="button" data-view="source" class="${detailView === 'source' ? 'is-active' : ''}">Source</button>
         <label class="reg-zoom" title="Image size"><input id="regZoom" type="range" min="25" max="200" step="5" value="${imgZoom}"><output>${imgZoom}%</output></label>
       </div>
       <div class="reg-detail-frame"></div>
@@ -197,8 +200,13 @@ export function createRegressionView() {
       ${diffs}
     `;
     detailImg.style.width = `${imgZoom}%`;
-    detailEl.querySelector('.reg-detail-frame').appendChild(detailImg);
-    loadDetailImage(src);
+    const frame = detailEl.querySelector('.reg-detail-frame');
+    frame.appendChild(detailImg);
+    const restoreKey = scrollKey();
+    loadDetailImage(src, () => {
+      const pos = scrollByView.get(restoreKey);
+      if (pos) { frame.scrollTop = pos.top; frame.scrollLeft = pos.left; }
+    });
   }
 
   async function refresh() {
@@ -245,6 +253,9 @@ export function createRegressionView() {
     if (runningAll) return;
     runningAll = true;
     runAllBtn.disabled = true;
+    results.clear();  // reset every ✓/✗ back to the — dashes before re-running, so progress is visible
+    renderTree();
+    if (selected) renderDetail();
     const all = allVariants();
     // Sequential, image by image — the loop keeps running across sidebar navigation (the view is
     // persistent), so progress survives. Each /run is serialized by the OCR lock server-side.
@@ -324,6 +335,15 @@ export function createRegressionView() {
     if (event.target.id === 'regRun' && selected) runOne(selected.name, selected.lang, selected.variant);
     if (event.target.id === 'regAccept' && selected) accept(selected.name, selected.lang, selected.variant);
   });
+
+  // Remember each view's scroll position so Snapshot -> Actual -> Snapshot returns to where it was.
+  // Scroll events don't bubble, so listen in the capture phase; record under the current view's key.
+  detailEl.addEventListener('scroll', (event) => {
+    const frame = event.target;
+    if (!frame.classList || !frame.classList.contains('reg-detail-frame')) return;
+    const k = scrollKey();
+    if (k) scrollByView.set(k, { top: frame.scrollTop, left: frame.scrollLeft });
+  }, true);
 
   // Live image resize — update the img/output directly so dragging never rebuilds the DOM.
   detailEl.addEventListener('input', (event) => {
