@@ -37,13 +37,14 @@ const PERSISTENT_WORKFLOW_IDS = new Set([
   'tts-pool-models',
   'image-pool-models',
   'image-generation',
-  'translation-requests',
+  'image-translation',
   'translation-regression',
 ]);
 
 const ROUTE_ALIASES = new Map([
   ['ad-hoc-prompt', 'text-generation'],
   ['vlm-test', 'text-generation'],
+  ['translation-requests', 'image-translation'],
 ]);
 
 function normalizeRoute(route) {
@@ -141,22 +142,22 @@ const WORKFLOW_GROUPS = [
     label: 'Translation Services',
     items: [
       {
-        id: 'translation-requests',
-        route: 'translation-requests',
+        id: 'image-translation',
+        route: 'image-translation',
         name: 'Image translation',
         icon: 'upload_file',
+      },
+      {
+        id: 'translation-regression',
+        route: 'translation-regression',
+        name: 'Regression testing',
+        icon: 'fact_check',
       },
       {
         id: 'prompt-library',
         route: 'prompt-library',
         name: 'Prompt Library',
         icon: 'edit_note',
-      },
-      {
-        id: 'translation-regression',
-        route: 'translation-regression',
-        name: 'Regression',
-        icon: 'fact_check',
       },
     ],
   },
@@ -222,7 +223,7 @@ function createWorkflowView(workflowId) {
   if (workflowId === 'image-pool-models') {
     return createImagePoolView();
   }
-  if (workflowId === 'translation-requests') {
+  if (workflowId === 'image-translation') {
     return createTranslationRequestsView();
   }
   if (workflowId === 'prompt-library') {
