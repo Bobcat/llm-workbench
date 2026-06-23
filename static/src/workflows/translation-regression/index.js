@@ -77,6 +77,16 @@ export function createRegressionView() {
     return result.passed ? '<span class="reg-glyph reg-pass">✓</span>' : '<span class="reg-glyph reg-fail">✗</span>';
   }
 
+  // Per-stage replay wall-clock from the last run of this variant: grouping/align, render, re-OCR.
+  function timingLabel(timings) {
+    if (!timings) return '';
+    const parts = [];
+    if (timings.group_ms != null) parts.push(Math.round(timings.group_ms));
+    if (timings.render_ms != null) parts.push(Math.round(timings.render_ms));
+    if (timings.reocr_ms != null) parts.push(Math.round(timings.reocr_ms));
+    return parts.length ? `${parts.join(', ')} ms` : '';
+  }
+
   // Aggregate state for a lang / image node: a language counts as passed if ≥1 of its variants is
   // green; an image as passed if every language has a green variant.
   function aggGlyph(state) {
@@ -114,10 +124,14 @@ export function createRegressionView() {
         const langs = Object.keys(image.langs).map((lang) => {
           const variants = image.langs[lang].map((vr) => {
             const isSel = selected && selected.name === image.name && selected.lang === lang && selected.variant === vr.variant;
+            const ran = results.get(key(image.name, lang, vr.variant));
+            const timing = ran && timingLabel(ran.timings)
+              ? `<span class="reg-timing" title="grouping/align · render · re-OCR (ms)">(${timingLabel(ran.timings)})</span>`
+              : '';
             return `<li class="reg-variant ${isSel ? 'is-selected' : ''}"
                 data-name="${escapeAttr(image.name)}" data-lang="${escapeAttr(lang)}" data-variant="${escapeAttr(vr.variant)}">
               ${glyph(image.name, lang, vr.variant)}
-              <span class="reg-label">${escapeHtml(vr.variant)}</span>
+              <span class="reg-label">${escapeHtml(vr.variant)}</span>${timing}
               ${delButton('variant', image.name, lang, vr.variant)}
             </li>`;
           }).join('');
@@ -208,10 +222,13 @@ export function createRegressionView() {
         passed: Boolean(result.passed),
         diffs: result.diffs || [],
         has_actual: Boolean(result.has_actual),
+        timings: result.timings || null,
       });
     } catch (err) {
       results.set(key(name, lang, variant), { passed: false, diffs: [formatApiError(err)], has_actual: false });
     }
+    const ran = results.get(key(name, lang, variant));
+    setStatus(`${name}/${lang}/${variant} — ${ran && ran.passed ? 'passed' : 'failed'}.`);
     actualVer += 1;  // a run may have written/changed actual.png
     renderTree();
     if (selected && selected.name === name && selected.lang === lang && selected.variant === variant) renderDetail();

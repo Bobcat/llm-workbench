@@ -2977,8 +2977,10 @@
 
 /* === Translation Regression view === */
 .translation-regression-view { display: flex; flex-direction: column; height: 100%; min-height: 0; }
-.translation-regression-toolbar { display: flex; gap: 8px; align-items: center; padding: 8px 12px; border-bottom: 1px solid rgba(255, 255, 255, 0.12); }
-.translation-regression-toolbar #regStatus { font-size: 0.78rem; }
+.translation-regression-toolbar { position: relative; display: flex; gap: 8px; align-items: center; padding: 8px 12px; border-bottom: 1px solid rgba(255, 255, 255, 0.12); }
+/* Start the status text at the detail pane's left edge (= the tree pane width) so it lines up under
+   the detail column instead of crowding the buttons. */
+.translation-regression-toolbar #regStatus { position: absolute; left: 240px; top: 50%; transform: translateY(-50%); font-size: 0.78rem; }
 .translation-regression-body { display: flex; flex: 1; min-height: 0; }
 .translation-regression-view button:not(.reg-del) {
   border: 1px solid var(--border-color, var(--color-slate-200, var(--border, rgba(255, 255, 255, 0.18))));
@@ -3005,6 +3007,7 @@
 .reg-pass { color: #4caf50; }
 .reg-fail { color: #e05555; }
 .reg-glyph-none { opacity: 0.45; }
+.reg-timing { font-size: 0.72em; opacity: 0.55; white-space: nowrap; position: relative; top: 2px; }
 .reg-warn { color: #e0a000; margin-left: 4px; }
 .reg-del { margin-left: auto; background: none; border: none; color: inherit; opacity: 0.35; cursor: pointer; font-size: 0.8em; padding: 0 4px; }
 .reg-del:hover { opacity: 1; color: #e05555; }
