@@ -155,7 +155,7 @@ class ReplayConfigFlowTests(unittest.TestCase):
                 "models": [
                     {
                         "name": "session-default-model",
-                        "resolved_backend": "gguf",
+                        "resolved_backend": "llama_cpp",
                         "definition": {
                             "gguf_n_ctx": 8192,
                             "gguf_flash_attn": "auto",
@@ -184,7 +184,7 @@ class ReplayConfigFlowTests(unittest.TestCase):
 
             lines = asyncio.run(export_runtime._build_export_runtime_settings_lines(session))
 
-            self.assertIn("Model backend: gguf", lines)
+            self.assertIn("Model backend: llama_cpp", lines)
             self.assertIn("Model context size: 8192", lines)
             llm_pool_module._request_json.assert_called_once_with(
                 method="GET",

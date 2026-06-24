@@ -61,7 +61,7 @@ def _build_runtime_model_settings_lines(prefix: str, model_payload: dict[str, ob
 
     lines = [f"{prefix} backend: {backend}"]
 
-    if backend == "gguf":
+    if backend == "llama_cpp":
         lines.extend([
             f"{prefix} context size: {_effective_admin_model_value(model_payload, 'gguf_n_ctx')}",
             f"{prefix} flash attn: {_format_gguf_flash_attn(_effective_admin_model_value(model_payload, 'gguf_flash_attn'))}",

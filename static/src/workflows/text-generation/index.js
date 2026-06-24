@@ -208,7 +208,7 @@ export function createTextGenerationView() {
           name: String(model?.name || '').trim(),
           runtimeState: String(model?.runtime_state || 'unloaded').trim().toLowerCase(),
           backend,
-          isRemote: backend === 'openai_compatible',
+          isRemote: backend === 'openai_remote',
           supportsImage: modalities.includes('image'),
           thinkingModes: normalizeThinkingModes(capabilities.thinking_modes),
           imageLimit: parseImageLimit(model?.definition),

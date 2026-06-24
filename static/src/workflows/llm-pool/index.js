@@ -485,7 +485,7 @@ function getSortValue(model, key, draft) {
 }
 
 function isRemoteModel(model) {
-  return normalizeBackend(model?.resolved_backend || model?.definition?.backend) === 'openai_compatible';
+  return normalizeBackend(model?.resolved_backend || model?.definition?.backend) === 'openai_remote';
 }
 
 function normalizeBackend(value) {
@@ -494,9 +494,7 @@ function normalizeBackend(value) {
 
 function formatBackendLabel(value) {
   const normalized = normalizeBackend(value);
-  if (normalized === 'openai_compatible') return 'OpenAI compatible';
-  if (normalized === 'llama_server') return 'llama-server';
-  return String(value || '-');
+  return normalized || '-';
 }
 
 function runtimeText(state) {
@@ -1183,7 +1181,7 @@ function buildLoadSettingsMarkup(model, draft, runtimeState) {
     || llamaServerDraftPMinConstraint
   ) {
     notes.push(buildLoadSettingNoteMarkup(
-      'llama-server MTP settings are native server startup flags; unload before changing them.'
+      'llama_server MTP settings are native server startup flags; unload before changing them.'
     ));
   }
 

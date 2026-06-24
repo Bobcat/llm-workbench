@@ -139,7 +139,7 @@ class ReplayApiTests(unittest.TestCase):
             self.assertIn("request_executed", translation_outcome["data"])
             self.assertIn("event_kind", translation_outcome["data"])
 
-    def test_export_includes_gguf_runtime_settings(self) -> None:
+    def test_export_includes_llama_cpp_runtime_settings(self) -> None:
         client = TestClient(app)
         create_response = client.post(
             "/api/replay/session",
@@ -159,7 +159,7 @@ class ReplayApiTests(unittest.TestCase):
                 "models": [
                     {
                         "name": "google_gemma-4-E2B-it-Q8_0-gguf",
-                        "resolved_backend": "gguf",
+                        "resolved_backend": "llama_cpp",
                         "definition": {
                             "gguf_n_ctx": 16384,
                             "gguf_flash_attn": "auto",
@@ -184,7 +184,7 @@ class ReplayApiTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         content = response.text
-        self.assertIn("Model backend: gguf", content)
+        self.assertIn("Model backend: llama_cpp", content)
         self.assertIn("Model context size: 16384", content)
         self.assertIn("Model flash attn: on", content)
         self.assertIn("Model K type: q4_0", content)

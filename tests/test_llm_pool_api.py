@@ -35,7 +35,7 @@ class LlmPoolApiTests(unittest.TestCase):
             "models": [
                 {
                     "name": "gemma_translate",
-                    "resolved_backend": "gguf",
+                    "resolved_backend": "llama_cpp",
                     "configured_enabled": True,
                     "runtime_state": "loaded",
                     "is_loaded": True,
@@ -55,7 +55,7 @@ class LlmPoolApiTests(unittest.TestCase):
                     "load_override": {},
                     "definition": {
                         "model_path": "/models/gemma_translate.gguf",
-                        "backend": "gguf",
+                        "backend": "llama_cpp",
                         "prompt_format": "generic",
                         "enable_thinking": None,
                         "enabled": True,
@@ -95,7 +95,7 @@ class LlmPoolApiTests(unittest.TestCase):
             captured["timeout"] = timeout
             return {
                 "name": "gemma_translate",
-                "resolved_backend": "gguf",
+                "resolved_backend": "llama_cpp",
                 "configured_enabled": True,
                 "runtime_state": "loaded",
                 "is_loaded": True,
@@ -115,7 +115,7 @@ class LlmPoolApiTests(unittest.TestCase):
                 "load_override": {},
                 "definition": {
                     "model_path": "/models/gemma_translate.gguf",
-                    "backend": "gguf",
+                    "backend": "llama_cpp",
                     "prompt_format": "generic",
                     "enable_thinking": None,
                     "enabled": True,
