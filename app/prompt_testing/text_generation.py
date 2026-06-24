@@ -35,6 +35,10 @@ class TextGenerationRunRequest(BaseModel):
     images: list[TextGenerationImageInput] = Field(default_factory=list)
     allow_remote: bool = False
     thinking: Literal["default", "enabled", "disabled"] = "default"
+    # Set together for a translategemma_template model: the source text goes in ``input`` and these
+    # language codes drive the template (no system prompt). See llm-pool README "Request Fields".
+    source_lang_code: str | None = None
+    target_lang_code: str | None = None
     max_tokens: int = Field(default=_DEFAULT_OUTPUT_TOKENS, ge=1, le=_MAX_OUTPUT_TOKENS)
     temperature: float | None = Field(default=None, ge=0.0, le=2.0)
     top_p: float | None = Field(default=None, gt=0.0, le=1.0)
@@ -148,6 +152,20 @@ def _text_generation_payload(
     rendered_user_prompt: str,
     images: list[TextGenerationImageInput],
 ) -> dict[str, Any]:
+    source_lang = str(request.source_lang_code or "").strip()
+    target_lang = str(request.target_lang_code or "").strip()
+    if source_lang and target_lang:
+        # translategemma_template: the source text is the bare ``input`` and the language codes drive
+        # the prompt — no ``instructions`` (omitting it is required by the template).
+        return {
+            "model": model,
+            "input": rendered_user_prompt,
+            "source_lang_code": source_lang,
+            "target_lang_code": target_lang,
+            "allow_remote": request.allow_remote,
+            "stream": False,
+            "decoding": _decoding(request),
+        }
     effective_system_prompt = (
         request.system_prompt if str(request.system_prompt) != "" else " "
     )

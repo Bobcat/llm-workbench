@@ -57,6 +57,24 @@ class TextGenerationPayloadTests(unittest.TestCase):
         self.assertEqual(payload["instructions"], "You answer shortly.")
         self.assertEqual(payload["thinking"], "default")
 
+    def test_translategemma_payload_uses_language_codes_and_omits_instructions(self) -> None:
+        request = _request(
+            system_prompt="ignored for translate",
+            source_lang_code="nl",
+            target_lang_code="en",
+        )
+        payload = text_generation._text_generation_payload(
+            request,
+            model="translategemma-12b-it-q5-k-m-gguf",
+            rendered_user_prompt="Ach, hij is een ouwe brombeer.",
+            images=[],
+        )
+        self.assertEqual(payload["input"], "Ach, hij is een ouwe brombeer.")
+        self.assertEqual(payload["source_lang_code"], "nl")
+        self.assertEqual(payload["target_lang_code"], "en")
+        self.assertNotIn("instructions", payload)
+        self.assertNotIn("thinking", payload)
+
     def test_payload_uses_polymorphic_list_input_with_images(self) -> None:
         image = text_generation.TextGenerationImageInput(data_url=_TINY_PNG_DATA_URL)
         request = _request()

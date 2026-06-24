@@ -1,5 +1,8 @@
 import { api } from '../../api-client.js';
 import { escapeAttr, escapeHtml, formatApiError } from '../../shared/ui-helpers.js';
+import { TRANSLATION_LANGUAGES } from '../../shared/translation-languages.js';
+
+const TRANSLATE_PROMPT_FORMAT = 'translategemma_template';
 
 const MAX_IMAGES = 4;
 const THINKING_MODES = new Set(['default', 'enabled', 'disabled']);
@@ -59,6 +62,16 @@ export function createTextGenerationView() {
               <span>Model</span>
               <select id="textGenerationModelSelect"></select>
             </label>
+            <div class="translation-prompts-language-grid text-generation-translate-row" id="textGenerationTranslateRow" hidden>
+              <label class="translation-prompts-field">
+                <span>Source language</span>
+                <select id="textGenerationSourceLang"></select>
+              </label>
+              <label class="translation-prompts-field">
+                <span>Target language</span>
+                <select id="textGenerationTargetLang"></select>
+              </label>
+            </div>
             <div class="text-generation-options-row">
               <div class="translation-prompts-field prompt-runner-remote-field">
                 <label class="prompt-runner-remote-toggle">
@@ -156,6 +169,9 @@ export function createTextGenerationView() {
   `;
 
   const modelSelect = container.querySelector('#textGenerationModelSelect');
+  const translateRow = container.querySelector('#textGenerationTranslateRow');
+  const sourceLangSelect = container.querySelector('#textGenerationSourceLang');
+  const targetLangSelect = container.querySelector('#textGenerationTargetLang');
   const allowRemoteInput = container.querySelector('#textGenerationAllowRemote');
   const enableThinkingInput = container.querySelector('#textGenerationEnableThinking');
   const maxTokensInput = container.querySelector('#textGenerationMaxTokens');
@@ -203,6 +219,7 @@ export function createTextGenerationView() {
           ? capabilities.modalities.map((m) => String(m).trim().toLowerCase())
           : ['text'];
         const backend = String(model?.resolved_backend || model?.definition?.backend || '').trim().toLowerCase();
+        const promptFormat = String(model?.definition?.prompt_format || '').trim().toLowerCase();
         return {
           id: String(model?.name || '').trim(),
           name: String(model?.name || '').trim(),
@@ -212,6 +229,7 @@ export function createTextGenerationView() {
           supportsImage: modalities.includes('image'),
           thinkingModes: normalizeThinkingModes(capabilities.thinking_modes),
           imageLimit: parseImageLimit(model?.definition),
+          isTranslate: promptFormat === TRANSLATE_PROMPT_FORMAT,
         };
       })
       .filter((model) => model.id !== '');
@@ -230,6 +248,26 @@ export function createTextGenerationView() {
   function selectedModel() {
     const selectedId = String(modelSelect.value || '');
     return adminModels.find((model) => model.id === selectedId) || null;
+  }
+
+  function selectedModelIsTranslate() {
+    return Boolean(selectedModel()?.isTranslate);
+  }
+
+  function populateLanguageSelects() {
+    const options = TRANSLATION_LANGUAGES
+      .map((lang) => `<option value="${escapeAttr(lang.code)}">${escapeHtml(`${lang.flag} ${lang.name}`)}</option>`)
+      .join('');
+    sourceLangSelect.innerHTML = options;
+    targetLangSelect.innerHTML = options;
+    sourceLangSelect.value = 'nl';
+    targetLangSelect.value = 'en';
+  }
+
+  // Translate models (translategemma_template) take a source + target language: show the language
+  // pickers. (Their system prompt is ignored server-side; decoding params still apply.)
+  function renderTranslateControls() {
+    translateRow.hidden = !selectedModelIsTranslate();
   }
 
   function setStatus(message) {
@@ -383,6 +421,7 @@ export function createTextGenerationView() {
       modelSelect.value = previous;
     }
     renderThinkingControl();
+    renderTranslateControls();
     setBusy(isBusy);
   }
 
@@ -505,12 +544,16 @@ export function createTextGenerationView() {
     setStatus(selectedThinkingMode() === 'enabled' ? 'Thinking...' : 'Running prompt...');
     try {
       const decode = readDecode();
+      const translate = selectedModelIsTranslate();
       const result = await api.runTextGeneration({
         model: model.id,
         system_prompt: String(systemPromptInput.value || ''),
         user_prompt: String(userPromptInput.value || ''),
         allow_remote: allowRemote,
         thinking: selectedThinkingMode(),
+        // translategemma_template: send the language codes so the server uses the translate prompt.
+        source_lang_code: translate ? String(sourceLangSelect.value || '') : null,
+        target_lang_code: translate ? String(targetLangSelect.value || '') : null,
         max_tokens: decode.max_tokens,
         temperature: decode.temperature,
         top_p: decode.top_p,
@@ -539,6 +582,7 @@ export function createTextGenerationView() {
 
   modelSelect.addEventListener('change', () => {
     renderThinkingControl();
+    renderTranslateControls();
     setStatus(attachmentModelIssue());
     setBusy(isBusy);
   });
@@ -595,6 +639,7 @@ export function createTextGenerationView() {
     }
   });
 
+  populateLanguageSelects();
   renderAttachments();
   renderUserPromptPreview();
   clearStats();
