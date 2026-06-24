@@ -2,6 +2,8 @@ import { api } from '../../api-client.js';
 import { escapeAttr, escapeHtml, formatApiError } from '../../shared/ui-helpers.js';
 import { TRANSLATION_LANGUAGES } from '../../shared/translation-languages.js';
 
+const TRANSLATE_PROMPT_FORMAT = 'translategemma_template';
+
 const POLL_INTERVAL_MS = 800;
 const TERMINAL_STATES = new Set(['completed', 'failed', 'cancelled']);
 const IMAGE_ARTIFACT_ORDER = ['rendered', 'grouping_overlay_debug', 'projected_overlay_debug', 'rectified_debug', 'debug_overlay'];
@@ -37,8 +39,12 @@ export function createTranslationRequestsView() {
               </label>
             </div>
             <label class="translation-prompts-field">
-              <span>Model (grouping + translation)</span>
+              <span>Grouping model</span>
               <select id="translationRequestModel"><option value="">Loading models…</option></select>
+            </label>
+            <label class="translation-prompts-field">
+              <span>Translation model</span>
+              <select id="translationRequestTranslatorModel"><option value="">Same as grouping model</option></select>
             </label>
             <div class="translation-requests-options-row">
               <label class="translation-requests-option">
@@ -198,6 +204,7 @@ export function createTranslationRequestsView() {
   const timingsEl = container.querySelector('#translationRequestTimings');
   const rawEl = container.querySelector('#translationRequestRaw');
   const modelSelect = container.querySelector('#translationRequestModel');
+  const translatorSelect = container.querySelector('#translationRequestTranslatorModel');
   const preserveHeuristicTextInput = container.querySelector('#translationPreserveHeuristicText');
   const preserveUnchangedTextInput = container.querySelector('#translationPreserveUnchangedText');
   const useGeometryColumnsInput = container.querySelector('#translationUseGeometryColumns');
@@ -234,6 +241,7 @@ export function createTranslationRequestsView() {
   const regressionStatusEl = container.querySelector('#translationRegressionStatus');
 
   let isBusy = false;
+  let modelFormats = {};  // model name -> prompt_format, to route a translategemma translator model
   let currentRequestId = '';
   let regressionStatus = null;
   let pollTimer = null;
@@ -308,13 +316,11 @@ export function createTranslationRequestsView() {
     const targetLang = String(targetInput.value || '').trim();
     if (targetLang) payload.target_lang_code = targetLang;
     lastTargetLang = targetLang;
-    // One picked model drives both grouping (VLM) and translation. Empty = the
-    // service's configured defaults.
+    // Grouping uses the picked model; translation uses the optional "Translation model" override
+    // (else the same model). Empty = the service's configured defaults.
     const model = String(modelSelect.value || '').trim();
-    if (model) {
-      payload.grouping_model = model;
-      payload.translator_model = model;
-    }
+    if (model) payload.grouping_model = model;
+    Object.assign(payload, translatorFields(model));
     return payload;
   }
 
@@ -438,9 +444,8 @@ export function createTranslationRequestsView() {
       body.target_lang_code = lang;
       lastTargetLang = lang;
     }
-    // Re-translate reuses cached grouping, so only the translator model applies.
-    const model = String(modelSelect.value || '').trim();
-    if (model) body.translator_model = model;
+    // Re-translate reuses cached grouping, so only the translator model/mode applies.
+    Object.assign(body, translatorFields(String(modelSelect.value || '').trim()));
     body.preserve_heuristic_text = Boolean(preserveHeuristicTextInput.checked);
     body.preserve_unchanged_text = Boolean(preserveUnchangedTextInput.checked);
     body.use_geometry_columns = Boolean(useGeometryColumnsInput.checked);
@@ -562,6 +567,9 @@ export function createTranslationRequestsView() {
     } catch {
       models = [];
     }
+    modelFormats = Object.fromEntries(
+      models.map((m) => [String(m?.name || ''), String(m?.definition?.prompt_format || '').trim().toLowerCase()]),
+    );
     const loaded = models
       .filter((m) => String(m?.runtime_state || '').toLowerCase() === 'loaded')
       .map((m) => String(m?.name || ''))
@@ -582,6 +590,19 @@ export function createTranslationRequestsView() {
     } else {
       modelSelect.value = entries[0]?.name || '';
     }
+    // Translation model: same list as grouping, defaulting to the configured translator. A
+    // translategemma_template pick is routed with translator_mode in translatorFields().
+    const prevTranslator = String(translatorSelect.value || '');
+    translatorSelect.innerHTML = entries.length
+      ? entries.map((m) => `<option value="${escapeAttr(m.name)}" class="${m.loaded ? 'is-loaded' : 'is-unloaded'}">${escapeHtml(m.name)}</option>`).join('')
+      : '<option value="">(no models)</option>';
+    if (prevTranslator && entries.some((m) => m.name === prevTranslator)) {
+      translatorSelect.value = prevTranslator;
+    } else if (defaultModel && entries.some((m) => m.name === defaultModel)) {
+      translatorSelect.value = defaultModel;
+    } else {
+      translatorSelect.value = entries[0]?.name || '';
+    }
     updateModelSelectColor();
     setBusy(isBusy);
   }
@@ -590,6 +611,17 @@ export function createTranslationRequestsView() {
     const option = modelSelect.selectedOptions && modelSelect.selectedOptions[0];
     modelSelect.classList.toggle('is-loaded', Boolean(option && option.classList.contains('is-loaded')));
     modelSelect.classList.toggle('is-unloaded', Boolean(option && option.classList.contains('is-unloaded')));
+  }
+
+  // Translator fields for a request: the explicit "Translation model" pick, else the grouping model.
+  // A translategemma_template model routes with translator_mode "translategemma" (source/target codes
+  // instead of the structured prompt); other models leave the mode to the service default.
+  function translatorFields(groupingModel) {
+    const translatorModel = String(translatorSelect.value || '').trim() || groupingModel;
+    if (!translatorModel) return {};
+    const fields = { translator_model: translatorModel };
+    if (modelFormats[translatorModel] === TRANSLATE_PROMPT_FORMAT) fields.translator_mode = 'translategemma';
+    return fields;
   }
 
   function renderTimings(result) {
@@ -798,18 +830,54 @@ export function createTranslationRequestsView() {
     renderRegressionInfo();
   }
 
+  // Modal for the duplicate-capture choice. The default (autofocus + Esc + Enter) is "Don't add" so
+  // the safe choice needs no deliberate click; "Add anyway" forces a new variant via allow_duplicate.
+  function confirmDuplicateCapture(reason, where) {
+    return new Promise((resolve) => {
+      const dlg = document.createElement('dialog');
+      dlg.className = 'translation-dup-dialog';
+      dlg.innerHTML = `
+        <div class="translation-dup-card" style="max-width:34rem;padding:1rem 1.1rem;">
+          <div style="font-weight:600;margin-bottom:.45rem;">Duplicate of ${escapeHtml(where)}</div>
+          <p style="margin:.2rem 0 1rem;opacity:.85;line-height:1.4;">${escapeHtml(reason)}</p>
+          <div style="display:flex;gap:.5rem;justify-content:flex-end;">
+            <button type="button" data-dup="skip" autofocus>Don't add</button>
+            <button type="button" data-dup="add">Add as new variant anyway</button>
+          </div>
+        </div>`;
+      const finish = (add) => { try { dlg.close(); } catch (_e) { /* already closed */ } dlg.remove(); resolve(add); };
+      dlg.addEventListener('click', (event) => {
+        const btn = event.target.closest('[data-dup]');
+        if (btn) finish(btn.dataset.dup === 'add');
+      });
+      dlg.addEventListener('cancel', (event) => { event.preventDefault(); finish(false); });  // Esc = don't add
+      document.body.appendChild(dlg);
+      dlg.showModal();
+    });
+  }
+
   async function captureFixture() {
     if (!currentRequestId || !regressionName()) return;
     setRegressionStatus('Capturing… (re-OCR)');
     setBusy(true);
     try {
-      // The server places it under <name>/<target_lang>/ and assigns the next variant.
-      regressionStatus = await api.captureRegressionFixture({
-        request_id: currentRequestId,
-        name: regressionName(),
-      });
-      const where = `${regressionStatus.target_lang || ''}/${regressionStatus.variant || ''}`;
-      setRegressionStatus(regressionStatus.duplicate ? `Already captured as ${where} (no duplicate).` : `Captured ${where}.`);
+      // The server places it under <name>/<target_lang>/ and assigns the next variant. A capture that
+      // would replay identically to an existing variant comes back as a duplicate (no re-OCR yet);
+      // ask the user, defaulting to NOT adding, and only force it (allow_duplicate) on confirmation.
+      const body = { request_id: currentRequestId, name: regressionName() };
+      regressionStatus = await api.captureRegressionFixture(body);
+      if (regressionStatus.duplicate) {
+        const where = `${regressionStatus.target_lang || ''}/${regressionStatus.variant || ''}`;
+        const add = await confirmDuplicateCapture(regressionStatus.reason || `Identical to ${where}.`, where);
+        if (add) {
+          regressionStatus = await api.captureRegressionFixture({ ...body, allow_duplicate: true });
+          setRegressionStatus(`Captured ${regressionStatus.target_lang || ''}/${regressionStatus.variant || ''} (duplicate, added on request).`);
+        } else {
+          setRegressionStatus(`Not added — duplicate of ${where}.`);
+        }
+      } else {
+        setRegressionStatus(`Captured ${regressionStatus.target_lang || ''}/${regressionStatus.variant || ''}.`);
+      }
     } catch (err) {
       setRegressionStatus(formatApiError(err), 'error');
     } finally {
