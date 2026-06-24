@@ -665,10 +665,11 @@ function buildDefinitionGridMarkup(model, definitionGridClass) {
       { label: 'Last error', value: model.last_error || 'none' },
     ]
     : buildLocalDefinitionFields(model, definition, backend);
+  const visibleFields = fields.filter(shouldShowDefinitionField);
 
   return `
     <div class="${definitionGridClass}">
-      ${fields.map((field) => buildDefinitionItemMarkup(field)).join('')}
+      ${visibleFields.map((field) => buildDefinitionItemMarkup(field)).join('')}
     </div>
   `;
 }
@@ -680,48 +681,66 @@ function buildLocalDefinitionFields(model, definition, backend) {
       { label: 'Path', value: definition.model_path, code: true },
       { label: 'Backend', value: formatBackendLabel(backend) },
       { label: 'Binary', value: definition.llama_server_binary, code: true },
-      { label: 'Library path', value: formatLibraryPath(definition.llama_server_library_path), code: true },
-      { label: 'MMProj', value: definition.llama_server_mmproj_path, code: true },
-      { label: 'Draft model', value: definition.llama_server_draft_model_path, code: true },
+      {
+        label: 'Library path',
+        value: formatLibraryPath(definition.llama_server_library_path),
+        code: true,
+        optional: true,
+        clamp: true,
+      },
+      { label: 'MMProj', value: definition.llama_server_mmproj_path, code: true, optional: true },
+      { label: 'Draft model', value: definition.llama_server_draft_model_path, code: true, optional: true },
       { label: 'Context size', value: definition.llama_server_n_ctx },
-      { label: 'Image tokens', value: definition.llama_server_image_max_tokens },
-      { label: 'Spec type', value: definition.llama_server_spec_type },
-      { label: 'Draft tokens', value: definition.llama_server_spec_draft_n_max },
-      { label: 'Draft p min', value: definition.llama_server_spec_draft_p_min },
+      { label: 'Image tokens', value: definition.llama_server_image_max_tokens, optional: true },
+      { label: 'Spec type', value: definition.llama_server_spec_type, optional: true },
+      { label: 'Draft tokens', value: definition.llama_server_spec_draft_n_max, optional: true },
+      { label: 'Draft p min', value: definition.llama_server_spec_draft_p_min, optional: true },
       { label: 'GPU layers', value: definition.llama_server_n_gpu_layers },
-      { label: 'Draft GPU layers', value: definition.llama_server_spec_draft_ngl },
+      { label: 'Draft GPU layers', value: definition.llama_server_spec_draft_ngl, optional: true },
       { label: 'Flash attn', value: definition.llama_server_flash_attn },
-      { label: 'Reasoning', value: definition.llama_server_reasoning },
+      { label: 'Reasoning', value: definition.llama_server_reasoning, optional: true },
       { label: 'Host', value: definition.llama_server_host },
       { label: 'Port', value: definition.llama_server_port },
-      { label: 'Alias', value: definition.llama_server_model_alias },
+      { label: 'Alias', value: definition.llama_server_model_alias, optional: true },
       { label: 'Timeout', value: formatSecondsValue(definition.llama_server_timeout_s) },
       { label: 'Prompt format', value: definition.prompt_format },
       { label: 'Configured enabled', value: model.configured_enabled },
-      { label: 'Last error', value: model.last_error || 'none' },
+      { label: 'Last error', value: model.last_error, optional: true },
       { label: 'VRAM source', value: model.vram_estimate_source || 'unavailable' },
     ];
   }
 
   if (normalizedBackend === 'vllm' || normalizedBackend === 'vllm_serve') {
     const fields = [
-      { label: 'Path', value: definition.model_path, code: true },
+      { label: 'Path', value: definition.model_path, code: true, optional: true },
       { label: 'Backend', value: formatBackendLabel(backend) },
       { label: 'vLLM model', value: definition.vllm_model, code: true },
     ];
     if (normalizedBackend === 'vllm_serve') {
       fields.push(
         { label: 'Binary', value: definition.vllm_serve_binary, code: true },
-        { label: 'Library path', value: formatLibraryPath(definition.vllm_serve_library_path), code: true },
+        {
+          label: 'Library path',
+          value: formatLibraryPath(definition.vllm_serve_library_path),
+          code: true,
+          optional: true,
+          clamp: true,
+        },
+      );
+    }
+    if (shouldShowVllmSpeculativeControls(model)) {
+      fields.push(
+        { label: 'Spec method', value: definition.vllm_speculative_method, optional: true },
+        { label: 'Spec model', value: definition.vllm_speculative_model, code: true, optional: true },
+        { label: 'Spec MoE backend', value: definition.vllm_speculative_moe_backend, optional: true },
+        { label: 'Spec attn backend', value: definition.vllm_speculative_attention_backend, optional: true },
+        { label: 'Spec tokens', value: definition.vllm_num_speculative_tokens, optional: true },
       );
     }
     fields.push(
-      { label: 'Spec method', value: definition.vllm_speculative_method },
-      { label: 'Spec model', value: definition.vllm_speculative_model, code: true },
-      { label: 'Spec tokens', value: definition.vllm_num_speculative_tokens },
       { label: 'Prompt format', value: definition.prompt_format },
       { label: 'Configured enabled', value: model.configured_enabled },
-      { label: 'Last error', value: model.last_error || 'none' },
+      { label: 'Last error', value: model.last_error, optional: true },
       { label: 'VRAM source', value: model.vram_estimate_source || 'unavailable' },
     );
     return fields;
@@ -733,18 +752,32 @@ function buildLocalDefinitionFields(model, definition, backend) {
     { label: 'Device', value: definition.device },
     { label: 'Prompt format', value: definition.prompt_format },
     { label: 'Configured enabled', value: model.configured_enabled },
-    { label: 'Last error', value: model.last_error || 'none' },
+    { label: 'Last error', value: model.last_error, optional: true },
     { label: 'VRAM source', value: model.vram_estimate_source || 'unavailable' },
   ];
 }
 
-function buildDefinitionItemMarkup({label, value, code = false}) {
+function shouldShowDefinitionField(field) {
+  if (!field?.optional) return true;
+  return !isEmptyDefinitionValue(field.value);
+}
+
+function isEmptyDefinitionValue(value) {
+  if (value == null || value === '') return true;
+  if (Array.isArray(value)) return value.length === 0;
+  return false;
+}
+
+function buildDefinitionItemMarkup({label, value, code = false, clamp = false, title}) {
   const normalizedValue = formatDefinitionValue(value);
   const tag = code ? 'code' : 'strong';
+  const classAttr = clamp ? ' class="llm-pool-definition-value-clamped"' : '';
+  const titleValue = title ?? (clamp ? normalizedValue : '');
+  const titleAttr = titleValue ? ` title="${escapeAttr(titleValue)}"` : '';
   return `
     <div>
       <span>${escapeHtml(label)}</span>
-      <${tag}>${escapeHtml(normalizedValue)}</${tag}>
+      <${tag}${classAttr}${titleAttr}>${escapeHtml(normalizedValue)}</${tag}>
     </div>
   `;
 }
@@ -756,7 +789,7 @@ function formatDefinitionValue(value) {
 }
 
 function formatLibraryPath(value) {
-  if (Array.isArray(value)) return value.join(':');
+  if (Array.isArray(value)) return value.filter(Boolean).join(':');
   return value;
 }
 
@@ -936,7 +969,7 @@ function buildLoadSettingsMarkup(model, draft, runtimeState) {
   }
 
   const vllmMaxPixelsConstraint = getIntegerConstraint(model, 'vllm_max_pixels');
-  if (vllmMaxPixelsConstraint) {
+  if (vllmMaxPixelsConstraint && shouldShowVllmMaxPixelsControl(model)) {
     wideControls.push(buildSliderSettingMarkup({
       modelName: model.name,
       key: 'vllm_max_pixels',
@@ -965,11 +998,11 @@ function buildLoadSettingsMarkup(model, draft, runtimeState) {
   }
 
   const vllmSpeculativeMethodConstraint = getStringConstraint(model, 'vllm_speculative_method');
-  if (vllmSpeculativeMethodConstraint) {
+  if (vllmSpeculativeMethodConstraint && shouldShowVllmSpeculativeMethodControl(model)) {
     compactControls.push(buildTextSettingMarkup({
       modelName: model.name,
       key: 'vllm_speculative_method',
-      label: 'vllm_speculative_method',
+      label: 'Spec method',
       value: getDraftOrEffectiveStringValue(
         model,
         draft,
@@ -982,11 +1015,11 @@ function buildLoadSettingsMarkup(model, draft, runtimeState) {
   }
 
   const vllmSpeculativeModelConstraint = getStringConstraint(model, 'vllm_speculative_model');
-  if (vllmSpeculativeModelConstraint) {
+  if (vllmSpeculativeModelConstraint && shouldShowVllmSpeculativeModelControl(model)) {
     wideControls.push(buildTextSettingMarkup({
       modelName: model.name,
       key: 'vllm_speculative_model',
-      label: 'vllm_speculative_model',
+      label: 'Spec model',
       value: getDraftOrEffectiveStringValue(
         model,
         draft,
@@ -999,12 +1032,46 @@ function buildLoadSettingsMarkup(model, draft, runtimeState) {
     }));
   }
 
+  const vllmSpeculativeMoeBackendConstraint = getStringConstraint(model, 'vllm_speculative_moe_backend');
+  if (vllmSpeculativeMoeBackendConstraint && shouldShowVllmSpeculativeMoeBackendControl(model)) {
+    compactControls.push(buildTextSettingMarkup({
+      modelName: model.name,
+      key: 'vllm_speculative_moe_backend',
+      label: 'Spec MoE backend',
+      value: getDraftOrEffectiveStringValue(
+        model,
+        draft,
+        'vllm_speculative_moe_backend',
+        vllmSpeculativeMoeBackendConstraint.defaultValue,
+      ),
+      placeholder: vllmSpeculativeMoeBackendConstraint.examples[0] || '',
+      disabled: !canConfigure,
+    }));
+  }
+
+  const vllmSpeculativeAttentionBackendConstraint = getStringConstraint(model, 'vllm_speculative_attention_backend');
+  if (vllmSpeculativeAttentionBackendConstraint && shouldShowVllmSpeculativeAttentionBackendControl(model)) {
+    compactControls.push(buildTextSettingMarkup({
+      modelName: model.name,
+      key: 'vllm_speculative_attention_backend',
+      label: 'Spec attn backend',
+      value: getDraftOrEffectiveStringValue(
+        model,
+        draft,
+        'vllm_speculative_attention_backend',
+        vllmSpeculativeAttentionBackendConstraint.defaultValue,
+      ),
+      placeholder: vllmSpeculativeAttentionBackendConstraint.examples[0] || '',
+      disabled: !canConfigure,
+    }));
+  }
+
   const vllmNumSpeculativeTokensConstraint = getIntegerConstraint(model, 'vllm_num_speculative_tokens');
-  if (vllmNumSpeculativeTokensConstraint) {
+  if (vllmNumSpeculativeTokensConstraint && shouldShowVllmSpeculativeTokenControl(model)) {
     compactControls.push(buildNumberSettingMarkup({
       modelName: model.name,
       key: 'vllm_num_speculative_tokens',
-      label: 'vllm_num_speculative_tokens',
+      label: 'Spec tokens',
       value: getDraftOrEffectiveIntegerValue(
         model,
         draft,
@@ -1382,6 +1449,47 @@ function getEffectiveLoadValue(model, key) {
   return model?.definition?.[key];
 }
 
+function hasEffectiveStringLoadValue(model, key) {
+  return normalizeNullableStringValue(getEffectiveLoadValue(model, key)) != null;
+}
+
+function shouldShowVllmMaxPixelsControl(model) {
+  return getMmProcessorMaxPixels(model) != null;
+}
+
+function shouldShowVllmSpeculativeControls(model) {
+  return (
+    shouldShowVllmSpeculativeMethodControl(model)
+    || shouldShowVllmSpeculativeModelControl(model)
+    || shouldShowVllmSpeculativeMoeBackendControl(model)
+    || shouldShowVllmSpeculativeAttentionBackendControl(model)
+  );
+}
+
+function shouldShowVllmSpeculativeMethodControl(model) {
+  return hasEffectiveStringLoadValue(model, 'vllm_speculative_method');
+}
+
+function shouldShowVllmSpeculativeModelControl(model) {
+  const method = normalizeNullableStringValue(getEffectiveLoadValue(model, 'vllm_speculative_method'));
+  return (
+    hasEffectiveStringLoadValue(model, 'vllm_speculative_model')
+    || (method != null && method !== 'mtp')
+  );
+}
+
+function shouldShowVllmSpeculativeMoeBackendControl(model) {
+  return hasEffectiveStringLoadValue(model, 'vllm_speculative_moe_backend');
+}
+
+function shouldShowVllmSpeculativeAttentionBackendControl(model) {
+  return hasEffectiveStringLoadValue(model, 'vllm_speculative_attention_backend');
+}
+
+function shouldShowVllmSpeculativeTokenControl(model) {
+  return shouldShowVllmSpeculativeControls(model);
+}
+
 const MIB = 1024 * 1024;
 
 function bytesToKvCacheMibStep(bytes) {
@@ -1651,6 +1759,7 @@ function buildLoadPayload(model, draft) {
   if (
     vllmMaxPixels != null
     && hasLoadConstraint(model, 'vllm_max_pixels')
+    && shouldShowVllmMaxPixelsControl(model)
     && vllmMaxPixels !== getMmProcessorMaxPixels(model)
   ) {
     payload.vllm_max_pixels = vllmMaxPixels;
@@ -1659,6 +1768,7 @@ function buildLoadPayload(model, draft) {
   if (
     Object.prototype.hasOwnProperty.call(draft, 'vllm_speculative_method')
     && hasLoadConstraint(model, 'vllm_speculative_method')
+    && shouldShowVllmSpeculativeMethodControl(model)
   ) {
     const draftSpeculativeMethod = normalizeNullableStringValue(draft.vllm_speculative_method);
     const effectiveSpeculativeMethod = normalizeNullableStringValue(getEffectiveLoadValue(model, 'vllm_speculative_method'));
@@ -1670,6 +1780,7 @@ function buildLoadPayload(model, draft) {
   if (
     Object.prototype.hasOwnProperty.call(draft, 'vllm_speculative_model')
     && hasLoadConstraint(model, 'vllm_speculative_model')
+    && shouldShowVllmSpeculativeModelControl(model)
   ) {
     const draftSpeculativeModel = normalizeNullableStringValue(draft.vllm_speculative_model);
     const effectiveSpeculativeModel = normalizeNullableStringValue(getEffectiveLoadValue(model, 'vllm_speculative_model'));
@@ -1678,10 +1789,39 @@ function buildLoadPayload(model, draft) {
     }
   }
 
+  if (
+    Object.prototype.hasOwnProperty.call(draft, 'vllm_speculative_moe_backend')
+    && hasLoadConstraint(model, 'vllm_speculative_moe_backend')
+    && shouldShowVllmSpeculativeMoeBackendControl(model)
+  ) {
+    const draftSpeculativeMoeBackend = normalizeNullableStringValue(draft.vllm_speculative_moe_backend);
+    const effectiveSpeculativeMoeBackend = normalizeNullableStringValue(
+      getEffectiveLoadValue(model, 'vllm_speculative_moe_backend')
+    );
+    if (draftSpeculativeMoeBackend !== effectiveSpeculativeMoeBackend) {
+      payload.vllm_speculative_moe_backend = draftSpeculativeMoeBackend;
+    }
+  }
+
+  if (
+    Object.prototype.hasOwnProperty.call(draft, 'vllm_speculative_attention_backend')
+    && hasLoadConstraint(model, 'vllm_speculative_attention_backend')
+    && shouldShowVllmSpeculativeAttentionBackendControl(model)
+  ) {
+    const draftSpeculativeAttentionBackend = normalizeNullableStringValue(draft.vllm_speculative_attention_backend);
+    const effectiveSpeculativeAttentionBackend = normalizeNullableStringValue(
+      getEffectiveLoadValue(model, 'vllm_speculative_attention_backend')
+    );
+    if (draftSpeculativeAttentionBackend !== effectiveSpeculativeAttentionBackend) {
+      payload.vllm_speculative_attention_backend = draftSpeculativeAttentionBackend;
+    }
+  }
+
   const vllmNumSpeculativeTokens = toPositiveInt(draft.vllm_num_speculative_tokens);
   if (
     vllmNumSpeculativeTokens != null
     && hasLoadConstraint(model, 'vllm_num_speculative_tokens')
+    && shouldShowVllmSpeculativeTokenControl(model)
     && vllmNumSpeculativeTokens !== toPositiveInt(getEffectiveLoadValue(model, 'vllm_num_speculative_tokens'))
   ) {
     payload.vllm_num_speculative_tokens = vllmNumSpeculativeTokens;
@@ -1868,5 +2008,10 @@ function parseLoadSettingControlValue(key, rawValue) {
 }
 
 function isStringLoadSettingKey(key) {
-  return key === 'vllm_speculative_method' || key === 'vllm_speculative_model';
+  return (
+    key === 'vllm_speculative_method'
+    || key === 'vllm_speculative_model'
+    || key === 'vllm_speculative_moe_backend'
+    || key === 'vllm_speculative_attention_backend'
+  );
 }

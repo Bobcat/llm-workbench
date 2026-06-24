@@ -1200,6 +1200,14 @@
   overflow-wrap: anywhere;
 }
 
+.llm-pool-view .llm-pool-definition-grid .llm-pool-definition-value-clamped {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+
 .llm-pool-view .llm-pool-load-settings {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
