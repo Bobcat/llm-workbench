@@ -18,8 +18,8 @@ import {
   populateTranslationLanguageSelect,
 } from '../../shared/translation-languages.js';
 
-const DEFAULT_FIRST_PASS_PROMPT_ID = 'translation/first-pass/current-default';
-const DEFAULT_SECOND_PASS_PROMPT_ID = 'translation/second-pass/current-default';
+const DEFAULT_FIRST_PASS_PROMPT_ID = 'translate_realtime_first';
+const DEFAULT_SECOND_PASS_PROMPT_ID = 'translate_realtime_second';
 const DEFAULT_SAMPLE_PATH = 'data/realtime_translation/sample/sample_p_c_120s.pc';
 
 export function createReplayView() {

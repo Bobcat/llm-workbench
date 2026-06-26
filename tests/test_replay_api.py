@@ -24,7 +24,7 @@ class ReplayApiTests(unittest.TestCase):
         self.assertNotIn("error", payload)
         self.assertEqual(
             payload.get("second_pass_prompt_id"),
-            "translation/second-pass/current-default",
+            "translate_realtime_second",
         )
 
     def test_list_sample_files_returns_pc_files(self) -> None:
@@ -50,13 +50,13 @@ class ReplayApiTests(unittest.TestCase):
 
         response = client.post(
             f"/api/replay/{session_id}/second-pass-prompt",
-            json={"prompt_id": "translation/second-pass/current-default"},
+            json={"prompt_id": "translate_realtime_second"},
         )
 
         self.assertEqual(response.status_code, 200)
         payload = response.json()
         self.assertEqual(payload.get("status"), "ok")
-        self.assertEqual(payload.get("prompt_id"), "translation/second-pass/current-default")
+        self.assertEqual(payload.get("prompt_id"), "translate_realtime_second")
 
     def test_set_second_pass_model_uses_second_pass_backend_terms(self) -> None:
         client = TestClient(app)
