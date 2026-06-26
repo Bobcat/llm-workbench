@@ -9,6 +9,7 @@ import { createReplaySpeakView } from './src/workflows/replay-speak/index.js';
 import { createLlmPoolView } from './src/workflows/llm-pool/index.js';
 import { createTtsPoolView } from './src/workflows/tts-pool/index.js';
 import { createImagePoolView } from './src/workflows/image-pool/index.js';
+import { createImageTrainView } from './src/workflows/image-train/index.js';
 import { createTranslationRequestsView } from './src/workflows/translation-requests/index.js';
 import { createTranslationPromptsView } from './src/workflows/translation-prompts/index.js';
 import { createRegressionView } from './src/workflows/translation-regression/index.js';
@@ -37,6 +38,7 @@ const PERSISTENT_WORKFLOW_IDS = new Set([
   'tts-pool-models',
   'image-pool-models',
   'image-generation',
+  'image-train',
   'image-translation',
   'translation-regression',
 ]);
@@ -135,6 +137,12 @@ const WORKFLOW_GROUPS = [
         route: 'image-generation',
         name: 'Image generation',
         icon: 'image',
+      },
+      {
+        id: 'image-train',
+        route: 'image-train',
+        name: 'Train',
+        icon: 'model_training',
       },
     ],
   },
@@ -237,6 +245,9 @@ function createWorkflowView(workflowId) {
   }
   if (workflowId === 'image-generation') {
     return createImageGenerationView();
+  }
+  if (workflowId === 'image-train') {
+    return createImageTrainView();
   }
   if (workflowId === 'chat') {
     return createChatView();

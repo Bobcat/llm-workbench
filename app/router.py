@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
+from app.image_pool.loras import router as image_pool_loras_router
 from app.translation_services.proxy import router as translation_router
 from app.image_pool.models import router as image_pool_router
+from app.image_pool.training import router as image_pool_training_router
 from app.llm_pool.models import router as llm_pool_router
 from app.prompt_testing.chat import router as chat_router
 from app.prompt_testing.text_generation import router as text_generation_router
@@ -17,6 +19,8 @@ api_router = APIRouter(prefix="/api")
 api_router.include_router(llm_pool_router)
 api_router.include_router(tts_pool_router)
 api_router.include_router(image_pool_router)
+api_router.include_router(image_pool_loras_router)
+api_router.include_router(image_pool_training_router)
 api_router.include_router(translation_router)
 api_router.include_router(realtime_tts_router)
 api_router.include_router(chat_router)

@@ -3,6 +3,7 @@ import { escapeAttr, escapeHtml, formatApiError } from '../../shared/ui-helpers.
 
 const SIZE_BY_ASPECT_RATIO = {
   '1:1': '512x512',
+  '1:1-large': '1024x1024',
   '4:3': '768x576',
   '3:4': '576x768',
   '16:9': '1024x576',
@@ -10,6 +11,7 @@ const SIZE_BY_ASPECT_RATIO = {
 };
 const MAX_MATCHED_INPUT_EDGE = 1024;
 const OUTPUT_SIZE_MULTIPLE = 8;
+const DEFAULT_LORA_STRENGTH = 0.35;
 
 export function createImageGenerationView() {
   const container = document.createElement('div');
@@ -33,6 +35,7 @@ export function createImageGenerationView() {
                   <span>Output size</span>
                   <select id="imageGenerationAspectRatio">
                     <option value="1:1">Square 512x512</option>
+                    <option value="1:1-large">Square 1024x1024</option>
                     <option value="match-input" disabled>Match input shape</option>
                     <option value="4:3">Landscape 768x576</option>
                     <option value="3:4">Portrait 576x768</option>
@@ -51,6 +54,23 @@ export function createImageGenerationView() {
                 <label class="translation-prompts-field">
                   <span>Guidance</span>
                   <input id="imageGenerationGuidance" type="number" min="0" max="20" step="0.5" value="1">
+                </label>
+                <label class="translation-prompts-field">
+                  <span>Seed</span>
+                  <input id="imageGenerationSeed" type="number" step="1" placeholder="Random">
+                </label>
+                <label class="translation-prompts-field">
+                  <span>LoRA</span>
+                  <select id="imageGenerationLoraSelect" disabled>
+                    <option value="">No LoRA</option>
+                  </select>
+                </label>
+                <label class="translation-prompts-field image-generation-lora-strength-field">
+                  <span>
+                    LoRA strength
+                    <output id="imageGenerationLoraStrengthValue">0.35</output>
+                  </span>
+                  <input id="imageGenerationLoraStrength" type="range" min="0" max="2" step="0.05" value="0.35" disabled>
                 </label>
               </div>
             </details>
@@ -87,6 +107,10 @@ export function createImageGenerationView() {
   const countEl = container.querySelector('#imageGenerationCount');
   const stepsEl = container.querySelector('#imageGenerationSteps');
   const guidanceEl = container.querySelector('#imageGenerationGuidance');
+  const seedEl = container.querySelector('#imageGenerationSeed');
+  const loraSelect = container.querySelector('#imageGenerationLoraSelect');
+  const loraStrengthEl = container.querySelector('#imageGenerationLoraStrength');
+  const loraStrengthValueEl = container.querySelector('#imageGenerationLoraStrengthValue');
   const outputZoomEl = container.querySelector('#imageGenerationOutputZoom');
   const outputZoomValueEl = container.querySelector('#imageGenerationOutputZoomValue');
   const runBtn = container.querySelector('#imageGenerationRunBtn');
@@ -97,8 +121,10 @@ export function createImageGenerationView() {
   const statusEl = container.querySelector('#imageGenerationStatus');
   let references = [];
   let models = [];
+  let loras = [];
   let isRunning = false;
   let loadToken = 0;
+  let loraLoadToken = 0;
 
   function selectedModelId() {
     return String(modelSelect.value || '').trim();
@@ -112,6 +138,17 @@ export function createImageGenerationView() {
   function selectedModel() {
     const modelId = selectedModelId();
     return selectableModels().find((model) => model.id === modelId) || null;
+  }
+
+  function matchingLoras() {
+    const modelId = selectedModelId();
+    if (!modelId) return [];
+    return loras.filter((lora) => lora.compatibleModels.length === 0 || lora.compatibleModels.includes(modelId));
+  }
+
+  function selectedLora() {
+    const loraId = String(loraSelect.value || '').trim();
+    return matchingLoras().find((lora) => lora.id === loraId) || null;
   }
 
   function modelSupportsImageInput(model) {
@@ -149,6 +186,11 @@ export function createImageGenerationView() {
       countEl.value = String(clampedOutputImages);
     }
     addFilesBtn.disabled = isRunning || !supportsImageInput;
+    const hasMatchingLoras = matchingLoras().length > 0;
+    const hasSelectedLora = Boolean(selectedLora());
+    loraSelect.disabled = isRunning || !hasMatchingLoras;
+    loraStrengthEl.disabled = isRunning || !hasSelectedLora;
+    updateLoraStrengthLabel();
     if ((!supportsImageInput && references.length > 0) || references.length > maxInputImages) {
       references = supportsImageInput ? references.slice(0, maxInputImages) : [];
       renderReferences();
@@ -183,8 +225,31 @@ export function createImageGenerationView() {
       modelSelect.value = previous;
     }
     modelSelect.disabled = options.length === 0;
+    renderLoraOptions();
     updateRunState();
     renderReferences();
+  }
+
+  function renderLoraOptions() {
+    const previous = String(loraSelect.value || '');
+    const options = matchingLoras();
+    loraSelect.innerHTML = [
+      '<option value="">No LoRA</option>',
+      ...options.map((lora) => `
+        <option value="${escapeAttr(lora.id)}">${escapeHtml(formatLoraOption(lora))}</option>
+      `),
+    ].join('');
+    if (options.some((lora) => lora.id === previous)) {
+      loraSelect.value = previous;
+    } else {
+      loraSelect.value = '';
+    }
+  }
+
+  function updateLoraStrengthLabel() {
+    const value = clampNumber(loraStrengthEl.value, 0, 2, DEFAULT_LORA_STRENGTH);
+    loraStrengthEl.value = value.toFixed(2);
+    loraStrengthValueEl.textContent = value.toFixed(2);
   }
 
   function renderReferences() {
@@ -274,25 +339,66 @@ export function createImageGenerationView() {
     }
   }
 
+  async function loadLoras() {
+    const token = ++loraLoadToken;
+    try {
+      const payload = await api.getImagePoolLoras();
+      if (!container.isConnected || token !== loraLoadToken) return;
+      const rawLoras = Array.isArray(payload?.loras) ? payload.loras : [];
+      loras = rawLoras.map((lora) => ({
+        id: String(lora?.id || ''),
+        name: String(lora?.name || lora?.id || ''),
+        model: String(lora?.model || ''),
+        compatibleModels: Array.isArray(lora?.compatible_models)
+          ? lora.compatible_models.map((item) => String(item)).filter(Boolean)
+          : [String(lora?.model || '')].filter(Boolean),
+        path: String(lora?.path || ''),
+        runId: String(lora?.run_id || ''),
+        dataset: String(lora?.dataset || ''),
+        kind: String(lora?.kind || ''),
+        checkpointId: String(lora?.checkpoint_id || ''),
+        checkpointStep: Number.parseInt(lora?.checkpoint_step, 10),
+      })).filter((lora) => lora.id && lora.path);
+      renderLoraOptions();
+      updateRunState();
+    } catch (err) {
+      if (!container.isConnected || token !== loraLoadToken) return;
+      loras = [];
+      renderLoraOptions();
+      updateRunState();
+      setStatus(`Failed to load LoRAs: ${formatApiError(err)}`);
+    }
+  }
+
   function buildPayload() {
     const prompt = String(promptEl.value || '').trim();
     const outputSizeMode = String(aspectRatioEl.value || '1:1');
     const n = clampInt(countEl.value, 1, 4, 1);
     const steps = clampInt(stepsEl.value, 1, 80, 4);
     const guidance = clampNumber(guidanceEl.value, 0, 20, 1);
+    const seed = parseOptionalInt(seedEl.value);
+    const lora = selectedLora();
+    const loraScale = clampNumber(loraStrengthEl.value, 0, 2, DEFAULT_LORA_STRENGTH);
     const size = outputSizeMode === 'match-input'
       ? outputSizeFromReference(references[0])
       : SIZE_BY_ASPECT_RATIO[outputSizeMode] || SIZE_BY_ASPECT_RATIO['1:1'];
+    const metadata = {
+      output_size_mode: outputSizeMode,
+      steps,
+      guidance,
+    };
+    if (lora) {
+      metadata.lora_id = lora.id;
+      metadata.lora_path = lora.path;
+      metadata.lora_scale = loraScale;
+    }
     return {
       model: selectedModelId(),
       prompt,
       n,
       size,
-      metadata: {
-        output_size_mode: outputSizeMode,
-        steps,
-        guidance,
-      },
+      ...(seed === null ? {} : { seed }),
+      metadata,
     };
   }
 
@@ -341,10 +447,14 @@ export function createImageGenerationView() {
   }
 
   modelSelect.addEventListener('change', () => {
+    renderLoraOptions();
     updateRunState();
     renderReferences();
   });
   promptEl.addEventListener('input', updateRunState);
+  seedEl.addEventListener('input', updateRunState);
+  loraSelect.addEventListener('change', updateRunState);
+  loraStrengthEl.addEventListener('input', updateLoraStrengthLabel);
   outputZoomEl.addEventListener('input', updateOutputZoom);
   runBtn.addEventListener('click', runGeneration);
 
@@ -392,6 +502,7 @@ export function createImageGenerationView() {
   renderModelOptions();
   container.__onActivate = () => {
     loadModels();
+    loadLoras();
   };
   return container;
 }
@@ -437,20 +548,37 @@ function clampNumber(value, min, max, fallback) {
   return Math.min(max, Math.max(min, parsed));
 }
 
+function parseOptionalInt(value) {
+  const text = String(value || '').trim();
+  if (!text) return null;
+  const parsed = Number.parseInt(text, 10);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 function formatResponseStatus(response) {
   const count = Array.isArray(response?.data) ? response.data.length : 0;
   const metrics = response?.metrics && typeof response.metrics === 'object' ? response.metrics : {};
   const backend = String(metrics.backend || '').trim();
+  const loraId = String(metrics.lora_id || '').trim();
+  const loraScale = Number(metrics.lora_scale || 0);
+  const loraText = loraId ? `, LoRA ${loraScale.toFixed(2)}` : '';
   const wallMs = Number(metrics.pool_total_wall_ms ?? metrics.backend_inference_wall_ms);
   if (Number.isFinite(wallMs)) {
     return backend
-      ? `${count} image(s), ${(wallMs / 1000).toFixed(2)}s, ${backend}`
-      : `${count} image(s), ${(wallMs / 1000).toFixed(2)}s`;
+      ? `${count} image(s), ${(wallMs / 1000).toFixed(2)}s, ${backend}${loraText}`
+      : `${count} image(s), ${(wallMs / 1000).toFixed(2)}s${loraText}`;
   }
-  return backend ? `${count} image(s), ${backend}` : `${count} image(s)`;
+  return backend ? `${count} image(s), ${backend}${loraText}` : `${count} image(s)${loraText}`;
 }
 
 function formatModelOption(model) {
   const name = model.name || model.id;
   return model.backend ? `${name} (${model.backend})` : name;
+}
+
+function formatLoraOption(lora) {
+  if (lora.name) return lora.name;
+  const run = lora.runId || lora.id;
+  const checkpoint = Number.isFinite(lora.checkpointStep) ? ` / step ${lora.checkpointStep}` : '';
+  return lora.dataset ? `${lora.dataset} / ${run}${checkpoint}` : `${run}${checkpoint}`;
 }

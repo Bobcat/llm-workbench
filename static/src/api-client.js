@@ -165,6 +165,46 @@ export const api = {
     });
   },
 
+  async getImagePoolLoras() {
+    return fetchJson('/api/image-pool/loras');
+  },
+
+  async getFlux2KleinTrainingDataset() {
+    return fetchJson('/api/image-pool/training/flux2-klein/bfl-graphic-impressions');
+  },
+
+  async downloadFlux2KleinTrainingDataset() {
+    return fetchJson('/api/image-pool/training/flux2-klein/bfl-graphic-impressions/download', {
+      method: 'POST'
+    });
+  },
+
+  async getFlux2KleinTrainingRun() {
+    return fetchJson('/api/image-pool/training/flux2-klein/bfl-graphic-impressions/run');
+  },
+
+  async startFlux2KleinTrainingRun(payload) {
+    return fetchJson('/api/image-pool/training/flux2-klein/bfl-graphic-impressions/run', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async stopFlux2KleinTrainingRun() {
+    return fetchJson('/api/image-pool/training/flux2-klein/bfl-graphic-impressions/stop', {
+      method: 'POST'
+    });
+  },
+
+  async captionFlux2KleinTrainingImage(payload) {
+    return fetchJson('/api/image-pool/training/flux2-klein/bfl-graphic-impressions/caption', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload)
+    });
+  },
+
   async runImageGeneration(payload) {
     return fetchJson('/api/image-pool/images/generations', {
       method: 'POST',

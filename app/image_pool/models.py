@@ -268,6 +268,8 @@ def _normalize_admin_model(model: dict) -> dict:
             "backend": backend,
             "enabled": bool(model.get("enabled", model.get("configured_enabled", False))),
             "target_inflight": target_inflight,
+            "recommended_steps": _none_or_non_negative_int(model.get("recommended_steps")),
+            "recommended_guidance": _none_or_non_negative_float(model.get("recommended_guidance")),
         },
     }
 
@@ -325,3 +327,13 @@ def _none_or_non_negative_int(value: object) -> int | None:
     if value is None:
         return None
     return _to_non_negative_int(value)
+
+
+def _none_or_non_negative_float(value: object) -> float | None:
+    if value is None:
+        return None
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    return max(0.0, parsed)

@@ -6,6 +6,7 @@ __pycache__/
 config/local.json
 data/realtime_translation/tts_artifacts/
 data/realtime_tts/replay_artifacts/
+data/image_pool/
 *.egg-info/
 *.code-workspace
 tmp/

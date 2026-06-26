@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import tempfile
 from pathlib import Path
@@ -9,6 +10,7 @@ from unittest import mock
 from fastapi.testclient import TestClient
 
 from app.image_pool import models as image_pool_models
+from app.image_pool import loras as image_pool_loras
 from app.main import app
 
 
@@ -92,6 +94,8 @@ class ImagePoolApiTests(unittest.TestCase):
                     "last_error": None,
                     "scheduler": {"target_inflight": 1, "inflight": 1, "queued": 2},
                     "vram_estimate_mib": 0,
+                    "recommended_steps": 4,
+                    "recommended_guidance": 1.0,
                     "capabilities": {
                         "tasks": ["image_generation", "image_edit"],
                         "input_modalities": ["text", "image"],
@@ -112,6 +116,8 @@ class ImagePoolApiTests(unittest.TestCase):
         self.assertEqual(payload["models"][0]["queue_depth"], 2)
         self.assertEqual(payload["models"][0]["configured_target_inflight"], 1)
         self.assertEqual(payload["models"][0]["capabilities"]["tasks"], ["image_generation", "image_edit"])
+        self.assertEqual(payload["models"][0]["definition"]["recommended_steps"], 4)
+        self.assertEqual(payload["models"][0]["definition"]["recommended_guidance"], 1.0)
         request_json.assert_called_once_with(method="GET", path="/v1/admin/models", timeout=3.0)
 
     def test_load_admin_model_forwards_target_inflight(self) -> None:
@@ -162,6 +168,44 @@ class ImagePoolApiTests(unittest.TestCase):
         self.assertEqual(captured["path"], "/v1/images/generations")
         self.assertEqual(captured["payload"], request_payload)
         self.assertEqual(captured["timeout"], 120.0)
+
+    def test_loras_endpoint_lists_training_run_weights(self) -> None:
+        client = TestClient(app)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            runs_root = Path(tmpdir) / "runs"
+            run_dir = runs_root / "20260626-162634"
+            run_dir.mkdir(parents=True)
+            weight_path = run_dir / "pytorch_lora_weights.safetensors"
+            weight_path.write_bytes(b"lora")
+            checkpoint_path = run_dir / "checkpoints" / "step-002000" / "pytorch_lora_weights.safetensors"
+            checkpoint_path.parent.mkdir(parents=True)
+            checkpoint_path.write_bytes(b"checkpoint lora")
+            (run_dir / "request.json").write_text(
+                json.dumps(
+                    {
+                        "model": "flux2-klein-base-4b",
+                        "metadata": {"dataset": "bfl-graphic-impressions"},
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with mock.patch.object(image_pool_loras, "TRAINING_RUNS_ROOT", runs_root):
+                response = client.get("/api/image-pool/loras")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(len(payload["loras"]), 2)
+        self.assertEqual(payload["loras"][0]["model"], "flux2-klein-base-4b")
+        self.assertEqual(payload["loras"][0]["compatible_models"], ["flux2-klein-base-4b", "flux2-klein-4b"])
+        self.assertEqual(payload["loras"][0]["run_id"], "20260626-162634")
+        self.assertEqual(payload["loras"][0]["path"], str(weight_path.resolve()))
+        self.assertEqual(payload["loras"][0]["kind"], "final")
+        self.assertEqual(payload["loras"][1]["kind"], "checkpoint")
+        self.assertEqual(payload["loras"][1]["checkpoint_id"], "step-002000")
+        self.assertEqual(payload["loras"][1]["checkpoint_step"], 2000)
+        self.assertEqual(payload["loras"][1]["path"], str(checkpoint_path.resolve()))
 
     def test_image_edit_forwards_json_payload(self) -> None:
         client = TestClient(app)

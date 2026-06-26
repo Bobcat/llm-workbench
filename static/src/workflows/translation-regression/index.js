@@ -145,7 +145,7 @@ export function createRegressionView() {
         body = `<ul>${langs}</ul>`;
       }
       const badge = image.in_testset ? '' : '<span class="reg-warn" title="not in testset">⚠</span>';
-      const caret = `<span class="reg-caret">${isCollapsed ? '▸' : '▾'}</span>`;
+      const caret = `<span class="reg-caret${isCollapsed ? '' : ' is-open'}" aria-hidden="true"></span>`;
       return `<li class="reg-name">
         <div class="reg-row reg-name-head" data-collapse="${escapeAttr(image.name)}">${caret}${aggGlyph(nameState(image))}<span class="reg-label">${escapeHtml(image.name)}</span>${badge}${delButton('name', image.name)}</div>
         ${body}</li>`;
