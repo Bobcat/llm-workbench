@@ -52,6 +52,7 @@ export function createImagePoolView() {
 
   let models = [];
   let gpuMemory = null;
+  let poolAddressLabel = IMAGE_POOL_ADDRESS_LABEL;
   let lastRefreshLabel = '-';
   let lastError = '';
   let activeActionModel = '';
@@ -64,7 +65,7 @@ export function createImagePoolView() {
     const sorted = [...models].sort((left, right) => String(left.name || '').localeCompare(String(right.name || ''), 'nl'));
     rowsHost.innerHTML = buildRowsMarkup(sorted, expandedModels, activeActionModel, activeActionKind);
     statsEl.textContent = buildStatsText(models);
-    addressEl.textContent = `${IMAGE_POOL_ADDRESS_LABEL} - ${buildGpuUsageLabel(gpuMemory)}`;
+    addressEl.textContent = `${poolAddressLabel} - ${buildGpuUsageLabel(gpuMemory)}`;
     refreshEl.textContent = lastError
       ? `Last refresh: error (${lastError})`
       : `Last refresh: ${lastRefreshLabel}`;
@@ -97,6 +98,7 @@ export function createImagePoolView() {
       ]);
       if (!container.isConnected || token !== refreshToken) return;
       models = normalizeModelsPayload(modelsPayload, gpuPayload);
+      poolAddressLabel = formatPoolAddressLabel(modelsPayload?.proxy_base_url);
       gpuMemory = normalizeGpuMemoryPayload(gpuPayload);
       lastError = '';
       lastRefreshLabel = formatClockTime(new Date());
@@ -105,6 +107,7 @@ export function createImagePoolView() {
       if (!container.isConnected || token !== refreshToken) return;
       models = [];
       gpuMemory = null;
+      poolAddressLabel = IMAGE_POOL_ADDRESS_LABEL;
       lastError = formatApiError(err);
       lastRefreshLabel = formatClockTime(new Date());
       expandedModels.clear();
@@ -235,6 +238,11 @@ function buildRowsMarkup(models, expandedModels, activeActionModel, activeAction
     const backendLabel = formatBackendLabel(backend);
     const vramMib = toNullableNonNegativeInt(model.vram_estimate_mib);
     const vramText = vramMib == null || vramMib === 0 ? '-' : `${vramMib}MiB`;
+    const vramPill = shouldShowStatePill(runtimeForUi);
+    const vramPillTone = pillToneForRuntime(runtimeForUi);
+    const vramHtml = vramPill
+      ? `<span class="llm-pool-pill ${escapeAttr(vramPillTone)}">${escapeHtml(vramText)}</span>`
+      : escapeHtml(vramText);
     const detailsId = `image-pool-details-${index}`;
     const isExpanded = expandedModels.has(name);
     const isBusyAction = activeActionModel === name && activeActionKind === action?.kind;
@@ -272,7 +280,7 @@ function buildRowsMarkup(models, expandedModels, activeActionModel, activeAction
         <div class="llm-pool-cell meta" title="${escapeAttr(backend)}">
           <span class="llm-pool-backend-label">${escapeHtml(backendLabel)}</span>
         </div>
-        <div class="llm-pool-cell vram ${vramClassForRuntime(runtimeForUi)}">${escapeHtml(vramText)}</div>
+        <div class="llm-pool-cell vram ${vramClassForRuntime(runtimeForUi)}">${vramHtml}</div>
       </article>
       <article class="llm-pool-row-details${isExpanded ? ' is-open' : ''}" id="${detailsId}" ${isExpanded ? '' : 'hidden'}>
         <div class="llm-pool-definition-grid">
@@ -291,6 +299,12 @@ function buildRowsMarkup(models, expandedModels, activeActionModel, activeAction
 
 function asPlainObject(value) {
   return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+}
+
+function formatPoolAddressLabel(baseUrl) {
+  const value = String(baseUrl || '').trim();
+  if (!value) return IMAGE_POOL_ADDRESS_LABEL;
+  return `@${value.replace(/^https?:\/\//, '')}`;
 }
 
 function normalizeGpuMemoryPayload(payload) {
@@ -333,10 +347,26 @@ function formatBackendLabel(value) {
 }
 
 function vramClassForRuntime(runtimeState) {
-  if (runtimeState === 'failed' || runtimeState === 'error') return 'vram-danger';
-  return runtimeState === 'loaded' || runtimeState === 'loading' || runtimeState === 'unloading'
-    ? 'vram-active'
-    : 'vram-muted';
+  if (isProblemRuntimeState(runtimeState)) return 'vram-danger';
+  return isActiveVramState(runtimeState) ? 'vram-active' : 'vram-muted';
+}
+
+function isActiveVramState(state) {
+  return state === 'loaded' || state === 'loading' || state === 'unloading';
+}
+
+function isProblemRuntimeState(state) {
+  return state === 'failed' || state === 'error';
+}
+
+function shouldShowStatePill(state) {
+  return state === 'loaded' || isProblemRuntimeState(state);
+}
+
+function pillToneForRuntime(state) {
+  if (state === 'loaded') return 'pill-success';
+  if (isProblemRuntimeState(state)) return 'pill-danger';
+  return '';
 }
 
 function buildCapabilitiesSummary(capabilities) {

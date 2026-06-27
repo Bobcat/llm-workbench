@@ -169,36 +169,63 @@ export const api = {
     return fetchJson('/api/image-pool/loras');
   },
 
-  async getFlux2KleinTrainingDataset() {
-    return fetchJson('/api/image-pool/training/flux2-klein/bfl-graphic-impressions');
+  async getImageTrainingDatasets() {
+    return fetchJson('/api/image-pool/training/datasets');
   },
 
-  async downloadFlux2KleinTrainingDataset() {
-    return fetchJson('/api/image-pool/training/flux2-klein/bfl-graphic-impressions/download', {
-      method: 'POST'
-    });
-  },
-
-  async getFlux2KleinTrainingRun() {
-    return fetchJson('/api/image-pool/training/flux2-klein/bfl-graphic-impressions/run');
-  },
-
-  async startFlux2KleinTrainingRun(payload) {
-    return fetchJson('/api/image-pool/training/flux2-klein/bfl-graphic-impressions/run', {
+  async createImageTrainingDataset(payload) {
+    return fetchJson('/api/image-pool/training/datasets', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify(payload)
     });
   },
 
-  async stopFlux2KleinTrainingRun() {
-    return fetchJson('/api/image-pool/training/flux2-klein/bfl-graphic-impressions/stop', {
+  async getImageTrainingDataset(datasetSlug) {
+    return fetchJson(`/api/image-pool/training/datasets/${encodeURIComponent(datasetSlug)}`);
+  },
+
+  async deleteImageTrainingDataset(datasetSlug) {
+    return fetchJson(`/api/image-pool/training/datasets/${encodeURIComponent(datasetSlug)}`, {
+      method: 'DELETE'
+    });
+  },
+
+  async uploadImageTrainingDatasetFiles(datasetSlug, formData) {
+    return fetchJson(`/api/image-pool/training/datasets/${encodeURIComponent(datasetSlug)}/files`, {
+      method: 'POST',
+      body: formData
+    });
+  },
+
+  async downloadImageTrainingSampleDataset(datasetSlug = 'bfl-graphic-impressions') {
+    return fetchJson(`/api/image-pool/training/datasets/${encodeURIComponent(datasetSlug)}/sample-download`, {
       method: 'POST'
     });
   },
 
-  async captionFlux2KleinTrainingImage(payload) {
-    return fetchJson('/api/image-pool/training/flux2-klein/bfl-graphic-impressions/caption', {
+  async getImageTrainingRun(datasetSlug, trainer = '') {
+    const query = trainer ? `?trainer=${encodeURIComponent(trainer)}` : '';
+    return fetchJson(`/api/image-pool/training/datasets/${encodeURIComponent(datasetSlug)}/run${query}`);
+  },
+
+  async startImageTrainingRun(datasetSlug, payload) {
+    return fetchJson(`/api/image-pool/training/datasets/${encodeURIComponent(datasetSlug)}/run`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async stopImageTrainingRun(datasetSlug, trainer = '') {
+    const query = trainer ? `?trainer=${encodeURIComponent(trainer)}` : '';
+    return fetchJson(`/api/image-pool/training/datasets/${encodeURIComponent(datasetSlug)}/stop${query}`, {
+      method: 'POST'
+    });
+  },
+
+  async captionImageTrainingImage(datasetSlug, payload) {
+    return fetchJson(`/api/image-pool/training/datasets/${encodeURIComponent(datasetSlug)}/caption`, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify(payload)

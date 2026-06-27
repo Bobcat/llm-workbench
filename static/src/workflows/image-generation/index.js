@@ -12,6 +12,7 @@ const SIZE_BY_ASPECT_RATIO = {
 const MAX_MATCHED_INPUT_EDGE = 1024;
 const OUTPUT_SIZE_MULTIPLE = 8;
 const DEFAULT_LORA_STRENGTH = 0.35;
+const DEFAULT_IMAGE_STRENGTH = 0.35;
 
 export function createImageGenerationView() {
   const container = document.createElement('div');
@@ -54,6 +55,13 @@ export function createImageGenerationView() {
                 <label class="translation-prompts-field">
                   <span>Guidance</span>
                   <input id="imageGenerationGuidance" type="number" min="0" max="20" step="0.5" value="1">
+                </label>
+                <label class="translation-prompts-field image-generation-image-strength-field">
+                  <span>
+                    Image strength
+                    <output id="imageGenerationImageStrengthValue">0.35</output>
+                  </span>
+                  <input id="imageGenerationImageStrength" type="range" min="0" max="1" step="0.05" value="0.35" disabled>
                 </label>
                 <label class="translation-prompts-field">
                   <span>Seed</span>
@@ -107,6 +115,8 @@ export function createImageGenerationView() {
   const countEl = container.querySelector('#imageGenerationCount');
   const stepsEl = container.querySelector('#imageGenerationSteps');
   const guidanceEl = container.querySelector('#imageGenerationGuidance');
+  const imageStrengthEl = container.querySelector('#imageGenerationImageStrength');
+  const imageStrengthValueEl = container.querySelector('#imageGenerationImageStrengthValue');
   const seedEl = container.querySelector('#imageGenerationSeed');
   const loraSelect = container.querySelector('#imageGenerationLoraSelect');
   const loraStrengthEl = container.querySelector('#imageGenerationLoraStrength');
@@ -174,6 +184,30 @@ export function createImageGenerationView() {
     return Number.isFinite(parsed) ? Math.max(1, parsed) : 4;
   }
 
+  function applySelectedModelDefaults() {
+    const model = selectedModel();
+    if (modelPrefersLargeSquare(model) && aspectRatioEl.value === '1:1') {
+      aspectRatioEl.value = '1:1-large';
+    }
+    const recommendedSteps = Number.parseInt(model?.recommendedSteps, 10);
+    if (Number.isFinite(recommendedSteps)) {
+      stepsEl.value = String(clampInt(recommendedSteps, 1, 80, recommendedSteps));
+    }
+    const recommendedGuidance = model?.recommendedGuidance == null ? NaN : Number(model.recommendedGuidance);
+    if (Number.isFinite(recommendedGuidance)) {
+      guidanceEl.value = String(clampNumber(recommendedGuidance, 0, 20, recommendedGuidance));
+    }
+  }
+
+  function modelPrefersLargeSquare(model) {
+    const backend = String(model?.backend || '').trim();
+    const id = String(model?.id || '').trim();
+    return backend === 'diffusers_sdxl'
+      || backend === 'diffusers_z_image'
+      || id.startsWith('sdxl-')
+      || id.startsWith('z-image-');
+  }
+
   function updateRunState() {
     const model = selectedModel();
     runBtn.disabled = isRunning || !selectedModelId();
@@ -186,10 +220,12 @@ export function createImageGenerationView() {
       countEl.value = String(clampedOutputImages);
     }
     addFilesBtn.disabled = isRunning || !supportsImageInput;
+    imageStrengthEl.disabled = isRunning || !supportsImageInput || references.length === 0;
     const hasMatchingLoras = matchingLoras().length > 0;
     const hasSelectedLora = Boolean(selectedLora());
     loraSelect.disabled = isRunning || !hasMatchingLoras;
     loraStrengthEl.disabled = isRunning || !hasSelectedLora;
+    updateImageStrengthLabel();
     updateLoraStrengthLabel();
     if ((!supportsImageInput && references.length > 0) || references.length > maxInputImages) {
       references = supportsImageInput ? references.slice(0, maxInputImages) : [];
@@ -225,6 +261,7 @@ export function createImageGenerationView() {
       modelSelect.value = previous;
     }
     modelSelect.disabled = options.length === 0;
+    applySelectedModelDefaults();
     renderLoraOptions();
     updateRunState();
     renderReferences();
@@ -250,6 +287,12 @@ export function createImageGenerationView() {
     const value = clampNumber(loraStrengthEl.value, 0, 2, DEFAULT_LORA_STRENGTH);
     loraStrengthEl.value = value.toFixed(2);
     loraStrengthValueEl.textContent = value.toFixed(2);
+  }
+
+  function updateImageStrengthLabel() {
+    const value = clampNumber(imageStrengthEl.value, 0, 1, DEFAULT_IMAGE_STRENGTH);
+    imageStrengthEl.value = value.toFixed(2);
+    imageStrengthValueEl.textContent = value.toFixed(2);
   }
 
   function renderReferences() {
@@ -327,6 +370,8 @@ export function createImageGenerationView() {
           capabilities: model?.capabilities && typeof model.capabilities === 'object'
             ? model.capabilities
             : {},
+          recommendedSteps: model?.recommended_steps == null ? null : Number.parseInt(model.recommended_steps, 10),
+          recommendedGuidance: model?.recommended_guidance == null ? null : Number(model.recommended_guidance),
         })).filter((model) => model.id)
         : [];
       renderModelOptions();
@@ -376,6 +421,7 @@ export function createImageGenerationView() {
     const n = clampInt(countEl.value, 1, 4, 1);
     const steps = clampInt(stepsEl.value, 1, 80, 4);
     const guidance = clampNumber(guidanceEl.value, 0, 20, 1);
+    const imageStrength = clampNumber(imageStrengthEl.value, 0, 1, DEFAULT_IMAGE_STRENGTH);
     const seed = parseOptionalInt(seedEl.value);
     const lora = selectedLora();
     const loraScale = clampNumber(loraStrengthEl.value, 0, 2, DEFAULT_LORA_STRENGTH);
@@ -391,6 +437,9 @@ export function createImageGenerationView() {
       metadata.lora_id = lora.id;
       metadata.lora_path = lora.path;
       metadata.lora_scale = loraScale;
+    }
+    if (references.length > 0) {
+      metadata.strength = imageStrength;
     }
     return {
       model: selectedModelId(),
@@ -447,6 +496,7 @@ export function createImageGenerationView() {
   }
 
   modelSelect.addEventListener('change', () => {
+    applySelectedModelDefaults();
     renderLoraOptions();
     updateRunState();
     renderReferences();
@@ -454,6 +504,7 @@ export function createImageGenerationView() {
   promptEl.addEventListener('input', updateRunState);
   seedEl.addEventListener('input', updateRunState);
   loraSelect.addEventListener('change', updateRunState);
+  imageStrengthEl.addEventListener('input', updateImageStrengthLabel);
   loraStrengthEl.addEventListener('input', updateLoraStrengthLabel);
   outputZoomEl.addEventListener('input', updateOutputZoom);
   runBtn.addEventListener('click', runGeneration);
@@ -562,13 +613,15 @@ function formatResponseStatus(response) {
   const loraId = String(metrics.lora_id || '').trim();
   const loraScale = Number(metrics.lora_scale || 0);
   const loraText = loraId ? `, LoRA ${loraScale.toFixed(2)}` : '';
+  const imageStrength = Number(metrics.strength || 0);
+  const imageStrengthText = imageStrength > 0 ? `, strength ${imageStrength.toFixed(2)}` : '';
   const wallMs = Number(metrics.pool_total_wall_ms ?? metrics.backend_inference_wall_ms);
   if (Number.isFinite(wallMs)) {
     return backend
-      ? `${count} image(s), ${(wallMs / 1000).toFixed(2)}s, ${backend}${loraText}`
-      : `${count} image(s), ${(wallMs / 1000).toFixed(2)}s${loraText}`;
+      ? `${count} image(s), ${(wallMs / 1000).toFixed(2)}s, ${backend}${loraText}${imageStrengthText}`
+      : `${count} image(s), ${(wallMs / 1000).toFixed(2)}s${loraText}${imageStrengthText}`;
   }
-  return backend ? `${count} image(s), ${backend}${loraText}` : `${count} image(s)${loraText}`;
+  return backend ? `${count} image(s), ${backend}${loraText}${imageStrengthText}` : `${count} image(s)${loraText}${imageStrengthText}`;
 }
 
 function formatModelOption(model) {

@@ -62,7 +62,14 @@ class ImagePoolApiTests(unittest.TestCase):
             return_value={
                 "object": "list",
                 "data": [
-                    {"id": "stub-image", "object": "model", "backend": "stub", "capabilities": stub_capabilities},
+                    {
+                        "id": "stub-image",
+                        "object": "model",
+                        "backend": "stub",
+                        "capabilities": stub_capabilities,
+                        "recommended_steps": 4,
+                        "recommended_guidance": 1.0,
+                    },
                     {"id": "qwen-image-edit", "object": "model"},
                 ],
             },
@@ -73,8 +80,22 @@ class ImagePoolApiTests(unittest.TestCase):
         self.assertEqual(
             response.json(),
             [
-                {"id": "stub-image", "name": "stub-image", "backend": "stub", "capabilities": stub_capabilities},
-                {"id": "qwen-image-edit", "name": "qwen-image-edit", "backend": "", "capabilities": {}},
+                {
+                    "id": "stub-image",
+                    "name": "stub-image",
+                    "backend": "stub",
+                    "capabilities": stub_capabilities,
+                    "recommended_steps": 4,
+                    "recommended_guidance": 1.0,
+                },
+                {
+                    "id": "qwen-image-edit",
+                    "name": "qwen-image-edit",
+                    "backend": "",
+                    "capabilities": {},
+                    "recommended_steps": None,
+                    "recommended_guidance": None,
+                },
             ],
         )
         request_json.assert_called_once_with(method="GET", path="/v1/models", timeout=2.0)
@@ -192,7 +213,8 @@ class ImagePoolApiTests(unittest.TestCase):
             )
 
             with mock.patch.object(image_pool_loras, "TRAINING_RUNS_ROOT", runs_root):
-                response = client.get("/api/image-pool/loras")
+                with mock.patch.object(image_pool_loras, "Z_IMAGE_TRAINING_RUNS_ROOT", Path(tmpdir) / "z-runs"):
+                    response = client.get("/api/image-pool/loras")
 
         self.assertEqual(response.status_code, 200)
         payload = response.json()
@@ -206,6 +228,37 @@ class ImagePoolApiTests(unittest.TestCase):
         self.assertEqual(payload["loras"][1]["checkpoint_id"], "step-002000")
         self.assertEqual(payload["loras"][1]["checkpoint_step"], 2000)
         self.assertEqual(payload["loras"][1]["path"], str(checkpoint_path.resolve()))
+
+    def test_loras_endpoint_lists_z_image_weights(self) -> None:
+        client = TestClient(app)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            flux_root = root / "flux-runs"
+            z_root = root / "z-runs"
+            run_dir = z_root / "20260627-153000"
+            run_dir.mkdir(parents=True)
+            weight_path = run_dir / "pytorch_lora_weights.safetensors"
+            weight_path.write_bytes(b"z-lora")
+            (run_dir / "request.json").write_text(
+                json.dumps(
+                    {
+                        "model": "z-image-base",
+                        "metadata": {"dataset": "custom-set", "trainer": "z-image"},
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with mock.patch.object(image_pool_loras, "TRAINING_RUNS_ROOT", flux_root):
+                with mock.patch.object(image_pool_loras, "Z_IMAGE_TRAINING_RUNS_ROOT", z_root):
+                    response = client.get("/api/image-pool/loras")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(len(payload["loras"]), 1)
+        self.assertEqual(payload["loras"][0]["id"], "z-image/custom-set/20260627-153000")
+        self.assertEqual(payload["loras"][0]["compatible_models"], ["z-image-base", "z-image-turbo"])
 
     def test_image_edit_forwards_json_payload(self) -> None:
         client = TestClient(app)

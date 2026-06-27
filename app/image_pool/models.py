@@ -194,6 +194,8 @@ def _normalize_public_models(payload: dict) -> list[dict[str, object]]:
                             "name": model_id,
                             "backend": str(model.get("backend") or ""),
                             "capabilities": capabilities if isinstance(capabilities, dict) else {},
+                            "recommended_steps": _none_or_non_negative_int(model.get("recommended_steps")),
+                            "recommended_guidance": _none_or_non_negative_float(model.get("recommended_guidance")),
                         }
                     )
             elif str(model).strip():
