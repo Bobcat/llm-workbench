@@ -1,107 +1,253 @@
 # LLM Workbench
 
-LLM Workbench is a small personal workbench/playground for trying out LLM-driven workflows.
+LLM Workbench is a browser shell for local AI service consoles and workflow
+playgrounds.
 
-Some parts are meant to stay as permanent tools, especially:
-- `LLM Pool / Models`
-- `Prompt Testing / Ad hoc prompt`
+The app has two kinds of surfaces:
 
-Other parts are more exploratory. `Realtime Translation / Replay & Translate` started here, and parts of that workflow are already being extracted or reused elsewhere.
+- stable consoles for local services such as `llm-pool`, `tts-pool`,
+  `image-pool`, and `translation-services`
+- playgrounds for designing and testing workflows before they become a service
+  or a permanent console
+
+The backend is a FastAPI app. It serves the frontend from `static/`, proxies
+service APIs on the same origin, and owns temporary workbench session state.
 
 ## Index
 
-- [What It Does](#what-it-does)
+- [Workbench Areas](#workbench-areas)
 - [Repository Role](#repository-role)
-- [Related Repositories](#related-repositories)
+- [Related Services](#related-services)
 - [Code Map](#code-map)
-- [API Surface](#api-surface)
+- [Backend Contract](#backend-contract)
 - [Runtime Model](#runtime-model)
 - [Configuration](#configuration)
-- [Local Development](#local-development)
-- [Tests](#tests)
-- [Screenshots](#screenshots)
+- [Development](#development)
+- [Verification](#verification)
 - [License](#license)
 
-## What It Does
+## Workbench Areas
 
-- `LLM Pool / Models`
-  List, load, unload, and inspect models through the `llm-pool` admin API.
-- `Prompt Testing / Ad hoc prompt`
-  Run one-off prompts against available models without building a dedicated workflow first.
-- `LLM Pool / Chat`
-  Hold a multi-turn conversation with a loaded model. Models that report multi-turn support use real message history; others fall back to a flattened single-prompt transcript (shown with a warning). A single "Add files" button accepts images (on vision models) and text files.
-- `Realtime Translation / Replay & Translate`
-  Replay `.pc` transcript event streams, inspect first-pass and second-pass translation behavior, and export session state.
-- `Realtime Translation / Prompt Library`
-  Manage prompt sets used by the translation workflow.
+### Permanent Service Consoles
+
+These surfaces are expected to stay. Their UI can change.
+
+**LLM Pool**
+
+- `Models` lists, loads, unloads, and inspects `llm-pool` models.
+- `Text generation` runs one-off prompts against loaded models.
+- `Chat` runs multi-turn chat when the selected model supports it. Models
+  without multi-turn support use a flattened prompt fallback.
+
+**TTS Pool**
+
+- `Models` lists, loads, unloads, and inspects `tts-pool` models.
+
+**Image Pool**
+
+- `Models` lists, loads, unloads, and inspects `image-pool` models.
+- `Image generation` runs image generation and image edit requests.
+- `Train` manages image datasets, captions images, configures LoRA training,
+  starts training runs, and monitors progress.
+
+**Translation Services**
+
+- `Image translation` submits image translation requests and inspects artifacts.
+- `Prompt Library` manages prompts used by translation services.
+- `Regression testing` captures and re-runs image translation fixtures.
+
+The same pattern can host later service consoles. One likely example is TTS
+Services for shared voice libraries and stable generated voices.
+
+### Playground And Incubation
+
+These surfaces are useful, but may move or be extracted.
+
+- `Realtime Translation / Replay & Translate` replays `.pc` transcript streams
+  and inspects translation behavior.
+- `Realtime TTS / Replay & Speak` replays committed transcript segments through
+  `tts-pool`.
+
+### Developer And Design Helpers
+
+- `Icons / Colors` is an internal helper for comparing icon and color options.
 
 ## Repository Role
 
-- This repo provides the FastAPI API, replay session orchestration, prompt-library storage, and `llm-pool` proxy routes.
-- The browser UI lives in `static/` and is served by the FastAPI app on the same origin.
-- The backend does not run model inference itself; model calls go through `llm-pool`.
-- Replay translation runtime behavior is delegated to the extracted realtime translation engine.
+This repo owns:
 
-## Related Repositories
+- the FastAPI workbench app
+- the same-origin frontend shell
+- service proxy routes for local AI services
+- workflow UI modules under `static/src/workflows/`
+- replay session orchestration for current playgrounds
+- prompt-library storage used by the realtime translation playground
+- workbench-side image training dataset management
 
-- [realtime-translation-engine](https://github.com/Bobcat/realtime-translation-engine)
-  Extracted translation runtime used by the replay workflow.
+This repo does not own:
+
+- LLM inference or model lifecycle internals; `llm-pool` owns those
+- image model inference and training execution; `image-pool` owns those
+- TTS model inference; `tts-pool` owns that
+- image translation execution; `translation-services` owns that
+- reusable realtime translation engine behavior; `realtime-translation-engine`
+  owns that
+
+## Related Services
+
 - [llm-pool](https://github.com/Bobcat/llm-pool)
-  Provides the model and admin APIs used by the workbench.
+  provides text model inference and runtime model administration.
+- [image-pool](https://github.com/Bobcat/image-pool)
+  provides image generation, image editing, image model administration, and
+  LoRA training execution.
+- `tts-pool`
+  provides TTS model inference and runtime model administration.
+- `translation-services`
+  provides image translation, prompt storage, artifacts, and regression
+  fixtures.
+- [realtime-translation-engine](https://github.com/Bobcat/realtime-translation-engine)
+  provides reusable translation state and dispatch behavior.
 - [omniscripta](https://github.com/Bobcat/omniscripta)
-  Can produce `.pc` replay files from realtime transcript streams.
+  can produce `.pc` replay files from realtime transcript streams.
 
 ## Code Map
 
-- `app/main.py` creates the FastAPI app, mounts API routes, exposes the replay websocket, and serves the frontend from `static/`.
-- `app/router.py` wires the `/api` router groups.
-- `app/llm_pool/` proxies model listing and model admin actions to `llm-pool`.
-- `app/prompt_testing/` implements text generation and chat proxy endpoints.
-- `app/realtime_translation/replay/` manages replay sessions, translation dispatch, runtime export, websocket transport, and metrics.
-- `app/realtime_translation/prompt_library/` manages translation prompt sets.
+### Backend
+
+- `app/main.py` creates the FastAPI app, mounts `/api`, exposes websocket
+  routes, and serves the frontend.
+- `app/router.py` wires backend route groups.
+- `app/llm_pool/` proxies `llm-pool` model and admin APIs.
+- `app/tts_pool/` proxies `tts-pool` model and admin APIs.
+- `app/image_pool/` proxies `image-pool` model, LoRA, generation, editing, and
+  training APIs. It also manages workbench-side training datasets.
+- `app/translation_services/` proxies the `translation-services` API.
+- `app/prompt_testing/` implements text generation and chat requests through
+  `llm-pool`.
+- `app/realtime_translation/` contains the replay playground and prompt-library
+  endpoints.
+- `app/realtime_tts/` contains the TTS replay playground.
 - `promptlib/` contains prompt-library storage helpers.
-- `static/` contains the browser UI. It has no build step; the browser loads source files directly as ES modules.
-- `static/app.js` registers UI workflows and shell routing.
-- `static/src/api-client.js` contains the same-origin backend API client and replay websocket wrapper.
-- `static/src/workflows/` contains the replay, prompt-library, LLM-pool, TTS-pool, text generation, image generation, and chat screens.
+
+### Frontend
+
+- `static/index.html` is the browser entrypoint.
+- `static/app.js` registers sidebar groups and workflow views.
+- `static/foundation/spa-foundation/` contains the shared shell, routing, modal,
+  and sidebar helpers.
+- `static/src/api-client.js` contains same-origin API helpers and replay
+  websocket clients.
+- `static/src/workflows/` contains the workflow views.
+- `static/css/` contains shared application styling.
+
+### Support Files
+
 - `config/settings.json` contains committed defaults.
+- `config/local.json` is ignored and can override local settings.
 - `data/realtime_translation/sample/` contains sample `.pc` replay files.
-- `deploy/systemd/` contains example service wiring for local deployments.
+- `docs/` contains design notes and working observations.
+- `deploy/systemd/` contains example local service wiring.
+- `tests/` contains backend tests.
 
-## API Surface
+## Backend Contract
 
-- `/api/models*` exposes model listing and model admin proxy routes.
-- `/api/text-generation/run` runs single-shot text generation with optional files and images.
-- `/api/chat/run` runs a multi-turn chat turn (or a flattened single-prompt fallback) against a model.
-- `/api/prompts*` manages the realtime translation prompt library.
-- `/api/replay*` creates and controls replay sessions.
-- `/ws/replay/{session_id}` streams replay updates to the UI.
+The frontend calls the workbench backend on the same origin. The workbench then
+calls the configured local service.
+
+Main endpoint families:
+
+| Endpoint family | Role |
+| --- | --- |
+| `/api/models*` | `llm-pool` models, admin state, load/unload, and GPU memory. |
+| `/api/text-generation/run` | Single-turn text generation through `llm-pool`. |
+| `/api/chat/run` | Chat through `llm-pool`. |
+| `/api/prompts/test-translation` | Prompt rendering and test translation for the replay playground. |
+| `/api/tts-pool/models*` | `tts-pool` models, admin state, load/unload, and GPU memory. |
+| `/api/image-pool/models*` | `image-pool` models, admin state, load/unload, and GPU memory. |
+| `/api/image-pool/images/*` | Image generation and image edit requests through `image-pool`. |
+| `/api/image-pool/loras` | LoRA discovery for image generation. |
+| `/api/image-pool/training/*` | Dataset management, captioning, training start/stop, and training status. |
+| `/api/translation/*` | `translation-services` requests, prompts, artifacts, and regression fixtures. |
+| `/api/replay*` | Realtime translation replay sessions. |
+| `/api/realtime-tts/replay*` | Realtime TTS replay sessions and audio artifacts. |
+| `/ws/replay/{session_id}` | Translation replay websocket updates. |
+| `/ws/replay-speak/{session_id}` | TTS replay websocket updates. |
 
 ## Runtime Model
 
-LLM Workbench keeps workflow state in the backend process while a session is active. The browser creates replay sessions, updates model/prompt/language settings over HTTP, and receives replay events over a websocket.
+The workbench is a single FastAPI process with a static frontend.
 
-Model inference and model administration are external concerns owned by `llm-pool`. Translation replay orchestration lives in this backend, while reusable translation state and dispatch behavior is implemented in `realtime-translation-engine`.
+The backend owns workbench state while a session is active. Replay state lives
+in memory. Image training datasets and generated training artifacts live under
+`data/image_pool/`, which is ignored by git.
 
-The browser UI is a same-origin static app under `static/`. The backend owns replay sessions, prompt-library persistence, model/pool proxying, and websocket event delivery.
+The backend does not load AI models directly. Model inference and model
+lifecycle are delegated to local pool or service processes.
+
+The sidebar is currently registered in `static/app.js`. Service base URLs are
+already configurable. The intended direction is to move enabled sidebar groups
+into settings while keeping view implementations in the frontend registry. That
+would allow an installation to expose only the consoles it needs, such as an
+LLM Pool-only workbench.
 
 ## Configuration
 
-- `config/settings.json` contains committed defaults.
-- `config/local.json` is ignored and can be used for local overrides.
-- `deploy/systemd/llm-pool-tunnel.example.service` shows one way to tunnel a remote `llm-pool` API to `127.0.0.1:8011`.
+Committed defaults live in:
 
-## Local Development
+```text
+config/settings.json
+```
 
-Install the backend and the extracted translation engine in editable mode:
+Machine-local overrides can be placed in:
+
+```text
+config/local.json
+```
+
+`config/local.json` is ignored by git.
+
+Configured service connections:
+
+| Settings key | Default |
+| --- | --- |
+| `llm_pool.base_url` | `http://127.0.0.1:8011` |
+| `tts_pool.base_url` | `http://127.0.0.1:8020` |
+| `image_pool.base_url` | `http://127.0.0.1:8013` |
+| `translation_services.base_url` | `http://127.0.0.1:8030` |
+
+Environment overrides:
+
+| Variable | Overrides |
+| --- | --- |
+| `LLM_RESPONSES_API_BASE_URL` | `llm_pool.base_url` |
+| `TTS_POOL_API_BASE_URL` | `tts_pool.base_url` |
+| `IMAGE_POOL_API_BASE_URL` | `image_pool.base_url` |
+| `TRANSLATION_SERVICES_API_BASE_URL` | `translation_services.base_url` |
+
+Replay defaults also live under `replay` in `config/settings.json`.
+
+## Development
+
+Create an environment and install the workbench:
 
 ```bash
 python3 -m venv .venv
 ./.venv/bin/python -m pip install -e .
+```
+
+Install the realtime translation engine when working on replay translation:
+
+```bash
 ./.venv/bin/python -m pip install -e ../realtime-translation-engine
 ```
 
-Run the backend from this repo; it serves the browser UI from `static/`.
+Install test tooling if the environment does not already have it:
+
+```bash
+./.venv/bin/python -m pip install pytest
+```
+
+Run the backend:
 
 ```bash
 ./.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
@@ -113,40 +259,29 @@ Open:
 http://127.0.0.1:8000/
 ```
 
-## Tests
+The CLI entrypoint is also available:
+
+```bash
+./.venv/bin/python -m app
+```
+
+## Verification
+
+Run the Python tests:
+
+```bash
+./.venv/bin/python -m pytest tests
+```
+
+The tests are mostly `unittest`-style tests and can also be run with:
 
 ```bash
 ./.venv/bin/python -m unittest discover -s tests
-node --input-type=module --check < static/src/workflows/llm-pool/index.js
-node --input-type=module --check < static/src/workflows/prompt-runner/index.js
-node --input-type=module --check < static/src/workflows/chat/index.js
 ```
 
-## Screenshots
-
-### Prompt Library
-
-![Prompt library and translation prompt test fields](assets/screenshots/llm-workbench-01.png)
-
-### Replay & Translate
-
-![Completed replay and translated transcript output](assets/screenshots/llm-workbench-02.png)
-
-### Model Pool
-
-![Model pool overview with loaded and unloaded models](assets/screenshots/llm-workbench-03.png)
-
-### Model Settings
-
-![Model load settings and runtime metadata](assets/screenshots/llm-workbench-04.png)
-
-### Ad Hoc Prompt Testing
-
-![Ad hoc prompt testing with response metrics](assets/screenshots/llm-workbench-05.png)
-
-### Replay Metrics
-
-![Replay run metrics and developer timing tools](assets/screenshots/llm-workbench-06.png)
+There is no JavaScript build step. If Node is installed, individual ES modules
+can be syntax-checked with `node --input-type=module --check`, but Node is not a
+declared project dependency.
 
 ## License
 
