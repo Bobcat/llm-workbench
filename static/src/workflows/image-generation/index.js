@@ -13,6 +13,17 @@ const MAX_MATCHED_INPUT_EDGE = 1024;
 const OUTPUT_SIZE_MULTIPLE = 8;
 const DEFAULT_LORA_STRENGTH = 0.35;
 const DEFAULT_IMAGE_STRENGTH = 0.35;
+const DEFAULT_PARAMETER_LABELS = {
+  size: 'Output size',
+  n: 'Images',
+  steps: 'Steps',
+  guidance: 'Guidance',
+  sampler: 'Sampler',
+  strength: 'Image strength',
+  seed: 'Seed',
+  negative_prompt: 'Negative prompt',
+  lora_scale: 'LoRA strength',
+};
 
 export function createImageGenerationView() {
   const container = document.createElement('div');
@@ -30,10 +41,10 @@ export function createImageGenerationView() {
               </select>
             </label>
             <details class="translation-prompts-system-details image-generation-parameters-details">
-              <summary>Generation parameters</summary>
+              <summary id="imageGenerationParametersSummary">Generation parameters</summary>
               <div class="translation-prompts-language-grid image-generation-params-grid">
                 <label class="translation-prompts-field">
-                  <span>Output size</span>
+                  <span data-parameter-label="size">Output size</span>
                   <select id="imageGenerationAspectRatio">
                     <option value="1:1">Square 512x512</option>
                     <option value="1:1-large">Square 1024x1024</option>
@@ -45,29 +56,37 @@ export function createImageGenerationView() {
                   </select>
                 </label>
                 <label class="translation-prompts-field">
-                  <span>Images</span>
+                  <span data-parameter-label="n">Images</span>
                   <input id="imageGenerationCount" type="number" min="1" max="4" step="1" value="1">
                 </label>
                 <label class="translation-prompts-field">
-                  <span>Steps</span>
+                  <span data-parameter-label="steps">Steps</span>
                   <input id="imageGenerationSteps" type="number" min="1" max="80" step="1" value="4">
                 </label>
                 <label class="translation-prompts-field">
-                  <span>Guidance</span>
+                  <span data-parameter-label="guidance">Guidance</span>
                   <input id="imageGenerationGuidance" type="number" min="0" max="20" step="0.5" value="1">
+                </label>
+                <label class="translation-prompts-field image-generation-sampler-field" hidden>
+                  <span data-parameter-label="sampler">Sampler</span>
+                  <select id="imageGenerationSampler"></select>
                 </label>
                 <label class="translation-prompts-field image-generation-image-strength-field">
                   <span>
-                    Image strength
+                    <span data-parameter-label="strength">Image strength</span>
                     <output id="imageGenerationImageStrengthValue">0.35</output>
                   </span>
                   <input id="imageGenerationImageStrength" type="range" min="0" max="1" step="0.05" value="0.35" disabled>
                 </label>
                 <label class="translation-prompts-field">
-                  <span>Seed</span>
+                  <span data-parameter-label="seed">Seed</span>
                   <input id="imageGenerationSeed" type="number" step="1" placeholder="Random">
                 </label>
-                <label class="translation-prompts-field">
+                <label class="translation-prompts-field image-generation-negative-prompt-field" hidden>
+                  <span data-parameter-label="negative_prompt">Negative prompt</span>
+                  <input id="imageGenerationNegativePrompt" type="text" placeholder="None">
+                </label>
+                <label class="translation-prompts-field image-generation-lora-field">
                   <span>LoRA</span>
                   <select id="imageGenerationLoraSelect" disabled>
                     <option value="">No LoRA</option>
@@ -75,11 +94,14 @@ export function createImageGenerationView() {
                 </label>
                 <label class="translation-prompts-field image-generation-lora-strength-field">
                   <span>
-                    LoRA strength
+                    <span data-parameter-label="lora_scale">LoRA strength</span>
                     <output id="imageGenerationLoraStrengthValue">0.35</output>
                   </span>
                   <input id="imageGenerationLoraStrength" type="range" min="0" max="2" step="0.05" value="0.35" disabled>
                 </label>
+              </div>
+              <div class="image-generation-parameter-actions">
+                <button type="button" id="imageGenerationResetDefaultsBtn">Reset to defaults</button>
               </div>
             </details>
             <label class="translation-prompts-field">
@@ -111,14 +133,29 @@ export function createImageGenerationView() {
 
   const modelSelect = container.querySelector('#imageGenerationModelSelect');
   const promptEl = container.querySelector('#imageGenerationPrompt');
+  const parameterLabelEls = Object.fromEntries(
+    Array.from(container.querySelectorAll('[data-parameter-label]')).map((element) => [
+      String(element.dataset.parameterLabel || ''),
+      element,
+    ])
+  );
+  const parametersSummaryEl = container.querySelector('#imageGenerationParametersSummary');
+  const resetDefaultsBtn = container.querySelector('#imageGenerationResetDefaultsBtn');
   const aspectRatioEl = container.querySelector('#imageGenerationAspectRatio');
   const countEl = container.querySelector('#imageGenerationCount');
   const stepsEl = container.querySelector('#imageGenerationSteps');
   const guidanceEl = container.querySelector('#imageGenerationGuidance');
+  const samplerField = container.querySelector('.image-generation-sampler-field');
+  const samplerEl = container.querySelector('#imageGenerationSampler');
+  const imageStrengthField = container.querySelector('.image-generation-image-strength-field');
   const imageStrengthEl = container.querySelector('#imageGenerationImageStrength');
   const imageStrengthValueEl = container.querySelector('#imageGenerationImageStrengthValue');
   const seedEl = container.querySelector('#imageGenerationSeed');
+  const negativePromptField = container.querySelector('.image-generation-negative-prompt-field');
+  const negativePromptEl = container.querySelector('#imageGenerationNegativePrompt');
+  const loraField = container.querySelector('.image-generation-lora-field');
   const loraSelect = container.querySelector('#imageGenerationLoraSelect');
+  const loraStrengthField = container.querySelector('.image-generation-lora-strength-field');
   const loraStrengthEl = container.querySelector('#imageGenerationLoraStrength');
   const loraStrengthValueEl = container.querySelector('#imageGenerationLoraStrengthValue');
   const outputZoomEl = container.querySelector('#imageGenerationOutputZoom');
@@ -150,6 +187,31 @@ export function createImageGenerationView() {
     return selectableModels().find((model) => model.id === modelId) || null;
   }
 
+  function activeOperation() {
+    const model = selectedModel();
+    if (references.length === 0 && model && !modelSupportsGeneration(model) && modelSupportsImageInput(model)) {
+      return 'edit';
+    }
+    return references.length > 0 ? 'edit' : 'generation';
+  }
+
+  function activeParameterSchema() {
+    const model = selectedModel();
+    if (!model) return {};
+    const schema = activeOperation() === 'edit' ? model.editParameters : model.generationParameters;
+    return schema && typeof schema === 'object' ? schema : {};
+  }
+
+  function parameterDefinition(name) {
+    const schema = activeParameterSchema();
+    const definition = schema[name];
+    return definition && typeof definition === 'object' ? definition : null;
+  }
+
+  function hasParameter(name) {
+    return Boolean(parameterDefinition(name));
+  }
+
   function matchingLoras() {
     const modelId = selectedModelId();
     if (!modelId) return [];
@@ -174,6 +236,16 @@ export function createImageGenerationView() {
     return inputModalities.includes('image') && tasks.includes('image_edit');
   }
 
+  function modelSupportsGeneration(model) {
+    const capabilities = model?.capabilities && typeof model.capabilities === 'object'
+      ? model.capabilities
+      : {};
+    const tasks = Array.isArray(capabilities.tasks)
+      ? capabilities.tasks.map((item) => String(item))
+      : [];
+    return tasks.length === 0 || tasks.includes('image_generation');
+  }
+
   function modelMaxInputImages(model) {
     const parsed = Number.parseInt(model?.capabilities?.max_images, 10);
     return Number.isFinite(parsed) ? Math.max(0, parsed) : 4;
@@ -185,46 +257,183 @@ export function createImageGenerationView() {
   }
 
   function applySelectedModelDefaults() {
+    applyParameterSchema({ reset: true });
+  }
+
+  function applyParameterSchema({ reset = false } = {}) {
     const model = selectedModel();
-    if (modelPrefersLargeSquare(model) && aspectRatioEl.value === '1:1') {
-      aspectRatioEl.value = '1:1-large';
-    }
-    const recommendedSteps = Number.parseInt(model?.recommendedSteps, 10);
-    if (Number.isFinite(recommendedSteps)) {
-      stepsEl.value = String(clampInt(recommendedSteps, 1, 80, recommendedSteps));
-    }
-    const recommendedGuidance = model?.recommendedGuidance == null ? NaN : Number(model.recommendedGuidance);
-    if (Number.isFinite(recommendedGuidance)) {
-      guidanceEl.value = String(clampNumber(recommendedGuidance, 0, 20, recommendedGuidance));
+    const operation = activeOperation();
+    const schema = activeParameterSchema();
+    parametersSummaryEl.textContent = operation === 'edit' ? 'Edit parameters' : 'Generation parameters';
+
+    applyParameterLabels(schema);
+    configureSizeControl(schema.size, { reset, operation });
+    configureIntegerControl(countEl, schema.n, { reset, fallback: modelMaxOutputImages(model), hardMin: 1, hardMax: modelMaxOutputImages(model) });
+    configureIntegerControl(stepsEl, schema.steps, { reset, fallback: model?.recommendedSteps || 4, hardMin: 1, hardMax: 80 });
+    configureNumberControl(guidanceEl, schema.guidance, { reset, fallback: model?.recommendedGuidance ?? 1, hardMin: 0, hardMax: 20 });
+    configureSamplerControl(schema.sampler, { reset });
+    configureSeedControl(schema.seed, { reset });
+    configureTextControl(negativePromptField, negativePromptEl, schema.negative_prompt, { reset });
+    configureRangeControl(imageStrengthField, imageStrengthEl, imageStrengthValueEl, schema.strength, {
+      reset,
+      fallback: DEFAULT_IMAGE_STRENGTH,
+      hardMin: 0,
+      hardMax: 1,
+    });
+    configureRangeControl(loraStrengthField, loraStrengthEl, loraStrengthValueEl, schema.lora_scale, {
+      reset,
+      fallback: DEFAULT_LORA_STRENGTH,
+      hardMin: 0,
+      hardMax: 2,
+    });
+
+    const supportsLoraParameter = Boolean(schema.lora_scale);
+    loraField.hidden = !supportsLoraParameter;
+    loraStrengthField.hidden = !supportsLoraParameter;
+    if (!supportsLoraParameter) {
+      loraSelect.value = '';
     }
   }
 
-  function modelPrefersLargeSquare(model) {
-    const backend = String(model?.backend || '').trim();
-    const id = String(model?.id || '').trim();
-    return backend === 'diffusers_sdxl'
-      || backend === 'diffusers_z_image'
-      || id.startsWith('sdxl-')
-      || id.startsWith('z-image-');
+  function applyParameterLabels(schema) {
+    Object.entries(DEFAULT_PARAMETER_LABELS).forEach(([name, fallback]) => {
+      const element = parameterLabelEls[name];
+      if (element) {
+        element.textContent = parameterLabel(schema[name], fallback);
+      }
+    });
+  }
+
+  function configureSizeControl(definition, { reset, operation }) {
+    const allowedValues = Array.isArray(definition?.allowed_values)
+      ? definition.allowed_values.map((item) => String(item)).filter(Boolean)
+      : [];
+    const values = allowedValues.length > 0 ? allowedValues : ['512x512'];
+    const defaultValue = values.includes(String(definition?.default || ''))
+      ? String(definition.default)
+      : values[0];
+    const previousValue = String(aspectRatioEl.value || '');
+    const canMatchInput = operation === 'edit' && references.some((image) => image.width && image.height);
+    aspectRatioEl.innerHTML = [
+      ...values.map((value) => `<option value="${escapeAttr(value)}">${escapeHtml(formatSizeOption(value))}</option>`),
+      `<option value="match-input"${canMatchInput ? '' : ' disabled'}>Match input shape</option>`,
+    ].join('');
+    if (reset) {
+      aspectRatioEl.value = defaultValue;
+    } else if (previousValue === 'match-input' && canMatchInput) {
+      aspectRatioEl.value = 'match-input';
+    } else if (values.includes(previousValue)) {
+      aspectRatioEl.value = previousValue;
+    } else {
+      aspectRatioEl.value = defaultValue;
+    }
+  }
+
+  function configureIntegerControl(input, definition, { reset, fallback, hardMin, hardMax }) {
+    const min = parameterNumber(definition?.minimum, hardMin);
+    const max = parameterNumber(definition?.maximum, hardMax);
+    const defaultValue = parameterNumber(definition?.default, fallback);
+    input.min = String(min);
+    input.max = String(max);
+    input.step = String(parameterNumber(definition?.step, 1));
+    input.hidden = !definition;
+    input.closest('label').hidden = !definition;
+    const nextValue = reset ? defaultValue : input.value;
+    input.value = String(clampInt(nextValue, min, max, defaultValue));
+  }
+
+  function configureNumberControl(input, definition, { reset, fallback, hardMin, hardMax }) {
+    const min = parameterNumber(definition?.minimum, hardMin);
+    const max = parameterNumber(definition?.maximum, hardMax);
+    const defaultValue = parameterNumber(definition?.default, fallback);
+    input.min = String(min);
+    input.max = String(max);
+    input.step = String(parameterNumber(definition?.step, 0.1));
+    input.hidden = !definition;
+    input.closest('label').hidden = !definition;
+    const nextValue = reset ? defaultValue : input.value;
+    input.value = String(clampNumber(nextValue, min, max, defaultValue));
+  }
+
+  function configureSamplerControl(definition, { reset }) {
+    const values = enumValues(definition);
+    const defaultValue = enumDefault(definition, values);
+    const previousValue = String(samplerEl.value || '');
+    samplerField.hidden = !definition || values.length <= 1;
+    samplerEl.innerHTML = values.map((value) => `
+      <option value="${escapeAttr(value)}">${escapeHtml(enumLabel(definition, value))}</option>
+    `).join('');
+    if (reset) {
+      samplerEl.value = defaultValue;
+    } else if (values.includes(previousValue)) {
+      samplerEl.value = previousValue;
+    } else {
+      samplerEl.value = defaultValue;
+    }
+  }
+
+  function configureRangeControl(field, input, output, definition, { reset, fallback, hardMin, hardMax }) {
+    const min = parameterNumber(definition?.minimum, hardMin);
+    const max = parameterNumber(definition?.maximum, hardMax);
+    const defaultValue = parameterNumber(definition?.default, fallback);
+    field.hidden = !definition;
+    input.min = String(min);
+    input.max = String(max);
+    input.step = String(parameterNumber(definition?.step, 0.05));
+    const nextValue = reset ? defaultValue : input.value;
+    const value = clampNumber(nextValue, min, max, defaultValue);
+    input.value = value.toFixed(2);
+    output.textContent = value.toFixed(2);
+  }
+
+  function configureSeedControl(definition, { reset }) {
+    const visible = Boolean(definition);
+    seedEl.closest('label').hidden = !visible;
+    if (!visible) return;
+    if (definition.minimum != null) {
+      seedEl.min = String(definition.minimum);
+    } else {
+      seedEl.removeAttribute('min');
+    }
+    seedEl.step = String(parameterNumber(definition.step, 1));
+    if (reset) {
+      seedEl.value = definition.default == null ? '' : String(definition.default);
+    }
+  }
+
+  function configureTextControl(field, input, definition, { reset }) {
+    field.hidden = !definition;
+    if (definition && reset) {
+      input.value = String(definition.default || '');
+    }
   }
 
   function updateRunState() {
+    applyParameterSchema();
     const model = selectedModel();
-    runBtn.disabled = isRunning || !selectedModelId();
     const supportsImageInput = modelSupportsImageInput(model);
+    const supportsGeneration = modelSupportsGeneration(model);
+    const operation = activeOperation();
+    const canRunOperation = operation === 'edit'
+      ? supportsImageInput && references.length > 0 && Object.keys(activeParameterSchema()).length > 0
+      : supportsGeneration && Object.keys(activeParameterSchema()).length > 0;
+    runBtn.disabled = isRunning || !selectedModelId() || !canRunOperation;
+    resetDefaultsBtn.disabled = isRunning || !selectedModelId();
     const maxInputImages = modelMaxInputImages(model);
-    const maxOutputImages = modelMaxOutputImages(model);
+    const nDefinition = parameterDefinition('n');
+    const maxOutputImages = parameterNumber(nDefinition?.maximum, modelMaxOutputImages(model));
+    const minOutputImages = parameterNumber(nDefinition?.minimum, 1);
     countEl.max = String(maxOutputImages);
-    const clampedOutputImages = clampInt(countEl.value, 1, maxOutputImages, 1);
+    const clampedOutputImages = clampInt(countEl.value, minOutputImages, maxOutputImages, 1);
     if (clampedOutputImages !== Number.parseInt(countEl.value, 10)) {
       countEl.value = String(clampedOutputImages);
     }
     addFilesBtn.disabled = isRunning || !supportsImageInput;
-    imageStrengthEl.disabled = isRunning || !supportsImageInput || references.length === 0;
+    imageStrengthEl.disabled = isRunning || imageStrengthField.hidden || !supportsImageInput || references.length === 0;
     const hasMatchingLoras = matchingLoras().length > 0;
     const hasSelectedLora = Boolean(selectedLora());
-    loraSelect.disabled = isRunning || !hasMatchingLoras;
-    loraStrengthEl.disabled = isRunning || !hasSelectedLora;
+    loraSelect.disabled = isRunning || loraField.hidden || !hasMatchingLoras;
+    loraStrengthEl.disabled = isRunning || loraStrengthField.hidden || !hasSelectedLora;
     updateImageStrengthLabel();
     updateLoraStrengthLabel();
     if ((!supportsImageInput && references.length > 0) || references.length > maxInputImages) {
@@ -241,7 +450,7 @@ export function createImageGenerationView() {
       matchInputOption.disabled = !canMatchInput;
     }
     if (!canMatchInput && aspectRatioEl.value === 'match-input') {
-      aspectRatioEl.value = '1:1';
+      aspectRatioEl.value = aspectRatioEl.querySelector('option:not([disabled])')?.value || '512x512';
     }
   }
 
@@ -284,13 +493,17 @@ export function createImageGenerationView() {
   }
 
   function updateLoraStrengthLabel() {
-    const value = clampNumber(loraStrengthEl.value, 0, 2, DEFAULT_LORA_STRENGTH);
+    const min = Number(loraStrengthEl.min || 0);
+    const max = Number(loraStrengthEl.max || 2);
+    const value = clampNumber(loraStrengthEl.value, min, max, DEFAULT_LORA_STRENGTH);
     loraStrengthEl.value = value.toFixed(2);
     loraStrengthValueEl.textContent = value.toFixed(2);
   }
 
   function updateImageStrengthLabel() {
-    const value = clampNumber(imageStrengthEl.value, 0, 1, DEFAULT_IMAGE_STRENGTH);
+    const min = Number(imageStrengthEl.min || 0);
+    const max = Number(imageStrengthEl.max || 1);
+    const value = clampNumber(imageStrengthEl.value, min, max, DEFAULT_IMAGE_STRENGTH);
     imageStrengthEl.value = value.toFixed(2);
     imageStrengthValueEl.textContent = value.toFixed(2);
   }
@@ -372,6 +585,12 @@ export function createImageGenerationView() {
             : {},
           recommendedSteps: model?.recommended_steps == null ? null : Number.parseInt(model.recommended_steps, 10),
           recommendedGuidance: model?.recommended_guidance == null ? null : Number(model.recommended_guidance),
+          generationParameters: model?.generation_parameters && typeof model.generation_parameters === 'object'
+            ? model.generation_parameters
+            : {},
+          editParameters: model?.edit_parameters && typeof model.edit_parameters === 'object'
+            ? model.edit_parameters
+            : {},
         })).filter((model) => model.id)
         : [];
       renderModelOptions();
@@ -418,28 +637,67 @@ export function createImageGenerationView() {
   function buildPayload() {
     const prompt = String(promptEl.value || '').trim();
     const outputSizeMode = String(aspectRatioEl.value || '1:1');
-    const n = clampInt(countEl.value, 1, 4, 1);
-    const steps = clampInt(stepsEl.value, 1, 80, 4);
-    const guidance = clampNumber(guidanceEl.value, 0, 20, 1);
-    const imageStrength = clampNumber(imageStrengthEl.value, 0, 1, DEFAULT_IMAGE_STRENGTH);
+    const nDefinition = parameterDefinition('n');
+    const stepsDefinition = parameterDefinition('steps');
+    const guidanceDefinition = parameterDefinition('guidance');
+    const samplerDefinition = parameterDefinition('sampler');
+    const strengthDefinition = parameterDefinition('strength');
+    const loraScaleDefinition = parameterDefinition('lora_scale');
+    const n = clampInt(
+      countEl.value,
+      parameterNumber(nDefinition?.minimum, 1),
+      parameterNumber(nDefinition?.maximum, modelMaxOutputImages(selectedModel())),
+      parameterNumber(nDefinition?.default, 1)
+    );
     const seed = parseOptionalInt(seedEl.value);
     const lora = selectedLora();
-    const loraScale = clampNumber(loraStrengthEl.value, 0, 2, DEFAULT_LORA_STRENGTH);
+    const loraScale = clampNumber(
+      loraStrengthEl.value,
+      parameterNumber(loraScaleDefinition?.minimum, 0),
+      parameterNumber(loraScaleDefinition?.maximum, 2),
+      parameterNumber(loraScaleDefinition?.default, DEFAULT_LORA_STRENGTH)
+    );
     const size = outputSizeMode === 'match-input'
       ? outputSizeFromReference(references[0])
-      : SIZE_BY_ASPECT_RATIO[outputSizeMode] || SIZE_BY_ASPECT_RATIO['1:1'];
-    const metadata = {
-      output_size_mode: outputSizeMode,
-      steps,
-      guidance,
-    };
-    if (lora) {
+      : SIZE_BY_ASPECT_RATIO[outputSizeMode] || outputSizeMode || SIZE_BY_ASPECT_RATIO['1:1'];
+    const metadata = { output_size_mode: outputSizeMode };
+    if (stepsDefinition) {
+      metadata.steps = clampInt(
+        stepsEl.value,
+        parameterNumber(stepsDefinition.minimum, 1),
+        parameterNumber(stepsDefinition.maximum, 80),
+        parameterNumber(stepsDefinition.default, 4)
+      );
+    }
+    if (guidanceDefinition) {
+      metadata.guidance = clampNumber(
+        guidanceEl.value,
+        parameterNumber(guidanceDefinition.minimum, 0),
+        parameterNumber(guidanceDefinition.maximum, 20),
+        parameterNumber(guidanceDefinition.default, 1)
+      );
+    }
+    if (samplerDefinition) {
+      metadata.sampler = enumValue(samplerDefinition, samplerEl.value);
+    }
+    if (hasParameter('negative_prompt')) {
+      const negativePrompt = String(negativePromptEl.value || '').trim();
+      if (negativePrompt) {
+        metadata.negative_prompt = negativePrompt;
+      }
+    }
+    if (lora && loraScaleDefinition) {
       metadata.lora_id = lora.id;
       metadata.lora_path = lora.path;
       metadata.lora_scale = loraScale;
     }
-    if (references.length > 0) {
-      metadata.strength = imageStrength;
+    if (references.length > 0 && strengthDefinition) {
+      metadata.strength = clampNumber(
+        imageStrengthEl.value,
+        parameterNumber(strengthDefinition.minimum, 0),
+        parameterNumber(strengthDefinition.maximum, 1),
+        parameterNumber(strengthDefinition.default, DEFAULT_IMAGE_STRENGTH)
+      );
     }
     return {
       model: selectedModelId(),
@@ -507,6 +765,10 @@ export function createImageGenerationView() {
   imageStrengthEl.addEventListener('input', updateImageStrengthLabel);
   loraStrengthEl.addEventListener('input', updateLoraStrengthLabel);
   outputZoomEl.addEventListener('input', updateOutputZoom);
+  resetDefaultsBtn.addEventListener('click', () => {
+    applySelectedModelDefaults();
+    updateRunState();
+  });
   runBtn.addEventListener('click', runGeneration);
 
   addFilesBtn.addEventListener('click', () => {
@@ -556,6 +818,55 @@ export function createImageGenerationView() {
     loadLoras();
   };
   return container;
+}
+
+function parameterNumber(value, fallback) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function parameterLabel(definition, fallback) {
+  const label = String(definition?.label || '').trim();
+  return label || fallback;
+}
+
+function enumValues(definition) {
+  return Array.isArray(definition?.allowed_values)
+    ? definition.allowed_values.map((item) => String(item)).filter(Boolean)
+    : [];
+}
+
+function enumDefault(definition, values) {
+  const defaultValue = String(definition?.default || '');
+  if (values.includes(defaultValue)) {
+    return defaultValue;
+  }
+  return values[0] || '';
+}
+
+function enumLabel(definition, value) {
+  const labels = definition?.labels && typeof definition.labels === 'object' ? definition.labels : {};
+  return String(labels[value] || value);
+}
+
+function enumValue(definition, value) {
+  const values = enumValues(definition);
+  const selectedValue = String(value || '');
+  return values.includes(selectedValue) ? selectedValue : enumDefault(definition, values);
+}
+
+function formatSizeOption(size) {
+  const text = String(size || '').trim();
+  const [widthText, heightText] = text.split('x');
+  const width = Number.parseInt(widthText, 10);
+  const height = Number.parseInt(heightText, 10);
+  if (!Number.isFinite(width) || !Number.isFinite(height)) {
+    return text || 'Auto';
+  }
+  if (width === height) {
+    return `Square ${text}`;
+  }
+  return width > height ? `Landscape ${text}` : `Portrait ${text}`;
 }
 
 function outputSizeFromReference(image) {
@@ -613,15 +924,17 @@ function formatResponseStatus(response) {
   const loraId = String(metrics.lora_id || '').trim();
   const loraScale = Number(metrics.lora_scale || 0);
   const loraText = loraId ? `, LoRA ${loraScale.toFixed(2)}` : '';
+  const sampler = String(metrics.sampler || '').trim();
+  const samplerText = sampler ? `, ${sampler}` : '';
   const imageStrength = Number(metrics.strength || 0);
   const imageStrengthText = imageStrength > 0 ? `, strength ${imageStrength.toFixed(2)}` : '';
   const wallMs = Number(metrics.pool_total_wall_ms ?? metrics.backend_inference_wall_ms);
   if (Number.isFinite(wallMs)) {
     return backend
-      ? `${count} image(s), ${(wallMs / 1000).toFixed(2)}s, ${backend}${loraText}${imageStrengthText}`
-      : `${count} image(s), ${(wallMs / 1000).toFixed(2)}s${loraText}${imageStrengthText}`;
+      ? `${count} image(s), ${(wallMs / 1000).toFixed(2)}s, ${backend}${samplerText}${loraText}${imageStrengthText}`
+      : `${count} image(s), ${(wallMs / 1000).toFixed(2)}s${samplerText}${loraText}${imageStrengthText}`;
   }
-  return backend ? `${count} image(s), ${backend}${loraText}${imageStrengthText}` : `${count} image(s)${loraText}${imageStrengthText}`;
+  return backend ? `${count} image(s), ${backend}${samplerText}${loraText}${imageStrengthText}` : `${count} image(s)${samplerText}${loraText}${imageStrengthText}`;
 }
 
 function formatModelOption(model) {

@@ -57,6 +57,12 @@ class ImagePoolApiTests(unittest.TestCase):
             "input_modalities": ["text", "image"],
             "output_modalities": ["image"],
         }
+        generation_parameters = {
+            "steps": {"kind": "integer", "target": "metadata", "default": 4},
+        }
+        edit_parameters = {
+            "strength": {"kind": "number", "target": "metadata", "default": 0.35},
+        }
         with mock.patch(
             "app.image_pool.models._request_json",
             return_value={
@@ -69,6 +75,8 @@ class ImagePoolApiTests(unittest.TestCase):
                         "capabilities": stub_capabilities,
                         "recommended_steps": 4,
                         "recommended_guidance": 1.0,
+                        "generation_parameters": generation_parameters,
+                        "edit_parameters": edit_parameters,
                     },
                     {"id": "qwen-image-edit", "object": "model"},
                 ],
@@ -87,6 +95,8 @@ class ImagePoolApiTests(unittest.TestCase):
                     "capabilities": stub_capabilities,
                     "recommended_steps": 4,
                     "recommended_guidance": 1.0,
+                    "generation_parameters": generation_parameters,
+                    "edit_parameters": edit_parameters,
                 },
                 {
                     "id": "qwen-image-edit",
@@ -95,6 +105,8 @@ class ImagePoolApiTests(unittest.TestCase):
                     "capabilities": {},
                     "recommended_steps": None,
                     "recommended_guidance": None,
+                    "generation_parameters": {},
+                    "edit_parameters": {},
                 },
             ],
         )
@@ -117,6 +129,12 @@ class ImagePoolApiTests(unittest.TestCase):
                     "vram_estimate_mib": 0,
                     "recommended_steps": 4,
                     "recommended_guidance": 1.0,
+                    "generation_parameters": {
+                        "steps": {"kind": "integer", "target": "metadata", "default": 4},
+                    },
+                    "edit_parameters": {
+                        "strength": {"kind": "number", "target": "metadata", "default": 0.35},
+                    },
                     "capabilities": {
                         "tasks": ["image_generation", "image_edit"],
                         "input_modalities": ["text", "image"],
@@ -139,6 +157,10 @@ class ImagePoolApiTests(unittest.TestCase):
         self.assertEqual(payload["models"][0]["capabilities"]["tasks"], ["image_generation", "image_edit"])
         self.assertEqual(payload["models"][0]["definition"]["recommended_steps"], 4)
         self.assertEqual(payload["models"][0]["definition"]["recommended_guidance"], 1.0)
+        self.assertEqual(payload["models"][0]["generation_parameters"]["steps"]["default"], 4)
+        self.assertEqual(payload["models"][0]["edit_parameters"]["strength"]["default"], 0.35)
+        self.assertEqual(payload["models"][0]["definition"]["generation_parameters"]["steps"]["default"], 4)
+        self.assertEqual(payload["models"][0]["definition"]["edit_parameters"]["strength"]["default"], 0.35)
         request_json.assert_called_once_with(method="GET", path="/v1/admin/models", timeout=3.0)
 
     def test_load_admin_model_forwards_target_inflight(self) -> None:

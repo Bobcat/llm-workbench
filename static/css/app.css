@@ -1859,7 +1859,8 @@
   margin-bottom: 0;
 }
 
-.text-generation-view .text-generation-settings-actions {
+.text-generation-view .text-generation-settings-actions,
+.image-generation-view .image-generation-parameter-actions {
   padding-top: 10px;
   padding-left: 18px;
   display: flex;

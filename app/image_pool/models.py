@@ -196,6 +196,8 @@ def _normalize_public_models(payload: dict) -> list[dict[str, object]]:
                             "capabilities": capabilities if isinstance(capabilities, dict) else {},
                             "recommended_steps": _none_or_non_negative_int(model.get("recommended_steps")),
                             "recommended_guidance": _none_or_non_negative_float(model.get("recommended_guidance")),
+                            "generation_parameters": _dict_or_empty(model.get("generation_parameters")),
+                            "edit_parameters": _dict_or_empty(model.get("edit_parameters")),
                         }
                     )
             elif str(model).strip():
@@ -245,6 +247,8 @@ def _normalize_admin_model(model: dict) -> dict:
     capabilities = model.get("capabilities", {})
     if not isinstance(capabilities, dict):
         capabilities = {}
+    generation_parameters = _dict_or_empty(model.get("generation_parameters"))
+    edit_parameters = _dict_or_empty(model.get("edit_parameters"))
 
     backend = str(model.get("backend") or model.get("resolved_backend") or "").strip()
     target_inflight = _to_non_negative_int(
@@ -265,6 +269,8 @@ def _normalize_admin_model(model: dict) -> dict:
         "vram_estimate_mib": _none_or_non_negative_int(model.get("vram_estimate_mib")),
         "vram_estimate_source": str(model.get("vram_estimate_source") or "configured"),
         "capabilities": capabilities,
+        "generation_parameters": generation_parameters,
+        "edit_parameters": edit_parameters,
         "definition": {
             "model_path": model.get("model_path"),
             "backend": backend,
@@ -272,6 +278,8 @@ def _normalize_admin_model(model: dict) -> dict:
             "target_inflight": target_inflight,
             "recommended_steps": _none_or_non_negative_int(model.get("recommended_steps")),
             "recommended_guidance": _none_or_non_negative_float(model.get("recommended_guidance")),
+            "generation_parameters": generation_parameters,
+            "edit_parameters": edit_parameters,
         },
     }
 
@@ -339,3 +347,7 @@ def _none_or_non_negative_float(value: object) -> float | None:
     except (TypeError, ValueError):
         return None
     return max(0.0, parsed)
+
+
+def _dict_or_empty(value: object) -> dict:
+    return value if isinstance(value, dict) else {}
