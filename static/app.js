@@ -10,6 +10,7 @@ import { createLlmPoolView } from './src/workflows/llm-pool/index.js';
 import { createTtsPoolView } from './src/workflows/tts-pool/index.js';
 import { createImagePoolView } from './src/workflows/image-pool/index.js';
 import { createImageTrainView } from './src/workflows/image-train/index.js';
+import { createLoraLibraryView } from './src/workflows/lora-library/index.js';
 import { createTranslationRequestsView } from './src/workflows/translation-requests/index.js';
 import { createTranslationPromptsView } from './src/workflows/translation-prompts/index.js';
 import { createRegressionView } from './src/workflows/translation-regression/index.js';
@@ -38,6 +39,7 @@ const PERSISTENT_WORKFLOW_IDS = new Set([
   'tts-pool-models',
   'image-pool-models',
   'image-generation',
+  'image-lora-library',
   'image-train',
   'image-translation',
   'translation-regression',
@@ -139,9 +141,15 @@ const WORKFLOW_GROUPS = [
         icon: 'image',
       },
       {
+        id: 'image-lora-library',
+        route: 'image-lora-library',
+        name: 'LoRA Library',
+        icon: 'style',
+      },
+      {
         id: 'image-train',
         route: 'image-train',
-        name: 'Train',
+        name: 'Tuning',
         icon: 'model_training',
       },
     ],
@@ -245,6 +253,9 @@ function createWorkflowView(workflowId) {
   }
   if (workflowId === 'image-generation') {
     return createImageGenerationView();
+  }
+  if (workflowId === 'image-lora-library') {
+    return createLoraLibraryView();
   }
   if (workflowId === 'image-train') {
     return createImageTrainView();

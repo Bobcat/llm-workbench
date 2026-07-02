@@ -229,6 +229,7 @@ class ImagePoolApiTests(unittest.TestCase):
                     {
                         "model": "flux2-klein-base-4b",
                         "metadata": {"dataset": "bfl-graphic-impressions"},
+                        "trigger_word": "GFX_IMPR5N",
                     }
                 ),
                 encoding="utf-8",
@@ -236,17 +237,26 @@ class ImagePoolApiTests(unittest.TestCase):
 
             with mock.patch.object(image_pool_loras, "TRAINING_RUNS_ROOT", runs_root):
                 with mock.patch.object(image_pool_loras, "Z_IMAGE_TRAINING_RUNS_ROOT", Path(tmpdir) / "z-runs"):
-                    response = client.get("/api/image-pool/loras")
+                    with mock.patch.object(image_pool_loras, "IMPORTED_LORAS_ROOT", Path(tmpdir) / "imported"):
+                        with mock.patch.object(image_pool_loras, "_image_pool_imported_lora_payloads", return_value=[]):
+                            response = client.get("/api/image-pool/loras")
 
         self.assertEqual(response.status_code, 200)
         payload = response.json()
         self.assertEqual(len(payload["loras"]), 2)
+        self.assertEqual(payload["loras"][0]["family"], "flux2-klein")
+        self.assertEqual(payload["loras"][0]["source_type"], "training_run")
+        self.assertEqual(payload["loras"][0]["artifact_type"], "final")
         self.assertEqual(payload["loras"][0]["model"], "flux2-klein-base-4b")
+        self.assertEqual(payload["loras"][0]["trained_on_model_id"], "flux2-klein-base-4b")
         self.assertEqual(payload["loras"][0]["compatible_models"], ["flux2-klein-base-4b", "flux2-klein-4b"])
+        self.assertEqual(payload["loras"][0]["trigger_words"], ["GFX_IMPR5N"])
         self.assertEqual(payload["loras"][0]["run_id"], "20260626-162634")
         self.assertEqual(payload["loras"][0]["path"], str(weight_path.resolve()))
         self.assertEqual(payload["loras"][0]["kind"], "final")
+        self.assertEqual(payload["loras"][0]["default_strength"], None)
         self.assertEqual(payload["loras"][1]["kind"], "checkpoint")
+        self.assertEqual(payload["loras"][1]["artifact_type"], "checkpoint")
         self.assertEqual(payload["loras"][1]["checkpoint_id"], "step-002000")
         self.assertEqual(payload["loras"][1]["checkpoint_step"], 2000)
         self.assertEqual(payload["loras"][1]["path"], str(checkpoint_path.resolve()))
@@ -274,13 +284,164 @@ class ImagePoolApiTests(unittest.TestCase):
 
             with mock.patch.object(image_pool_loras, "TRAINING_RUNS_ROOT", flux_root):
                 with mock.patch.object(image_pool_loras, "Z_IMAGE_TRAINING_RUNS_ROOT", z_root):
-                    response = client.get("/api/image-pool/loras")
+                    with mock.patch.object(image_pool_loras, "IMPORTED_LORAS_ROOT", root / "imported"):
+                        with mock.patch.object(image_pool_loras, "_image_pool_imported_lora_payloads", return_value=[]):
+                            response = client.get("/api/image-pool/loras")
 
         self.assertEqual(response.status_code, 200)
         payload = response.json()
         self.assertEqual(len(payload["loras"]), 1)
         self.assertEqual(payload["loras"][0]["id"], "z-image/custom-set/20260627-153000")
+        self.assertEqual(payload["loras"][0]["family"], "z-image")
         self.assertEqual(payload["loras"][0]["compatible_models"], ["z-image-base", "z-image-turbo"])
+
+    def test_loras_endpoint_lists_imported_weights(self) -> None:
+        client = TestClient(app)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            imported_root = root / "imported"
+            lora_dir = imported_root / "external-scorpion"
+            lora_dir.mkdir(parents=True)
+            weight_path = lora_dir / "adapter.safetensors"
+            weight_path.write_bytes(b"external lora")
+            (lora_dir / "metadata.json").write_text(
+                json.dumps(
+                    {
+                        "name": "External Scorpion",
+                        "family": "sdxl",
+                        "trained_on_model_id": "sdxl-base-1.0",
+                        "compatible_models": ["sdxl-base-1.0"],
+                        "trigger_words": ["SCORPION_STYLE"],
+                        "default_strength": 0.8,
+                        "description": "Imported test LoRA.",
+                        "source_url": "https://example.test/lora",
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with mock.patch.object(image_pool_loras, "TRAINING_RUNS_ROOT", root / "flux-runs"):
+                with mock.patch.object(image_pool_loras, "Z_IMAGE_TRAINING_RUNS_ROOT", root / "z-runs"):
+                    with mock.patch.object(image_pool_loras, "IMPORTED_LORAS_ROOT", imported_root):
+                        with mock.patch.object(image_pool_loras, "_image_pool_imported_lora_payloads", return_value=[]):
+                            response = client.get("/api/image-pool/loras")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(len(payload["loras"]), 1)
+        self.assertEqual(payload["loras"][0]["id"], "imported/external-scorpion")
+        self.assertEqual(payload["loras"][0]["name"], "External Scorpion")
+        self.assertEqual(payload["loras"][0]["family"], "sdxl")
+        self.assertEqual(payload["loras"][0]["source_type"], "imported")
+        self.assertEqual(payload["loras"][0]["artifact_type"], "imported")
+        self.assertEqual(payload["loras"][0]["trained_on_model_id"], "sdxl-base-1.0")
+        self.assertEqual(payload["loras"][0]["compatible_models"], ["sdxl-base-1.0"])
+        self.assertEqual(payload["loras"][0]["trigger_words"], ["SCORPION_STYLE"])
+        self.assertEqual(payload["loras"][0]["default_strength"], 0.8)
+        self.assertEqual(payload["loras"][0]["description"], "Imported test LoRA.")
+        self.assertEqual(payload["loras"][0]["source_url"], "https://example.test/lora")
+        self.assertEqual(payload["loras"][0]["path"], str(weight_path.resolve()))
+
+    def test_loras_endpoint_includes_image_pool_imported_records(self) -> None:
+        client = TestClient(app)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            image_pool_record = {
+                "id": "imported/image-pool-lora",
+                "name": "Image Pool LoRA",
+                "family": "flux2-klein",
+                "source_type": "imported",
+                "artifact_type": "imported",
+                "path": "/tmp/image-pool-lora.safetensors",
+                "compatible_models": ["flux2-klein-4b"],
+            }
+
+            with mock.patch.object(image_pool_loras, "TRAINING_RUNS_ROOT", root / "flux-runs"):
+                with mock.patch.object(image_pool_loras, "Z_IMAGE_TRAINING_RUNS_ROOT", root / "z-runs"):
+                    with mock.patch.object(image_pool_loras, "IMPORTED_LORAS_ROOT", root / "imported"):
+                        with mock.patch.object(
+                            image_pool_loras,
+                            "_request_image_pool_json",
+                            return_value={"object": "list", "data": [image_pool_record]},
+                        ):
+                            response = client.get("/api/image-pool/loras")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["loras"], [image_pool_record])
+
+    def test_lora_inspect_upload_forwards_temp_file_to_image_pool(self) -> None:
+        client = TestClient(app)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            uploads_root = Path(tmpdir) / "uploads"
+            with mock.patch.object(image_pool_loras, "LORA_IMPORT_UPLOADS_ROOT", uploads_root):
+                with mock.patch.object(
+                    image_pool_loras,
+                    "_request_image_pool_json",
+                    return_value={
+                        "family_guess": "flux2-klein",
+                        "model_options": [],
+                        "warnings": [],
+                    },
+                ) as request_json:
+                    response = client.post(
+                        "/api/image-pool/loras/inspect",
+                        files={"file": ("external.safetensors", b"safe", "application/octet-stream")},
+                    )
+                    forwarded = request_json.call_args.kwargs["payload"]
+                    forwarded_exists = Path(forwarded["source_path"]).is_file()
+                    forwarded_name = Path(forwarded["source_path"]).name
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertRegex(payload["upload_id"], r"^[a-f0-9]{32}$")
+        self.assertTrue(forwarded_exists)
+        self.assertEqual(forwarded_name, "external.safetensors")
+        self.assertEqual(request_json.call_args.kwargs["path"], "/v1/admin/loras/inspect")
+
+    def test_lora_import_forwards_confirmed_metadata_to_image_pool(self) -> None:
+        client = TestClient(app)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            uploads_root = Path(tmpdir) / "uploads"
+            upload_id = "a" * 32
+            upload_dir = uploads_root / upload_id
+            upload_dir.mkdir(parents=True)
+            upload_path = upload_dir / "external.safetensors"
+            upload_path.write_bytes(b"safe")
+
+            with mock.patch.object(image_pool_loras, "LORA_IMPORT_UPLOADS_ROOT", uploads_root):
+                with mock.patch.object(
+                    image_pool_loras,
+                    "_request_image_pool_json",
+                    return_value={"lora": {"id": "imported/external", "path": "/tmp/external.safetensors"}},
+                ) as request_json:
+                    response = client.post(
+                        "/api/image-pool/loras/import",
+                        json={
+                            "upload_id": upload_id,
+                            "name": "External",
+                            "family": "flux2-klein",
+                            "compatible_models": ["flux2-klein-4b"],
+                            "trained_on_model_id": "flux2-klein-4b",
+                            "trigger_words": ["EXT"],
+                            "default_strength": 0.7,
+                            "description": "Imported LoRA.",
+                            "source_url": "https://example.test/lora",
+                        },
+                    )
+
+        self.assertEqual(response.status_code, 200)
+        forwarded = request_json.call_args.kwargs["payload"]
+        self.assertEqual(forwarded["source_path"], str(upload_path.resolve()))
+        self.assertEqual(forwarded["name"], "External")
+        self.assertEqual(forwarded["compatible_models"], ["flux2-klein-4b"])
+        self.assertEqual(forwarded["trigger_words"], ["EXT"])
+        self.assertEqual(forwarded["default_strength"], 0.7)
+        self.assertEqual(request_json.call_args.kwargs["path"], "/v1/admin/loras/import")
+        self.assertFalse(upload_dir.exists())
 
     def test_image_edit_forwards_json_payload(self) -> None:
         client = TestClient(app)

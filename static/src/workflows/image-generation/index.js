@@ -215,7 +215,7 @@ export function createImageGenerationView() {
   function matchingLoras() {
     const modelId = selectedModelId();
     if (!modelId) return [];
-    return loras.filter((lora) => lora.compatibleModels.length === 0 || lora.compatibleModels.includes(modelId));
+    return loras.filter((lora) => lora.compatibleModels.includes(modelId));
   }
 
   function selectedLora() {
@@ -612,10 +612,20 @@ export function createImageGenerationView() {
       loras = rawLoras.map((lora) => ({
         id: String(lora?.id || ''),
         name: String(lora?.name || lora?.id || ''),
+        family: String(lora?.family || ''),
+        sourceType: String(lora?.source_type || ''),
+        artifactType: String(lora?.artifact_type || lora?.kind || ''),
         model: String(lora?.model || ''),
+        trainedOnModelId: String(lora?.trained_on_model_id || lora?.model || ''),
         compatibleModels: Array.isArray(lora?.compatible_models)
           ? lora.compatible_models.map((item) => String(item)).filter(Boolean)
           : [String(lora?.model || '')].filter(Boolean),
+        triggerWords: Array.isArray(lora?.trigger_words)
+          ? lora.trigger_words.map((item) => String(item)).filter(Boolean)
+          : [],
+        defaultStrength: lora?.default_strength == null || lora?.default_strength === ''
+          ? null
+          : Number(lora.default_strength),
         path: String(lora?.path || ''),
         runId: String(lora?.run_id || ''),
         dataset: String(lora?.dataset || ''),
@@ -709,6 +719,21 @@ export function createImageGenerationView() {
     };
   }
 
+  function applySelectedLoraDefaultStrength() {
+    const lora = selectedLora();
+    if (!lora || !Number.isFinite(lora.defaultStrength)) return;
+    const definition = parameterDefinition('lora_scale');
+    if (!definition) return;
+    const value = clampNumber(
+      lora.defaultStrength,
+      parameterNumber(definition.minimum, 0),
+      parameterNumber(definition.maximum, 2),
+      parameterNumber(definition.default, DEFAULT_LORA_STRENGTH)
+    );
+    loraStrengthEl.value = value.toFixed(2);
+    updateLoraStrengthLabel();
+  }
+
   async function runGeneration() {
     if (isRunning) return;
     const payload = buildPayload();
@@ -761,7 +786,10 @@ export function createImageGenerationView() {
   });
   promptEl.addEventListener('input', updateRunState);
   seedEl.addEventListener('input', updateRunState);
-  loraSelect.addEventListener('change', updateRunState);
+  loraSelect.addEventListener('change', () => {
+    applySelectedLoraDefaultStrength();
+    updateRunState();
+  });
   imageStrengthEl.addEventListener('input', updateImageStrengthLabel);
   loraStrengthEl.addEventListener('input', updateLoraStrengthLabel);
   outputZoomEl.addEventListener('input', updateOutputZoom);

@@ -169,6 +169,21 @@ export const api = {
     return fetchJson('/api/image-pool/loras');
   },
 
+  async inspectImagePoolLora(formData) {
+    return fetchJson('/api/image-pool/loras/inspect', {
+      method: 'POST',
+      body: formData
+    });
+  },
+
+  async importImagePoolLora(payload) {
+    return fetchJson('/api/image-pool/loras/import', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload)
+    });
+  },
+
   async getImageTrainingDatasets() {
     return fetchJson('/api/image-pool/training/datasets');
   },
