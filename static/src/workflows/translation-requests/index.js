@@ -28,38 +28,37 @@ export function createTranslationRequestsView() {
               <span>Image</span>
               <input id="translationRequestFile" type="file" accept="image/png,image/jpeg,image/webp">
             </label>
-            <div class="translation-prompts-language-grid translation-requests-grid">
-              <label class="translation-prompts-field">
-                <span>Source language</span>
-                <select id="translationRequestSource"></select>
-              </label>
-              <label class="translation-prompts-field">
-                <span>Target language</span>
-                <select id="translationRequestTarget"></select>
-              </label>
-            </div>
             <label class="translation-prompts-field">
-              <span>Grouping model</span>
-              <select id="translationRequestModel"><option value="">Loading models…</option></select>
+              <span>Target language</span>
+              <select id="translationRequestTarget"></select>
             </label>
-            <label class="translation-prompts-field">
-              <span>Translation model</span>
-              <select id="translationRequestTranslatorModel"><option value="">Same as grouping model</option></select>
-            </label>
-            <div class="translation-requests-options-row">
-              <label class="translation-requests-option">
-                <input id="translationPreserveHeuristicText" type="checkbox" checked>
-                <span>Preserve heuristic text</span>
-              </label>
-              <label class="translation-requests-option">
-                <input id="translationPreserveUnchangedText" type="checkbox">
-                <span>Preserve unchanged text</span>
-              </label>
-              <label class="translation-requests-option">
-                <input id="translationUseGeometryColumns" type="checkbox" checked>
-                <span>Geometry columns</span>
-              </label>
-            </div>
+            <details class="translation-prompts-system-details translation-requests-details" open>
+              <summary>Settings</summary>
+              <div class="translation-requests-details-body">
+                <label class="translation-prompts-field">
+                  <span>Grouping model</span>
+                  <select id="translationRequestModel"><option value="">Loading models…</option></select>
+                </label>
+                <label class="translation-prompts-field">
+                  <span>Translation model</span>
+                  <select id="translationRequestTranslatorModel"><option value="">Same as grouping model</option></select>
+                </label>
+                <div class="translation-requests-options-row">
+                  <label class="translation-requests-option">
+                    <input id="translationPreserveHeuristicText" type="checkbox" checked>
+                    <span>Preserve heuristic text</span>
+                  </label>
+                  <label class="translation-requests-option">
+                    <input id="translationPreserveUnchangedText" type="checkbox">
+                    <span>Preserve unchanged text</span>
+                  </label>
+                  <label class="translation-requests-option">
+                    <input id="translationUseGeometryColumns" type="checkbox" checked>
+                    <span>Geometry columns</span>
+                  </label>
+                </div>
+              </div>
+            </details>
             <div class="translation-prompts-run-actions">
               <button type="button" id="translationRequestSubmit">Submit</button>
               <button type="button" id="translationRequestCancel" disabled>Cancel</button>
@@ -192,7 +191,6 @@ export function createTranslationRequestsView() {
   `;
 
   const fileInput = container.querySelector('#translationRequestFile');
-  const sourceInput = container.querySelector('#translationRequestSource');
   const targetInput = container.querySelector('#translationRequestTarget');
   const submitBtn = container.querySelector('#translationRequestSubmit');
   const cancelBtn = container.querySelector('#translationRequestCancel');
@@ -264,7 +262,6 @@ export function createTranslationRequestsView() {
     isBusy = Boolean(nextBusy);
     submitBtn.disabled = isBusy || !selectedFile();
     fileInput.disabled = isBusy;
-    sourceInput.disabled = isBusy;
     targetInput.disabled = isBusy;
     modelSelect.disabled = isBusy;
     preserveHeuristicTextInput.disabled = isBusy;
@@ -311,8 +308,9 @@ export function createTranslationRequestsView() {
       preserve_unchanged_text: Boolean(preserveUnchangedTextInput.checked),
       use_geometry_columns: Boolean(useGeometryColumnsInput.checked),
     };
-    const sourceLang = String(sourceInput.value || '').trim();
-    if (sourceLang) payload.source_lang_code = sourceLang;
+    // Source is auto-detected downstream (llm-pool for translategemma) and unused by the generic
+    // prompt; the dropdown was removed. Send a fixed 'auto' to satisfy the pipeline's required guard.
+    payload.source_lang_code = 'auto';
     const targetLang = String(targetInput.value || '').trim();
     if (targetLang) payload.target_lang_code = targetLang;
     lastTargetLang = targetLang;
@@ -408,10 +406,9 @@ export function createTranslationRequestsView() {
     const options = TRANSLATION_LANGUAGES
       .map((l) => `<option value="${escapeAttr(l.code)}">${escapeHtml(`${l.flag} ${l.name}`)}</option>`)
       .join('');
-    for (const select of [sourceInput, targetInput, retranslateLangSelect]) {
+    for (const select of [targetInput, retranslateLangSelect]) {
       select.innerHTML = options;
     }
-    sourceInput.value = 'en';
     targetInput.value = 'nl';
   }
 
