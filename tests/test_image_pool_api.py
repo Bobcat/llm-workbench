@@ -238,7 +238,7 @@ class ImagePoolApiTests(unittest.TestCase):
             with mock.patch.object(image_pool_loras, "TRAINING_RUNS_ROOT", runs_root):
                 with mock.patch.object(image_pool_loras, "Z_IMAGE_TRAINING_RUNS_ROOT", Path(tmpdir) / "z-runs"):
                     with mock.patch.object(image_pool_loras, "IMPORTED_LORAS_ROOT", Path(tmpdir) / "imported"):
-                        with mock.patch.object(image_pool_loras, "_image_pool_imported_lora_payloads", return_value=[]):
+                        with mock.patch.object(image_pool_loras, "_image_pool_loras_payload", return_value={}):
                             response = client.get("/api/image-pool/loras")
 
         self.assertEqual(response.status_code, 200)
@@ -285,7 +285,7 @@ class ImagePoolApiTests(unittest.TestCase):
             with mock.patch.object(image_pool_loras, "TRAINING_RUNS_ROOT", flux_root):
                 with mock.patch.object(image_pool_loras, "Z_IMAGE_TRAINING_RUNS_ROOT", z_root):
                     with mock.patch.object(image_pool_loras, "IMPORTED_LORAS_ROOT", root / "imported"):
-                        with mock.patch.object(image_pool_loras, "_image_pool_imported_lora_payloads", return_value=[]):
+                        with mock.patch.object(image_pool_loras, "_image_pool_loras_payload", return_value={}):
                             response = client.get("/api/image-pool/loras")
 
         self.assertEqual(response.status_code, 200)
@@ -324,7 +324,7 @@ class ImagePoolApiTests(unittest.TestCase):
             with mock.patch.object(image_pool_loras, "TRAINING_RUNS_ROOT", root / "flux-runs"):
                 with mock.patch.object(image_pool_loras, "Z_IMAGE_TRAINING_RUNS_ROOT", root / "z-runs"):
                     with mock.patch.object(image_pool_loras, "IMPORTED_LORAS_ROOT", imported_root):
-                        with mock.patch.object(image_pool_loras, "_image_pool_imported_lora_payloads", return_value=[]):
+                        with mock.patch.object(image_pool_loras, "_image_pool_loras_payload", return_value={}):
                             response = client.get("/api/image-pool/loras")
 
         self.assertEqual(response.status_code, 200)
@@ -370,6 +370,34 @@ class ImagePoolApiTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["loras"], [image_pool_record])
+
+    def test_loras_endpoint_forwards_image_pool_edit_schema(self) -> None:
+        client = TestClient(app)
+
+        edit_schema = {
+            "fields": {
+                "family": {"kind": "enum", "allowed_values": ["z-image"]},
+                "compatible_models": {
+                    "kind": "string_list",
+                    "allowed_values_by_family": {"z-image": ["z-image-base", "z-image-turbo"]},
+                },
+            }
+        }
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            with mock.patch.object(image_pool_loras, "TRAINING_RUNS_ROOT", root / "flux-runs"):
+                with mock.patch.object(image_pool_loras, "Z_IMAGE_TRAINING_RUNS_ROOT", root / "z-runs"):
+                    with mock.patch.object(image_pool_loras, "IMPORTED_LORAS_ROOT", root / "imported"):
+                        with mock.patch.object(
+                            image_pool_loras,
+                            "_image_pool_loras_payload",
+                            return_value={"object": "list", "data": [], "edit_schema": edit_schema},
+                        ):
+                            response = client.get("/api/image-pool/loras")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["edit_schema"], edit_schema)
 
     def test_lora_inspect_upload_forwards_temp_file_to_image_pool(self) -> None:
         client = TestClient(app)
@@ -442,6 +470,62 @@ class ImagePoolApiTests(unittest.TestCase):
         self.assertEqual(forwarded["default_strength"], 0.7)
         self.assertEqual(request_json.call_args.kwargs["path"], "/v1/admin/loras/import")
         self.assertFalse(upload_dir.exists())
+
+    def test_lora_delete_forwards_slug_to_image_pool(self) -> None:
+        client = TestClient(app)
+
+        with mock.patch(
+            "app.image_pool.loras._request_image_pool_json",
+            return_value={"deleted": True, "id": "imported/external"},
+        ) as request_json:
+            response = client.delete("/api/image-pool/loras/external")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["deleted"], True)
+        request_json.assert_called_once_with(
+            method="DELETE",
+            path="/v1/admin/loras/external",
+            timeout=30.0,
+        )
+
+    def test_lora_update_forwards_metadata_patch_to_image_pool(self) -> None:
+        client = TestClient(app)
+
+        with mock.patch(
+            "app.image_pool.loras._request_image_pool_json",
+            return_value={"updated": True, "id": "imported/external"},
+        ) as request_json:
+            response = client.patch(
+                "/api/image-pool/loras/external",
+                json={
+                    "name": "External",
+                    "family": "z-image",
+                    "compatible_models": ["z-image-turbo"],
+                    "trained_on_model_id": "z-image-turbo",
+                    "trigger_words": ["EXT"],
+                    "default_strength": 1.75,
+                    "description": "Updated.",
+                    "source_url": "https://example.test/lora",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["updated"], True)
+        request_json.assert_called_once_with(
+            method="PATCH",
+            path="/v1/admin/loras/external",
+            payload={
+                "name": "External",
+                "family": "z-image",
+                "compatible_models": ["z-image-turbo"],
+                "trained_on_model_id": "z-image-turbo",
+                "trigger_words": ["EXT"],
+                "default_strength": 1.75,
+                "description": "Updated.",
+                "source_url": "https://example.test/lora",
+            },
+            timeout=30.0,
+        )
 
     def test_image_edit_forwards_json_payload(self) -> None:
         client = TestClient(app)

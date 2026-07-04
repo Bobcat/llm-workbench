@@ -698,8 +698,17 @@ export function createImageGenerationView() {
     }
     if (lora && loraScaleDefinition) {
       metadata.lora_id = lora.id;
+      metadata.lora_name = lora.name;
       metadata.lora_path = lora.path;
       metadata.lora_scale = loraScale;
+      metadata.lora_family = lora.family;
+      metadata.lora_source_type = lora.sourceType;
+      metadata.lora_trained_on_model_id = lora.trainedOnModelId;
+      metadata.lora_trigger_words = lora.triggerWords;
+      metadata.lora_compatible_models = lora.compatibleModels;
+      if (Number.isFinite(lora.defaultStrength)) {
+        metadata.lora_default_strength = lora.defaultStrength;
+      }
     }
     if (references.length > 0 && strengthDefinition) {
       metadata.strength = clampNumber(

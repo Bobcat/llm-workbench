@@ -1166,7 +1166,7 @@
 }
 
 .image-lora-library-view .llm-pool-table-shell {
-  --llm-pool-table-columns: minmax(220px, 1.35fr) 110px 120px 80px minmax(130px, 0.95fr) minmax(190px, 1.2fr) minmax(180px, 1fr);
+  --llm-pool-table-columns: minmax(220px, 1.35fr) 110px 120px 80px minmax(130px, 0.95fr) minmax(190px, 1.2fr) minmax(180px, 1fr) 90px;
 }
 
 .image-lora-library-view .image-lora-library-filters {
@@ -1180,8 +1180,8 @@
   min-width: 0;
 }
 
-.image-lora-library-view .llm-pool-row {
-  cursor: default;
+.image-lora-library-view .llm-pool-row.is-expandable {
+  cursor: pointer;
 }
 
 .image-lora-library-view .llm-pool-cell {
@@ -1197,6 +1197,11 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.image-lora-library-view .image-lora-library-warning {
+  color: #a15c05;
+  font-weight: 600;
 }
 
 .image-lora-library-view .image-lora-library-badges {
@@ -1233,6 +1238,157 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.image-lora-library-view .image-lora-library-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+  cursor: default;
+}
+
+.image-lora-library-view .image-lora-library-edit-button,
+.image-lora-library-view .image-lora-library-delete-button {
+  min-height: 30px;
+  padding: 5px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.image-lora-library-view .image-lora-library-edit-button {
+  border: 1px solid var(--border-color, var(--color-slate-200, var(--border)));
+  background: var(--done-bg, var(--panel));
+  color: var(--text-main, var(--text-color));
+}
+
+.image-lora-library-view .image-lora-library-delete-button {
+  border: 1px solid #efc6cc;
+  background: #fff7f8;
+  color: #9f1d2e;
+}
+
+.image-lora-library-view .image-lora-library-edit-button:disabled,
+.image-lora-library-view .image-lora-library-delete-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.image-lora-library-view .image-lora-library-details {
+  cursor: default;
+}
+
+.image-lora-library-view .image-lora-library-detail-grid {
+  margin-bottom: 14px;
+}
+
+.image-lora-library-view .image-lora-edit-panel {
+  display: grid;
+  gap: 12px;
+  margin: 0 0 16px;
+  padding: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 8px;
+  background: #fbfdff;
+}
+
+.image-lora-library-view .image-lora-edit-head,
+.image-lora-library-view .image-lora-edit-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.image-lora-library-view .image-lora-edit-head strong {
+  color: #0f172a;
+  font-size: 0.9rem;
+  line-height: 1.2;
+}
+
+.image-lora-library-view .image-lora-edit-actions {
+  justify-content: flex-end;
+}
+
+.image-lora-library-view .image-lora-edit-actions button {
+  border: 1px solid var(--border-color, var(--color-slate-200, var(--border)));
+  border-radius: 8px;
+  background: var(--done-bg, var(--panel));
+  color: var(--text-main, var(--text-color));
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 500;
+  line-height: 1.2;
+  padding: 8px 16px;
+}
+
+.image-lora-library-view .image-lora-edit-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.image-lora-library-view .image-lora-library-metadata {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  margin-top: 14px;
+}
+
+.image-lora-library-view .image-lora-library-metadata-title {
+  color: #334155;
+  font-size: 0.84rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.image-lora-library-view .image-lora-library-metadata-grid {
+  display: grid;
+  grid-template-columns: minmax(160px, 0.35fr) minmax(0, 1fr);
+  gap: 7px 12px;
+  max-height: 320px;
+  overflow: auto;
+  padding-top: 8px;
+  border-top: 1px solid rgba(148, 163, 184, 0.24);
+}
+
+.image-lora-library-view .image-lora-library-metadata-key {
+  min-width: 0;
+  color: #6b7a8c;
+  font-size: 0.76rem;
+  font-weight: 600;
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.image-lora-library-view .image-lora-library-metadata code {
+  min-width: 0;
+  color: #0f172a;
+  font-size: 0.75rem;
+  line-height: 1.35;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.image-lora-library-view .image-lora-library-key-list {
+  display: grid;
+  gap: 4px;
+  max-height: 220px;
+  overflow: auto;
+  padding-top: 8px;
+  border-top: 1px solid rgba(148, 163, 184, 0.24);
+}
+
+.image-lora-library-view .image-lora-library-key-list code {
+  min-width: 0;
+  color: #0f172a;
+  font-size: 0.75rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .image-lora-library-view .image-lora-import-panel {
@@ -1396,6 +1552,10 @@
   .image-lora-library-view .image-lora-import-description,
   .image-lora-library-view .image-lora-import-compatible {
     grid-column: auto;
+  }
+
+  .image-lora-library-view .image-lora-library-metadata-grid {
+    grid-template-columns: 1fr;
   }
 }
 

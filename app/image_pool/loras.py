@@ -25,8 +25,12 @@ CHECKPOINT_STEP_RE = re.compile(r"^step-(\d+)$")
 
 
 @router.get("")
-def list_loras() -> dict[str, list[dict[str, object]]]:
-    return {"loras": _lora_payloads()}
+def list_loras() -> dict[str, object]:
+    image_pool_payload = _image_pool_loras_payload()
+    return {
+        "loras": _lora_payloads(image_pool_payload),
+        "edit_schema": _dict_or_empty(image_pool_payload.get("edit_schema")),
+    }
 
 
 @router.post("/inspect")
@@ -81,7 +85,55 @@ def import_lora(payload: dict[str, object] = Body(default_factory=dict)) -> dict
     return response
 
 
-def _lora_payloads() -> list[dict[str, object]]:
+@router.delete("/{slug}")
+def delete_lora(slug: str) -> dict:
+    slug = str(slug or "").strip()
+    if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,79}", slug):
+        raise HTTPException(
+            status_code=400,
+            detail={"error": "invalid_lora_slug", "message": "Invalid LoRA slug."},
+        )
+    return _request_image_pool_json(
+        method="DELETE",
+        path=f"/v1/admin/loras/{slug}",
+        timeout=30.0,
+    )
+
+
+@router.patch("/{slug}")
+def update_lora(slug: str, payload: dict[str, object] = Body(default_factory=dict)) -> dict:
+    slug = str(slug or "").strip()
+    if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,79}", slug):
+        raise HTTPException(
+            status_code=400,
+            detail={"error": "invalid_lora_slug", "message": "Invalid LoRA slug."},
+        )
+    forwarded: dict[str, object] = {}
+    if "name" in payload:
+        forwarded["name"] = str(payload.get("name") or "").strip()
+    if "family" in payload:
+        forwarded["family"] = str(payload.get("family") or "").strip()
+    if "compatible_models" in payload:
+        forwarded["compatible_models"] = _string_list(payload.get("compatible_models"))
+    if "trained_on_model_id" in payload:
+        forwarded["trained_on_model_id"] = str(payload.get("trained_on_model_id") or "").strip()
+    if "trigger_words" in payload:
+        forwarded["trigger_words"] = _string_list(payload.get("trigger_words"))
+    if "default_strength" in payload:
+        forwarded["default_strength"] = payload.get("default_strength")
+    if "description" in payload:
+        forwarded["description"] = str(payload.get("description") or "").strip()
+    if "source_url" in payload:
+        forwarded["source_url"] = str(payload.get("source_url") or "").strip()
+    return _request_image_pool_json(
+        method="PATCH",
+        path=f"/v1/admin/loras/{slug}",
+        payload=forwarded,
+        timeout=30.0,
+    )
+
+
+def _lora_payloads(image_pool_payload: dict[str, object] | None = None) -> list[dict[str, object]]:
     loras: list[dict[str, object]] = []
     for family, root in (("flux2-klein", TRAINING_RUNS_ROOT), ("z-image", Z_IMAGE_TRAINING_RUNS_ROOT)):
         if not root.exists():
@@ -121,7 +173,7 @@ def _lora_payloads() -> list[dict[str, object]]:
                         )
                     )
     loras.extend(_imported_lora_payloads())
-    loras.extend(_image_pool_imported_lora_payloads())
+    loras.extend(_image_pool_imported_lora_payloads(image_pool_payload))
     return loras
 
 
@@ -229,17 +281,26 @@ def _imported_weight_path(lora_dir: Path) -> Path | None:
     return candidates[0] if candidates else None
 
 
-def _image_pool_imported_lora_payloads() -> list[dict[str, object]]:
+def _image_pool_loras_payload() -> dict[str, object]:
     try:
-        payload = _request_image_pool_json(method="GET", path="/v1/admin/loras", timeout=3.0)
+        return _request_image_pool_json(method="GET", path="/v1/admin/loras", timeout=3.0)
     except HTTPException:
-        return []
+        return {}
+
+
+def _image_pool_imported_lora_payloads(payload: dict[str, object] | None = None) -> list[dict[str, object]]:
+    if payload is None:
+        payload = _image_pool_loras_payload()
     raw_loras = payload.get("data")
     if not isinstance(raw_loras, list):
         raw_loras = payload.get("loras")
     if not isinstance(raw_loras, list):
         return []
     return [item for item in raw_loras if isinstance(item, dict)]
+
+
+def _dict_or_empty(value: object) -> dict[str, object]:
+    return value if isinstance(value, dict) else {}
 
 
 def _uploaded_lora_path(upload_id: str) -> Path:

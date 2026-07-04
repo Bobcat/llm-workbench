@@ -36,6 +36,14 @@ function formatApiErrorMessage(status, payload) {
     if (typeof detail.message === 'string' && detail.message.trim()) {
       return detail.message.trim();
     }
+    if (detail.error && typeof detail.error === 'object') {
+      if (typeof detail.error.message === 'string' && detail.error.message.trim()) {
+        return detail.error.message.trim();
+      }
+      if (typeof detail.error.type === 'string' && detail.error.type.trim()) {
+        return detail.error.type.trim();
+      }
+    }
     if (typeof detail.error === 'string' && detail.error.trim()) {
       return detail.error.trim();
     }
@@ -179,6 +187,20 @@ export const api = {
   async importImagePoolLora(payload) {
     return fetchJson('/api/image-pool/loras/import', {
       method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async deleteImagePoolLora(slug) {
+    return fetchJson(`/api/image-pool/loras/${encodeURIComponent(slug)}`, {
+      method: 'DELETE'
+    });
+  },
+
+  async updateImagePoolLora(slug, payload) {
+    return fetchJson(`/api/image-pool/loras/${encodeURIComponent(slug)}`, {
+      method: 'PATCH',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify(payload)
     });

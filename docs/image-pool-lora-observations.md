@@ -158,6 +158,234 @@ An important BFL tutorial observation is that an intermediate checkpoint can be
 better than the final checkpoint. In their Graphic Impressions example, later
 training can move the result away from the desired painterly/graphic style.
 
+## SDXL LoRA Loader Notes
+
+Date: 2026-07-02.
+
+Runtime model:
+
+```text
+sdxl-base-1.0
+```
+
+SDXL LoRA files can target different model parts:
+
+| Part | Role |
+| --- | --- |
+| `unet` | Image denoiser. This is where most visual style/object LoRAs attach. |
+| `text_encoder` | First SDXL prompt encoder. |
+| `text_encoder_2` | Second SDXL prompt encoder. |
+
+Diffusers describes LoRA weights as attachable to the denoiser, the text
+encoder, or both. For SDXL, the denoiser is the UNet.
+
+### Tested SDXL LoRA Types
+
+| Type | Test file | Current support |
+| --- | --- | --- |
+| UNet-only LoRA | `ntc-ai/SDXL-LoRA-slider.cartoon` | Supported. |
+| Kohya / SGM SDXL LoRA | imported `Kandinsky` LoRA | Supported after passing the SDXL UNet config into Diffusers conversion. |
+| UNet + both text encoders | `Archana99/sdxl-lora-sketch-testing` | Supported. |
+| UNet + both text encoders | `jonknownothing/sdxl-lora-advanced-2` | Supported. |
+| Text-encoder-only LoRA | local fixture derived from the sketch LoRA | Supported as a loader path. |
+| UNet LoRA + separate textual-inversion embedding | `weasley24/dnd-SDXL-LoRA` | LoRA file loads. Separate embedding is not supported yet. |
+| SD 1.5 Kohya LoRA configured as SDXL | imported `kandinsky-v1` LoRA | Not supported by SDXL. Needs an SD 1.5 runtime/model path later. |
+
+The first failure was caused by treating every SDXL LoRA as a generic
+`load_lora_weights` call. A UNet-only Kohya-style LoRA made Diffusers attempt a
+text-encoder load and fail.
+
+The second failure appeared with real text-encoder LoRA keys. The current local
+Transformers runtime exposes the first SDXL text encoder without a
+`text_model.` module prefix. Some SDXL LoRA files still store keys under
+`text_encoder.text_model...`. The image-pool SDXL loader now normalizes that
+prefix before loading the adapter.
+
+Current loader behavior:
+
+1. Read the LoRA state dict with the SDXL pipeline helper.
+2. Pass the loaded SDXL UNet config into Diffusers conversion.
+3. Normalize `text_encoder.text_model.` keys when the loaded text encoder does
+   not expose a `text_model` module.
+4. Load UNet weights only when `unet.` keys exist.
+5. Load `text_encoder` weights only when `text_encoder.` keys exist.
+6. Load `text_encoder_2` weights only when `text_encoder_2.` keys exist.
+
+This keeps UNet-only, UNet+text, and text-only files on separate code paths.
+
+### Kohya / SGM SDXL LoRAs
+
+The imported `Kandinsky` LoRA is a real SDXL Kohya/SGM file.
+
+Local inspection found:
+
+| Field | Value |
+| --- | --- |
+| Imported id | `imported/kandinsky` |
+| Format guess | `kohya-sgm` |
+| Family guess | `sdxl` |
+| Confidence | about `0.85` |
+| Metadata architecture | `stable-diffusion-xl-v1-base/lora` |
+| Metadata implementation | `https://github.com/Stability-AI/generative-models` |
+| Metadata base version | `sdxl_base_v1-0` |
+| Metadata resolution | `1024x1024` |
+| Components | `unet`, `text_encoder`, `text_encoder_2` |
+
+The first load attempt failed because Diffusers converted the SGM key layout
+without the local SDXL UNet config. That produced invalid SDXL block mappings,
+such as non-existing block indices.
+
+The current SDXL loader fixes this by calling the pipeline helper with:
+
+```python
+unet_config=self._pipe.unet.config
+```
+
+That keeps conversion runtime-only. The imported `.safetensors` file is not
+modified.
+
+Live validation:
+
+| Path | Result |
+| --- | --- |
+| Direct image-pool request with `imported/kandinsky` | HTTP `200`; metrics showed `lora_id=imported/kandinsky` and `lora_scale=1.0`. |
+| Direct image-pool request without LoRA after that | HTTP `200`; metrics showed empty `lora_id` and `lora_scale=0.0`. |
+| Workbench proxy request with `imported/kandinsky` | HTTP `200`; metrics showed the LoRA was active. |
+
+Prompt-level check:
+
+```text
+Kandinsky Amsterdam
+```
+
+With the LoRA, the output moved strongly toward abstract Kandinsky-like visual
+language. Without the LoRA, SDXL kept more of the Amsterdam scene and only
+picked up style from the prompt. This confirms the adapter has a visible effect,
+not only a successful load.
+
+### SD 1.5 LoRAs Are a Separate Family
+
+The imported `kandinsky-v1` file is not the same case as `Kandinsky`.
+
+Local inspection found:
+
+| Field | Value |
+| --- | --- |
+| Imported id | `imported/kandinsky-v1` |
+| Format guess | `kohya` |
+| Family guess | `sd15` |
+| Confidence | about `0.55` |
+| Metadata | none found |
+| Text encoder key prefix | `lora_te_` |
+| SDXL text encoder markers | no `lora_te1_`, no `lora_te2_`, no `text_encoder_2` |
+
+The SDXL loader should not try to make this work by pretending it is SDXL.
+ComfyUI-style loaders can try to map a LoRA to the current model and report
+missing or unloaded keys, but that is not real compatibility.
+
+The better path is native support per family:
+
+- SDXL LoRAs load on SDXL models.
+- SD 1.5 LoRAs load on SD 1.5 models when image-pool has an SD 1.5 runtime.
+- Imported metadata can warn about likely mismatches, but live load/generation
+  remains the final compatibility check.
+
+### Format, Family, and Compatibility
+
+The LoRA library now separates three ideas:
+
+| Concept | Meaning |
+| --- | --- |
+| Format | How the tensor keys are stored, for example Diffusers, Kohya, or Kohya/SGM. |
+| Family | Which base model family the LoRA probably belongs to, for example SDXL or SD 1.5. |
+| Configured compatibility | Which image-pool model ids the user selected during import. |
+
+These can disagree.
+
+Useful signals:
+
+- `modelspec.architecture` and `ss_base_model_version` are strong signals when
+  present.
+- `lora_te1_` and `lora_te2_` point to SDXL.
+- `lora_te_` without SDXL text-encoder-2 markers points toward SD 1.5.
+- Metadata is often missing on Civitai-style files, so inspection must stay
+  best-effort.
+
+The UI should continue to show both configured and detected family. A mismatch
+is useful information before generation fails or produces no visible effect.
+
+### Textual Inversion Embeddings
+
+Some SDXL training workflows produce two artifacts:
+
+```text
+<name>.safetensors
+<name>_emb.safetensors
+```
+
+The first file is the LoRA. The second file is a textual-inversion embedding.
+The embedding teaches new prompt tokens such as `<s0><s1>`.
+
+Current workbench/image-pool import stores one `.safetensors` file per imported
+LoRA. That means the LoRA part of `weasley24/dnd-SDXL-LoRA` can be imported and
+loaded, but the companion embedding is ignored. Prompts that rely on inserted
+tokens may still work as ordinary text, but they do not get the trained token
+embedding.
+
+Supporting this properly needs a small extension to the LoRA library/import
+model:
+
+- allow an optional embedding file next to the LoRA file.
+- store embedding metadata and token names.
+- load the embedding into both SDXL text encoders before generation.
+- show in the UI whether an imported LoRA needs a companion embedding.
+
+### Local Test Artifacts
+
+Downloaded files:
+
+```text
+/home/gunnar/Downloads/sdxl-loras/cartoon.safetensors
+/home/gunnar/Downloads/sdxl-loras/test-cases/Archana99__sdxl-lora-sketch-testing/pytorch_lora_weights.safetensors
+/home/gunnar/Downloads/sdxl-loras/test-cases/jonknownothing__sdxl-lora-advanced-2/pytorch_lora_weights.safetensors
+/home/gunnar/Downloads/sdxl-loras/test-cases/weasley24__dnd-SDXL-LoRA/dnd-SDXL-LoRA.safetensors
+/home/gunnar/Downloads/sdxl-loras/test-cases/weasley24__dnd-SDXL-LoRA/dnd-SDXL-LoRA_emb.safetensors
+/home/gunnar/Downloads/sdxl-loras/test-cases/local-derived/sketch-text-encoders-only.safetensors
+```
+
+Imported LoRA ids:
+
+```text
+imported/cartoon
+imported/kandinsky
+imported/kandinsky-v1
+imported/sdxl-sketch-te-test
+imported/sdxl-advanced2-te-test
+imported/sdxl-dnd-embedding-test
+imported/sdxl-text-encoders-only-test
+```
+
+Generated validation images:
+
+```text
+/tmp/sdxl-kandinsky-lora.png
+/tmp/workbench-sdxl-kandinsky-lora.png
+```
+
+Smoke-test contact sheet:
+
+```text
+/tmp/sdxl-lora-type-matrix.png
+```
+
+References:
+
+- Diffusers LoRA loader docs: <https://huggingface.co/docs/diffusers/api/loaders/lora>
+- Cartoon UNet-only LoRA: <https://huggingface.co/ntc-ai/SDXL-LoRA-slider.cartoon>
+- Sketch UNet+text LoRA: <https://huggingface.co/Archana99/sdxl-lora-sketch-testing>
+- Advanced DreamBooth UNet+text LoRA: <https://huggingface.co/jonknownothing/sdxl-lora-advanced-2>
+- DND LoRA plus embedding example: <https://huggingface.co/weasley24/dnd-SDXL-LoRA>
+
 ## Suggested Admin API Direction
 
 The admin API should eventually expose training and inference parameter
@@ -232,6 +460,11 @@ explicit:
 6. Evaluate LoRA scales `1.0`, `1.5`, `1.75`, and `2.0`.
 7. Keep `steps=9` and `guidance=0.0` for initial Turbo inference tests so the
    inference side stays stable while training parameters change.
+8. Add SD 1.5 model/runtime support before trying to use SD 1.5 LoRAs such as
+   `imported/kandinsky-v1`.
+9. Add optional textual-inversion embedding import for SDXL LoRAs that ship a
+   companion embedding file.
+10. Test more Civitai SDXL Kohya/SGM LoRAs now that `imported/kandinsky` works.
 
 ## Open Questions
 
@@ -241,3 +474,7 @@ explicit:
   too few steps/rank?
 - Does a checkpoint before step `1000` look better than the final checkpoint?
 - Should the UI default LoRA scale be model-specific, LoRA-specific, or both?
+- Should imported LoRAs get an explicit compatibility probe button that attempts
+  a load against a selected model before the user generates an image?
+- Should SDXL LoRA import allow a companion embedding file in the same flow, or
+  should embeddings become a separate library item?
