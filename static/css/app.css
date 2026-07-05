@@ -2547,13 +2547,29 @@
   margin: 0;
 }
 
-.image-generation-view .image-generation-output-item img {
+.image-generation-view .image-generation-output-item img,
+.image-generation-view .image-generation-output-item video {
   display: block;
   max-width: none;
   height: auto;
   border: 1px solid rgba(148, 163, 184, 0.28);
   border-radius: 8px;
   background: #eef2f7;
+}
+
+.image-generation-view .video-generation-artifact-link {
+  min-width: 180px;
+  min-height: 120px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.32);
+  border-radius: 8px;
+  background: #eef2f7;
+  color: #1f4f82;
+  font-weight: 700;
+  text-decoration: none;
 }
 
 .image-generation-view .image-generation-output-item figcaption {

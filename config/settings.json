@@ -8,6 +8,9 @@
   "image_pool": {
     "base_url": "http://127.0.0.1:8013"
   },
+  "video_pool": {
+    "base_url": "http://127.0.0.1:8014"
+  },
   "translation_services": {
     "base_url": "http://127.0.0.1:8030"
   },

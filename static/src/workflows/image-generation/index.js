@@ -192,13 +192,19 @@ export function createImageGenerationView() {
     if (references.length === 0 && model && !modelSupportsGeneration(model) && modelSupportsImageInput(model)) {
       return 'edit';
     }
-    return references.length > 0 ? 'edit' : 'generation';
+    if (references.length > 0) {
+      return modelSupportsImageEdit(model) ? 'edit' : 'image_to_image';
+    }
+    return 'generation';
   }
 
   function activeParameterSchema() {
     const model = selectedModel();
     if (!model) return {};
-    const schema = activeOperation() === 'edit' ? model.editParameters : model.generationParameters;
+    const operation = activeOperation();
+    const schema = operation === 'edit' || operation === 'image_to_image'
+      ? model.editParameters
+      : model.generationParameters;
     return schema && typeof schema === 'object' ? schema : {};
   }
 
@@ -233,7 +239,19 @@ export function createImageGenerationView() {
     const tasks = Array.isArray(capabilities.tasks)
       ? capabilities.tasks.map((item) => String(item))
       : [];
-    return inputModalities.includes('image') && tasks.includes('image_edit');
+    return inputModalities.includes('image') && (
+      tasks.includes('image_edit') || tasks.includes('image_to_image')
+    );
+  }
+
+  function modelSupportsImageEdit(model) {
+    const capabilities = model?.capabilities && typeof model.capabilities === 'object'
+      ? model.capabilities
+      : {};
+    const tasks = Array.isArray(capabilities.tasks)
+      ? capabilities.tasks.map((item) => String(item))
+      : [];
+    return tasks.includes('image_edit');
   }
 
   function modelSupportsGeneration(model) {
@@ -264,7 +282,7 @@ export function createImageGenerationView() {
     const model = selectedModel();
     const operation = activeOperation();
     const schema = activeParameterSchema();
-    parametersSummaryEl.textContent = operation === 'edit' ? 'Edit parameters' : 'Generation parameters';
+    parametersSummaryEl.textContent = 'Generation parameters';
 
     applyParameterLabels(schema);
     configureSizeControl(schema.size, { reset, operation });
@@ -313,7 +331,8 @@ export function createImageGenerationView() {
       ? String(definition.default)
       : values[0];
     const previousValue = String(aspectRatioEl.value || '');
-    const canMatchInput = operation === 'edit' && references.some((image) => image.width && image.height);
+    const canMatchInput = (operation === 'edit' || operation === 'image_to_image')
+      && references.some((image) => image.width && image.height);
     aspectRatioEl.innerHTML = [
       ...values.map((value) => `<option value="${escapeAttr(value)}">${escapeHtml(formatSizeOption(value))}</option>`),
       `<option value="match-input"${canMatchInput ? '' : ' disabled'}>Match input shape</option>`,
@@ -757,7 +776,9 @@ export function createImageGenerationView() {
 
     isRunning = true;
     updateRunState();
-    setStatus(references.length > 0 ? 'Editing image...' : 'Generating image...');
+    setStatus(references.length > 0
+      ? (modelSupportsImageEdit(selectedModel()) ? 'Editing image...' : 'Generating from image...')
+      : 'Generating image...');
     try {
       const response = references.length > 0
         ? await api.runImageEdit({

@@ -173,6 +173,35 @@ export const api = {
     });
   },
 
+  async getVideoPoolModels() {
+    return fetchJson('/api/video-pool/models');
+  },
+
+  async getVideoPoolAdminModels() {
+    return fetchJson('/api/video-pool/models/admin');
+  },
+
+  async getVideoPoolAdminGpuMemory() {
+    return fetchJson('/api/video-pool/models/admin/gpu-memory');
+  },
+
+  async loadVideoPoolAdminModel(modelName, payload = null) {
+    const options = {
+      method: 'POST',
+    };
+    if (payload && typeof payload === 'object') {
+      options.headers = {'Content-Type': 'application/json'};
+      options.body = JSON.stringify(payload);
+    }
+    return fetchJson(`/api/video-pool/models/admin/${encodeURIComponent(modelName)}/load`, options);
+  },
+
+  async unloadVideoPoolAdminModel(modelName) {
+    return fetchJson(`/api/video-pool/models/admin/${encodeURIComponent(modelName)}/unload`, {
+      method: 'POST'
+    });
+  },
+
   async getImagePoolLoras() {
     return fetchJson('/api/image-pool/loras');
   },
@@ -279,6 +308,22 @@ export const api = {
 
   async runImageEdit(payload) {
     return fetchJson('/api/image-pool/images/edits', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async runVideoGeneration(payload) {
+    return fetchJson('/api/video-pool/videos/generations', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async runImageToVideo(payload) {
+    return fetchJson('/api/video-pool/videos/image-to-video', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify(payload)

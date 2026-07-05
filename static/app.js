@@ -11,11 +11,13 @@ import { createTtsPoolView } from './src/workflows/tts-pool/index.js';
 import { createImagePoolView } from './src/workflows/image-pool/index.js';
 import { createImageTrainView } from './src/workflows/image-train/index.js';
 import { createLoraLibraryView } from './src/workflows/lora-library/index.js';
+import { createVideoPoolView } from './src/workflows/video-pool/index.js';
 import { createTranslationRequestsView } from './src/workflows/translation-requests/index.js';
 import { createTranslationPromptsView } from './src/workflows/translation-prompts/index.js';
 import { createRegressionView } from './src/workflows/translation-regression/index.js';
 import { createTextGenerationView } from './src/workflows/text-generation/index.js';
 import { createImageGenerationView } from './src/workflows/image-generation/index.js';
+import { createVideoGenerationView } from './src/workflows/video-generation/index.js';
 import { createChatView } from './src/workflows/chat/index.js';
 import { createIconsView } from './src/workflows/icons/index.js';
 
@@ -41,6 +43,8 @@ const PERSISTENT_WORKFLOW_IDS = new Set([
   'image-generation',
   'image-lora-library',
   'image-train',
+  'video-pool-models',
+  'video-generation',
   'image-translation',
   'translation-regression',
 ]);
@@ -155,6 +159,23 @@ const WORKFLOW_GROUPS = [
     ],
   },
   {
+    label: 'Video Pool',
+    items: [
+      {
+        id: 'video-pool-models',
+        route: 'video-pool-models',
+        name: 'Models',
+        icon: 'movie',
+      },
+      {
+        id: 'video-generation',
+        route: 'video-generation',
+        name: 'Video generation',
+        icon: 'movie_creation',
+      },
+    ],
+  },
+  {
     label: 'Translation Services',
     items: [
       {
@@ -239,6 +260,9 @@ function createWorkflowView(workflowId) {
   if (workflowId === 'image-pool-models') {
     return createImagePoolView();
   }
+  if (workflowId === 'video-pool-models') {
+    return createVideoPoolView();
+  }
   if (workflowId === 'image-translation') {
     return createTranslationRequestsView();
   }
@@ -253,6 +277,9 @@ function createWorkflowView(workflowId) {
   }
   if (workflowId === 'image-generation') {
     return createImageGenerationView();
+  }
+  if (workflowId === 'video-generation') {
+    return createVideoGenerationView();
   }
   if (workflowId === 'image-lora-library') {
     return createLoraLibraryView();
