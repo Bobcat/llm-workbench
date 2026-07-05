@@ -57,6 +57,13 @@ export function createTranslationRequestsView() {
                     <span>Geometry columns</span>
                   </label>
                 </div>
+                <label class="translation-prompts-field">
+                  <span>Render size mode</span>
+                  <select id="translationRenderSizeMode" title="How a render group's one font size is chosen from its lines: min never overflows the smallest line's band; median resists one under-measured (lowercase) line dragging the whole block down">
+                    <option value="min" selected>min — safe default</option>
+                    <option value="median">median — experimental</option>
+                  </select>
+                </label>
               </div>
             </details>
             <div class="translation-prompts-run-actions">
@@ -206,6 +213,7 @@ export function createTranslationRequestsView() {
   const preserveHeuristicTextInput = container.querySelector('#translationPreserveHeuristicText');
   const preserveUnchangedTextInput = container.querySelector('#translationPreserveUnchangedText');
   const useGeometryColumnsInput = container.querySelector('#translationUseGeometryColumns');
+  const renderSizeModeSelect = container.querySelector('#translationRenderSizeMode');
   const detailEls = {
     vlmInput: container.querySelector('#trtVlmInput'),
     vlmResponse: container.querySelector('#trtVlmResponse'),
@@ -267,6 +275,7 @@ export function createTranslationRequestsView() {
     preserveHeuristicTextInput.disabled = isBusy;
     preserveUnchangedTextInput.disabled = isBusy;
     useGeometryColumnsInput.disabled = isBusy;
+    renderSizeModeSelect.disabled = isBusy;
     cancelBtn.disabled = !currentRequestId || isTerminalState(currentState());
     retranslateLangSelect.disabled = isBusy;
     retranslatePromptSelect.disabled = isBusy;
@@ -307,6 +316,7 @@ export function createTranslationRequestsView() {
       preserve_heuristic_text: Boolean(preserveHeuristicTextInput.checked),
       preserve_unchanged_text: Boolean(preserveUnchangedTextInput.checked),
       use_geometry_columns: Boolean(useGeometryColumnsInput.checked),
+      render_size_mode: String(renderSizeModeSelect.value || 'min'),
     };
     // Source is auto-detected downstream (llm-pool for translategemma) and unused by the generic
     // prompt; the dropdown was removed. Send a fixed 'auto' to satisfy the pipeline's required guard.
@@ -446,6 +456,7 @@ export function createTranslationRequestsView() {
     body.preserve_heuristic_text = Boolean(preserveHeuristicTextInput.checked);
     body.preserve_unchanged_text = Boolean(preserveUnchangedTextInput.checked);
     body.use_geometry_columns = Boolean(useGeometryColumnsInput.checked);
+    body.render_size_mode = String(renderSizeModeSelect.value || 'min');
     stopPolling();
     // Keep the previous render visible until the new one replaces it — re-translate reuses the
     // same image, so blanking the preview here only produces a flash.
