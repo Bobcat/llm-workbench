@@ -118,6 +118,17 @@ def retranslate_request(request_id: str, body: dict | None = None) -> dict:
     )
 
 
+@router.post("/requests/{request_id}/rerender")
+def rerender_request(request_id: str, body: dict | None = None) -> dict:
+    safe_request_id = parse.quote(request_id, safe="")
+    return _request_json(
+        method="POST",
+        path=f"/v1/requests/{safe_request_id}/rerender",
+        payload=dict(body or {}),
+        timeout=60.0,
+    )
+
+
 @router.get("/requests/{request_id}/artifacts/{artifact_name}")
 def get_artifact(request_id: str, artifact_name: str) -> Response:
     safe_request_id = parse.quote(request_id, safe="")

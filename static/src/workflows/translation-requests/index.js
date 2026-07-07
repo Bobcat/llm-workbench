@@ -22,16 +22,105 @@ export function createTranslationRequestsView() {
   container.innerHTML = `
     <div class="translation-prompts-shell">
       <div class="translation-prompts-main">
-        <div class="translation-prompts-content-area translation-requests-content">
-          <section class="translation-prompts-pane translation-prompts-pane-editor translation-requests-form-pane">
-            <label class="translation-prompts-field">
-              <span>Image</span>
-              <input id="translationRequestFile" type="file" accept="image/png,image/jpeg,image/webp">
-            </label>
-            <label class="translation-prompts-field">
-              <span>Target language</span>
-              <select id="translationRequestTarget"></select>
-            </label>
+        <div class="translation-requests-content translation-requests-stacked">
+
+          <section class="translation-requests-stage">
+            <!-- Bar above the images. The target language is ALWAYS shown (so it can be set
+                 before the first drop); the image-only controls appear once an image is loaded.
+                 Two cells mirror the image grid, so the Artifact control lines up above the
+                 left edge of the right (translated) image. -->
+            <div class="translation-requests-stage-bar">
+              <div class="translation-requests-bar-left">
+                <label class="translation-requests-barfield">
+                  <span>Target</span>
+                  <select id="translationRequestTarget"></select>
+                </label>
+                <label class="translation-requests-showtoggle translation-requests-loaded-only">
+                  <span>Show original</span>
+                  <input type="checkbox" id="translationShowOriginal">
+                  <span class="translation-requests-switch" aria-hidden="true"></span>
+                </label>
+              </div>
+              <div class="translation-requests-bar-right translation-requests-loaded-only">
+                <label class="translation-preview-artifact">
+                  <span>Artifact</span>
+                  <select id="translationPreviewArtifact" disabled>
+                    <option value="">No artifact</option>
+                  </select>
+                </label>
+                <label class="translation-preview-zoom">
+                  <input id="translationPreviewZoom" type="range" min="25" max="180" step="5" value="70">
+                  <output id="translationPreviewZoomValue">70%</output>
+                </label>
+                <button type="button" id="translationResetImage" class="translation-requests-reset" title="Choose another image" aria-label="Choose another image">✕</button>
+              </div>
+            </div>
+
+            <!-- Empty state: drop zone + browse (picking a file auto-submits). -->
+            <div class="translation-requests-dropzone" id="translationDropzone">
+              <input id="translationRequestFile" type="file" accept="image/png,image/jpeg,image/webp" hidden>
+              <div class="translation-requests-dropzone-drop">
+                <svg class="translation-requests-dropzone-cloud" viewBox="0 0 24 24" width="56" height="56" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M7 18a4 4 0 0 1 0-8 5.5 5.5 0 0 1 10.5-1.5A3.5 3.5 0 0 1 18 18H7z"/>
+                  <path d="M12 15V9m-2.5 2.5L12 9l2.5 2.5"/>
+                </svg>
+                <div class="translation-requests-dropzone-hint">Drag and drop</div>
+              </div>
+              <div class="translation-requests-dropzone-sep"></div>
+              <div class="translation-requests-dropzone-choose">
+                <span>Or choose a file</span>
+                <button type="button" id="translationBrowseBtn" class="translation-requests-browse-btn">Browse your files</button>
+              </div>
+            </div>
+
+            <!-- Loaded state: the images. -->
+            <div class="translation-requests-stage-loaded" id="translationStageLoaded" hidden>
+              <div class="translation-requests-frames">
+                <div class="translation-preview-block translation-requests-frame-original">
+                  <div class="translation-preview-frame">
+                    <img id="translationInputPreview" alt="Original" hidden>
+                    <img id="translationComparePreview" alt="Original" hidden>
+                    <div id="translationInputEmpty" class="translation-preview-empty">No image</div>
+                  </div>
+                </div>
+                <div class="translation-preview-block translation-requests-frame-translated">
+                  <div class="translation-preview-frame">
+                    <img id="translationOutputPreview" alt="Translated" hidden>
+                    <div id="translationOutputEmpty" class="translation-preview-empty">No output yet</div>
+                    <div id="translationOutputPending" class="translation-preview-pending" hidden>
+                      <div class="translation-spinner" aria-hidden="true"></div>
+                      <div class="translation-preview-pending-label">Translating…</div>
+                      <button type="button" id="translationCancelBtn" class="translation-preview-cancel">Cancel</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Progress / result status, below the images. -->
+            <div class="translation-prompts-inline-status translation-requests-status" id="translationRequestStatus"></div>
+          </section>
+
+          <section class="translation-requests-controls">
+            <details class="translation-prompts-system-details translation-requests-details" open>
+              <summary>Render</summary>
+              <div class="translation-requests-details-body">
+                <label class="translation-prompts-field">
+                  <span>Render size mode</span>
+                  <select id="translationRenderSizeMode" title="How a render group's one font size is chosen from its lines: median resists one under-measured (lowercase) line dragging the whole block down; min never overflows the smallest line's band. Changing this re-renders the shown result from its cached translations (no new translation).">
+                    <option value="median" selected>median — default</option>
+                    <option value="min">min — never overflow</option>
+                  </select>
+                </label>
+                <label class="translation-prompts-field">
+                  <span>Erase fill</span>
+                  <select id="translationEraseFillMode" title="How erased source text is filled. Currently a no-op: inpaint renders exactly like flat until a fill that beats flat lands (Telea and plane-fit were tried and removed 2026-07-06).">
+                    <option value="flat" selected>flat — one colour per line</option>
+                    <option value="inpaint">inpaint — no-op (renders as flat)</option>
+                  </select>
+                </label>
+              </div>
+            </details>
             <details class="translation-prompts-system-details translation-requests-details" open>
               <summary>Settings</summary>
               <div class="translation-requests-details-body">
@@ -58,69 +147,48 @@ export function createTranslationRequestsView() {
                   </label>
                 </div>
                 <label class="translation-prompts-field">
-                  <span>Render size mode</span>
-                  <select id="translationRenderSizeMode" title="How a render group's one font size is chosen from its lines: min never overflows the smallest line's band; median resists one under-measured (lowercase) line dragging the whole block down">
-                    <option value="min" selected>min — safe default</option>
-                    <option value="median">median — experimental</option>
-                  </select>
+                  <span>Translation prompt</span>
+                  <select id="translationRetranslatePrompt" title="Used by the automatic re-translate when you switch target language on a completed run; the initial run uses the pipeline default"></select>
                 </label>
               </div>
             </details>
-            <div class="translation-prompts-run-actions">
-              <button type="button" id="translationRequestSubmit">Submit</button>
-              <button type="button" id="translationRequestCancel" disabled>Cancel</button>
+            <div class="translation-requests-controls-cols">
+              <section class="translation-prompts-stats-block translation-requests-regression">
+                <div class="translation-requests-timings-title">Regression fixture</div>
+                <div class="translation-prompts-inline-status" id="translationRegressionInfo"></div>
+                <div class="translation-prompts-run-actions">
+                  <button type="button" id="translationRegressionAddTestset" disabled title="Copy this image into the testset">Add to testset</button>
+                  <button type="button" id="translationRegressionCapture" disabled title="Freeze this completed result as a regression fixture (frozen units + re-OCR snapshot)">Capture fixture</button>
+                </div>
+                <div class="translation-prompts-inline-status" id="translationRegressionStatus"></div>
+              </section>
             </div>
-            <div class="translation-prompts-inline-status" id="translationRequestStatus"></div>
-            <section class="translation-prompts-stats-block translation-requests-regression">
-              <div class="translation-requests-timings-title">Regression fixture</div>
-              <div class="translation-prompts-inline-status" id="translationRegressionInfo"></div>
-              <div class="translation-prompts-run-actions">
-                <button type="button" id="translationRegressionAddTestset" disabled title="Copy this image into the testset">Add to testset</button>
-                <button type="button" id="translationRegressionCapture" disabled title="Freeze this completed result as a regression fixture (frozen units + re-OCR snapshot)">Capture fixture</button>
-              </div>
-              <div class="translation-prompts-inline-status" id="translationRegressionStatus"></div>
-            </section>
-            <section class="translation-prompts-stats-block translation-requests-retranslate">
-              <div class="translation-requests-timings-title">Re-translate (cached units)</div>
-              <div class="translation-prompts-language-grid translation-requests-grid">
-                <label class="translation-prompts-field">
-                  <span>Target language</span>
-                  <select id="translationRetranslateLang"></select>
-                </label>
-                <label class="translation-prompts-field">
-                  <span>Prompt</span>
-                  <select id="translationRetranslatePrompt"></select>
-                </label>
-              </div>
-              <div class="translation-prompts-run-actions">
-                <button type="button" id="translationRetranslate" disabled title="Re-run translation + render on the last completed run's cached units with this prompt and language (no VLM/OCR/grouping)">Re-translate</button>
-              </div>
-              <div class="translation-prompts-inline-status" id="translationPromptStatus"></div>
-            </section>
-            <section class="translation-prompts-stats-block">
-              <div class="translation-prompts-stat translation-requests-id-stat">
-                <span>Request</span>
-                <strong id="translationRequestStatId">-</strong>
-              </div>
-              <div class="translation-prompts-stats-grid translation-requests-stats">
-                <div class="translation-prompts-stat">
-                  <span>State</span>
-                  <strong id="translationRequestStatState">-</strong>
+            <div class="translation-requests-controls-cols">
+              <section class="translation-prompts-stats-block">
+                <div class="translation-prompts-stat translation-requests-id-stat">
+                  <span>Request</span>
+                  <strong id="translationRequestStatId">-</strong>
                 </div>
-                <div class="translation-prompts-stat">
-                  <span>Stage</span>
-                  <strong id="translationRequestStatStage">-</strong>
+                <div class="translation-prompts-stats-grid translation-requests-stats">
+                  <div class="translation-prompts-stat">
+                    <span>State</span>
+                    <strong id="translationRequestStatState">-</strong>
+                  </div>
+                  <div class="translation-prompts-stat">
+                    <span>Stage</span>
+                    <strong id="translationRequestStatStage">-</strong>
+                  </div>
+                  <div class="translation-prompts-stat">
+                    <span>Queue</span>
+                    <strong id="translationRequestStatQueue">-</strong>
+                  </div>
                 </div>
-                <div class="translation-prompts-stat">
-                  <span>Queue</span>
-                  <strong id="translationRequestStatQueue">-</strong>
-                </div>
-              </div>
-            </section>
-            <section class="translation-prompts-stats-block">
-              <div class="translation-requests-timings-title">Timings</div>
-              <div class="translation-requests-timings" id="translationRequestTimings"></div>
-            </section>
+              </section>
+              <section class="translation-prompts-stats-block">
+                <div class="translation-requests-timings-title">Timings</div>
+                <div class="translation-requests-timings" id="translationRequestTimings"></div>
+              </section>
+            </div>
             <details class="translation-prompts-system-details translation-requests-details">
               <summary>Prompts &amp; responses</summary>
               <div class="translation-requests-details-body">
@@ -154,44 +222,17 @@ export function createTranslationRequestsView() {
                 </label>
               </div>
             </details>
-            <label class="translation-prompts-field translation-prompts-field-response">
-              <span>Raw response</span>
-              <textarea id="translationRequestRaw" rows="10" readonly></textarea>
-            </label>
-          </section>
-          <section class="translation-prompts-pane translation-requests-preview-pane">
-            <div class="translation-prompts-pane-title">Preview</div>
-            <label class="translation-preview-zoom">
-              <span>Preview size</span>
-              <input id="translationPreviewZoom" type="range" min="25" max="180" step="5" value="70">
-              <output id="translationPreviewZoomValue">70%</output>
-            </label>
-            <label class="translation-preview-artifact">
-              <span>Artifact</span>
-              <select id="translationPreviewArtifact" disabled>
-                <option value="">No artifact</option>
-              </select>
-            </label>
-            <div class="translation-preview-block">
-              <span>Input</span>
-              <div class="translation-preview-frame">
-                <img id="translationInputPreview" alt="Selected input preview" hidden>
-                <div id="translationInputEmpty" class="translation-preview-empty">No image selected</div>
+            <details class="translation-prompts-system-details translation-requests-details">
+              <summary>Raw response</summary>
+              <div class="translation-requests-details-body">
+                <label class="translation-prompts-field translation-prompts-field-response">
+                  <span>Raw response</span>
+                  <textarea id="translationRequestRaw" rows="10" readonly></textarea>
+                </label>
               </div>
-            </div>
-            <div class="translation-preview-block">
-              <span id="translationOutputLabel">Artifact</span>
-              <div class="translation-preview-frame">
-                <img id="translationComparePreview" alt="Original for comparison" hidden>
-                <img id="translationOutputPreview" alt="Image pool output preview" hidden>
-                <div id="translationOutputEmpty" class="translation-preview-empty">No output yet</div>
-              </div>
-              <label class="translation-preview-toggle" id="translationPreviewToggleLabel" hidden>
-                <input type="checkbox" id="translationPreviewShowOriginal">
-                <span>Show original</span>
-              </label>
-            </div>
+            </details>
           </section>
+
         </div>
       </div>
     </div>
@@ -199,8 +240,6 @@ export function createTranslationRequestsView() {
 
   const fileInput = container.querySelector('#translationRequestFile');
   const targetInput = container.querySelector('#translationRequestTarget');
-  const submitBtn = container.querySelector('#translationRequestSubmit');
-  const cancelBtn = container.querySelector('#translationRequestCancel');
   const statusEl = container.querySelector('#translationRequestStatus');
   const statIdEl = container.querySelector('#translationRequestStatId');
   const statStateEl = container.querySelector('#translationRequestStatState');
@@ -214,6 +253,7 @@ export function createTranslationRequestsView() {
   const preserveUnchangedTextInput = container.querySelector('#translationPreserveUnchangedText');
   const useGeometryColumnsInput = container.querySelector('#translationUseGeometryColumns');
   const renderSizeModeSelect = container.querySelector('#translationRenderSizeMode');
+  const eraseFillModeSelect = container.querySelector('#translationEraseFillMode');
   const detailEls = {
     vlmInput: container.querySelector('#trtVlmInput'),
     vlmResponse: container.querySelector('#trtVlmResponse'),
@@ -227,17 +267,20 @@ export function createTranslationRequestsView() {
   const inputEmpty = container.querySelector('#translationInputEmpty');
   const outputPreview = container.querySelector('#translationOutputPreview');
   const outputEmpty = container.querySelector('#translationOutputEmpty');
-  const outputLabel = container.querySelector('#translationOutputLabel');
+  const outputPending = container.querySelector('#translationOutputPending');
+  const outputPendingLabel = container.querySelector('.translation-preview-pending-label');
+  const cancelBtn = container.querySelector('#translationCancelBtn');
   const previewZoomInput = container.querySelector('#translationPreviewZoom');
   const previewZoomValue = container.querySelector('#translationPreviewZoomValue');
   const previewArtifactSelect = container.querySelector('#translationPreviewArtifact');
   const comparePreview = container.querySelector('#translationComparePreview');
-  const toggleInput = container.querySelector('#translationPreviewShowOriginal');
-  const toggleLabel = container.querySelector('#translationPreviewToggleLabel');
-  const retranslateLangSelect = container.querySelector('#translationRetranslateLang');
+  const stageEl = container.querySelector('.translation-requests-stage');
+  const dropzone = container.querySelector('#translationDropzone');
+  const stageLoaded = container.querySelector('#translationStageLoaded');
+  const browseBtn = container.querySelector('#translationBrowseBtn');
+  const resetBtn = container.querySelector('#translationResetImage');
+  const showOriginalToggle = container.querySelector('#translationShowOriginal');
   const retranslatePromptSelect = container.querySelector('#translationRetranslatePrompt');
-  const retranslateBtn = container.querySelector('#translationRetranslate');
-  const promptStatusEl = container.querySelector('#translationPromptStatus');
   // The fixture name is derived from the uploaded file name (the visible input was removed); shown
   // back to the user in the regression info line.
   let regressionNameValue = '';
@@ -257,9 +300,9 @@ export function createTranslationRequestsView() {
   // The target language the last completed run actually produced — set on submit and on
   // re-translate so the capture-fixture button reflects what would be captured, not the form.
   let lastTargetLang = '';
-  // True between a re-translate submit and its terminal poll, so the shared poller can replace the
-  // lingering "Re-translating…" prompt status with a done message when the run completes.
-  let retranslatePending = false;
+  // 'retranslate' | 'rerender' between a re-entry submit and its terminal poll, so the shared
+  // poller can replace the lingering "…ing" status with a done message when the run completes.
+  let pendingAction = '';
 
   function setStatus(message, kind = '') {
     statusEl.textContent = String(message || '');
@@ -268,29 +311,24 @@ export function createTranslationRequestsView() {
 
   function setBusy(nextBusy) {
     isBusy = Boolean(nextBusy);
-    submitBtn.disabled = isBusy || !selectedFile();
     fileInput.disabled = isBusy;
+    if (browseBtn) browseBtn.disabled = isBusy;
     targetInput.disabled = isBusy;
     modelSelect.disabled = isBusy;
     preserveHeuristicTextInput.disabled = isBusy;
     preserveUnchangedTextInput.disabled = isBusy;
     useGeometryColumnsInput.disabled = isBusy;
     renderSizeModeSelect.disabled = isBusy;
-    cancelBtn.disabled = !currentRequestId || isTerminalState(currentState());
-    retranslateLangSelect.disabled = isBusy;
+    eraseFillModeSelect.disabled = isBusy;
     retranslatePromptSelect.disabled = isBusy;
-    updateRetranslateState();
     renderRegressionInfo();
   }
 
-  function updateRetranslateState() {
-    const ready = Boolean(currentRequestId) && currentState() === 'completed';
-    retranslateBtn.disabled = isBusy || !ready;
-  }
-
-  function setPromptStatus(message, kind = '') {
-    promptStatusEl.textContent = String(message || '');
-    promptStatusEl.classList.toggle('is-error', kind === 'error');
+  // A completed run is in view whose caches (grouping/translations, TTL-bound) the re-entry
+  // endpoints can reuse. "Still cached" is the server's call: an expired source comes back as a
+  // 409 and surfaces in the status line.
+  function canReenter() {
+    return !isBusy && Boolean(currentRequestId) && currentState() === 'completed';
   }
 
   function selectedFile() {
@@ -316,7 +354,8 @@ export function createTranslationRequestsView() {
       preserve_heuristic_text: Boolean(preserveHeuristicTextInput.checked),
       preserve_unchanged_text: Boolean(preserveUnchangedTextInput.checked),
       use_geometry_columns: Boolean(useGeometryColumnsInput.checked),
-      render_size_mode: String(renderSizeModeSelect.value || 'min'),
+      render_size_mode: String(renderSizeModeSelect.value || 'median'),
+      erase_fill_mode: String(eraseFillModeSelect.value || 'flat'),
     };
     // Source is auto-detected downstream (llm-pool for translategemma) and unused by the generic
     // prompt; the dropdown was removed. Send a fixed 'auto' to satisfy the pipeline's required guard.
@@ -344,6 +383,7 @@ export function createTranslationRequestsView() {
     setRegressionStatus('');
     setBusy(true);
     setStatus('Submitting image request...');
+    showPending('Translating…');
     try {
       const formData = new FormData();
       formData.append('request_json', JSON.stringify(buildRequestPayload()));
@@ -358,6 +398,7 @@ export function createTranslationRequestsView() {
         renderOutputPreview(result);
       }
     } catch (err) {
+      hidePending();
       setStatus(formatApiError(err), 'error');
     } finally {
       setBusy(false);
@@ -372,10 +413,11 @@ export function createTranslationRequestsView() {
       if (isTerminalState(result?.state)) {
         stopPolling();
         renderOutputPreview(result);
-        finishRetranslate(result);
+        finishReentry(result);
       }
     } catch (err) {
       stopPolling();
+      hidePending();
       setStatus(formatApiError(err), 'error');
     } finally {
       setBusy(isBusy);
@@ -404,6 +446,7 @@ export function createTranslationRequestsView() {
       setStatus('Cancel sent.');
       if (isTerminalState(result?.state)) {
         stopPolling();
+        renderOutputPreview(result);
       }
     } catch (err) {
       setStatus(formatApiError(err), 'error');
@@ -413,12 +456,9 @@ export function createTranslationRequestsView() {
   }
 
   function populateLanguageSelect() {
-    const options = TRANSLATION_LANGUAGES
+    targetInput.innerHTML = TRANSLATION_LANGUAGES
       .map((l) => `<option value="${escapeAttr(l.code)}">${escapeHtml(`${l.flag} ${l.name}`)}</option>`)
       .join('');
-    for (const select of [targetInput, retranslateLangSelect]) {
-      select.innerHTML = options;
-    }
     targetInput.value = 'nl';
   }
 
@@ -430,7 +470,7 @@ export function createTranslationRequestsView() {
       savedPrompts = (result && result.prompts) || [];
     } catch (err) {
       savedPrompts = [];
-      setPromptStatus(formatApiError(err), 'error');
+      setStatus(formatApiError(err), 'error');
     }
     const previous = String(retranslatePromptSelect.value || '');
     retranslatePromptSelect.innerHTML = savedPrompts.length
@@ -440,13 +480,13 @@ export function createTranslationRequestsView() {
     setBusy(isBusy);
   }
 
+  // Fired by the top-bar language select changing while a completed run is in view.
   async function retranslateRequest() {
-    const sourceRequestId = currentRequestId;
-    if (!sourceRequestId || currentState() !== 'completed') return;
+    if (!canReenter()) return;
     const body = {};
     const promptId = String(retranslatePromptSelect.value || '');
     if (promptId) body.translation_prompt_id = promptId;
-    const lang = String(retranslateLangSelect.value || '');
+    const lang = String(targetInput.value || '').trim();
     if (lang) {
       body.target_lang_code = lang;
       lastTargetLang = lang;
@@ -456,41 +496,65 @@ export function createTranslationRequestsView() {
     body.preserve_heuristic_text = Boolean(preserveHeuristicTextInput.checked);
     body.preserve_unchanged_text = Boolean(preserveUnchangedTextInput.checked);
     body.use_geometry_columns = Boolean(useGeometryColumnsInput.checked);
-    body.render_size_mode = String(renderSizeModeSelect.value || 'min');
+    body.render_size_mode = String(renderSizeModeSelect.value || 'median');
+    body.erase_fill_mode = String(eraseFillModeSelect.value || 'flat');
+    await submitReentry('retranslate', `Re-translating cached units to ${lang || '?'}...`,
+      (sourceRequestId) => api.retranslateImageRequest(sourceRequestId, body));
+  }
+
+  // Fired by a Render select changing while a completed run is in view: re-render the shown
+  // result from its cached translations with the new flag — no new translation, so the A/B
+  // compares exactly the render.
+  async function rerenderRequest() {
+    if (!canReenter()) return;
+    const body = {
+      render_size_mode: String(renderSizeModeSelect.value || 'median'),
+      erase_fill_mode: String(eraseFillModeSelect.value || 'flat'),
+    };
+    await submitReentry('rerender', 'Re-rendering with the new render params...',
+      (sourceRequestId) => api.rerenderImageRequest(sourceRequestId, body));
+  }
+
+  async function submitReentry(action, message, submit) {
+    const sourceRequestId = currentRequestId;
     stopPolling();
-    // Keep the previous render visible until the new one replaces it — re-translate reuses the
+    // Keep the previous render visible until the new one replaces it — a re-entry reuses the
     // same image, so blanking the preview here only produces a flash.
     setRegressionStatus('');  // a new run invalidates any prior "captured / already captured" notice
     setBusy(true);
-    setStatus('Submitting re-translate...');
-    setPromptStatus('Re-translating cached units...');
-    retranslatePending = true;
+    setStatus(message);
+    showPending(action === 'rerender' ? 'Rendering…' : 'Translating…');
+    pendingAction = action;
     try {
-      const result = await api.retranslateImageRequest(sourceRequestId, body);
+      const result = await submit(sourceRequestId);
       applyLifecycle(result);
       currentRequestId = String(result?.request_id || '');
-      setStatus('Re-translate submitted.');
       if (currentRequestId && !isTerminalState(result?.state)) {
         startPolling();
       } else {
         renderOutputPreview(result);
-        finishRetranslate(result);
+        finishReentry(result);
       }
     } catch (err) {
-      retranslatePending = false;
+      pendingAction = '';
+      hidePending();
       setStatus(formatApiError(err), 'error');
-      setPromptStatus(formatApiError(err), 'error');
     } finally {
       setBusy(false);
     }
   }
 
-  function finishRetranslate(result) {
-    if (!retranslatePending) return;
-    retranslatePending = false;
-    setPromptStatus(String(result?.state) === 'completed'
-      ? `Re-translated to ${lastTargetLang || '?'}.`
-      : `Re-translate ${String(result?.state || 'ended')}.`);
+  function finishReentry(result) {
+    if (!pendingAction) return;
+    const action = pendingAction;
+    pendingAction = '';
+    if (String(result?.state) !== 'completed') {
+      setStatus(`${action === 'rerender' ? 'Re-render' : 'Re-translate'} ${String(result?.state || 'ended')}.`);
+    } else if (action === 'rerender') {
+      setStatus(`Re-rendered (${String(renderSizeModeSelect.value)}, ${String(eraseFillModeSelect.value)}).`);
+    } else {
+      setStatus(`Re-translated to ${lastTargetLang || '?'}.`);
+    }
   }
 
   function applyLifecycle(result) {
@@ -666,6 +730,33 @@ export function createTranslationRequestsView() {
     ].join('');
   }
 
+  // The "Original" frame shows the freshly SELECTED file when there is one; otherwise the run's
+  // input artifact from the server (a re-translate, or a completed run opened without re-picking).
+  function showOriginalFrame() {
+    const hasSelected = Boolean(inputPreview.getAttribute('src'));
+    const hasServer = Boolean(comparePreview.getAttribute('src'));
+    inputPreview.hidden = !hasSelected;
+    comparePreview.hidden = hasSelected || !hasServer;
+    inputEmpty.hidden = hasSelected || hasServer;
+    updateStageVisibility();
+  }
+
+  // "Show original" OFF (default) -> translated only, centered; ON -> original + translated side
+  // by side. Off == the ``is-single`` layout.
+  function applyViewMode() {
+    if (stageEl) stageEl.classList.toggle('is-single', !(showOriginalToggle && showOriginalToggle.checked));
+  }
+
+  // Empty (no image, no result) shows the drop zone; anything loaded shows the image stage.
+  function updateStageVisibility() {
+    const loaded = Boolean(selectedFile()) || Boolean(currentRequestId) || Boolean(lastPreviewResult);
+    if (dropzone) dropzone.hidden = loaded;
+    if (stageLoaded) stageLoaded.hidden = !loaded;
+    // The bar's image-only controls (show-original, artifact, zoom, reset) show only with an
+    // image; the target-language select stays visible always (set before the first drop).
+    if (stageEl) stageEl.classList.toggle('has-image', loaded);
+  }
+
   function updateInputPreview() {
     const file = selectedFile();
     if (inputObjectUrl) {
@@ -673,16 +764,12 @@ export function createTranslationRequestsView() {
       inputObjectUrl = '';
     }
     if (!file) {
-      inputPreview.hidden = true;
       inputPreview.removeAttribute('src');
-      inputEmpty.hidden = false;
-      setBusy(isBusy);
-      return;
+    } else {
+      inputObjectUrl = URL.createObjectURL(file);
+      inputPreview.src = inputObjectUrl;
     }
-    inputObjectUrl = URL.createObjectURL(file);
-    inputPreview.src = inputObjectUrl;
-    inputPreview.hidden = false;
-    inputEmpty.hidden = true;
+    showOriginalFrame();
     setBusy(isBusy);
   }
 
@@ -691,19 +778,33 @@ export function createTranslationRequestsView() {
     lastPreviewResult = null;
     previewArtifactSelect.innerHTML = '<option value="">No artifact</option>';
     previewArtifactSelect.disabled = true;
-    outputLabel.textContent = 'Artifact';
     outputPreview.hidden = true;
     outputPreview.removeAttribute('src');
+    outputPending.hidden = true;
     outputEmpty.hidden = false;
-    comparePreview.hidden = true;
     comparePreview.removeAttribute('src');
-    toggleInput.checked = false;
-    toggleLabel.hidden = true;
+    showOriginalFrame();
+  }
+
+  // The progress overlay in the translated frame: spinner + label + cancel. Shown over the
+  // previous render on a re-entry (the image stays visible under it).
+  function showPending(label) {
+    outputPendingLabel.textContent = String(label || 'Translating…');
+    outputEmpty.hidden = true;
+    outputPending.hidden = false;
+  }
+
+  function hidePending() {
+    outputPending.hidden = true;
+    outputEmpty.hidden = !outputPreview.hidden;
   }
 
   function updatePreviewZoom() {
     const value = Math.max(25, Math.min(180, Number(previewZoomInput.value) || 70));
-    container.style.setProperty('--translation-preview-size', `${value}%`);
+    // Zoom is relative to the image's NATIVE size (CSS ``zoom`` on the img), so the frame —
+    // and with it the whole page — grows or shrinks with the image instead of scrolling a
+    // fixed-height box.
+    container.style.setProperty('--translation-preview-zoom', String(value / 100));
     previewZoomValue.textContent = `${value}%`;
   }
 
@@ -717,27 +818,17 @@ export function createTranslationRequestsView() {
       clearOutputPreview();
       return;
     }
-    outputLabel.textContent = artifactLabel(artifactName);
     outputPreview.src = `/api/translation/requests/${encodeURIComponent(requestId)}/artifacts/${encodeURIComponent(artifactName)}?ts=${Date.now()}`;
     outputPreview.hidden = false;
     outputEmpty.hidden = true;
+    outputPending.hidden = true;
     const hasInput = Boolean(result?.response?.artifacts?.input);
     if (hasInput) {
       comparePreview.src = `/api/translation/requests/${encodeURIComponent(requestId)}/artifacts/input`;
-      toggleLabel.hidden = false;
     } else {
       comparePreview.removeAttribute('src');
-      toggleInput.checked = false;
-      toggleLabel.hidden = true;
     }
-    applyToggle();
-  }
-
-  function applyToggle() {
-    if (!outputPreview.getAttribute('src')) return;
-    const showOriginal = toggleInput.checked && Boolean(comparePreview.getAttribute('src'));
-    outputPreview.hidden = showOriginal;
-    comparePreview.hidden = !showOriginal;
+    showOriginalFrame();
   }
 
   function updateArtifactOptions(result) {
@@ -894,23 +985,68 @@ export function createTranslationRequestsView() {
     renderRegressionInfo();
   }
 
-  fileInput.addEventListener('change', updateInputPreview);
-  fileInput.addEventListener('change', () => {
+  // Picking (or dropping) an image previews it and immediately submits — no explicit Submit.
+  function onFileChosen() {
     const file = selectedFile();
     regressionNameValue = file ? String(file.name || '').replace(/\.[^.]+$/, '').trim() : '';
+    updateInputPreview();
     refreshRegression();
-  });
+    if (file) submitRequest();
+  }
+  fileInput.addEventListener('change', onFileChosen);
+
+  // "Choose another image": stop a run in flight, clear everything, back to the drop zone.
+  function resetImage() {
+    if (currentRequestId && !isTerminalState(currentState())) cancelRequest();
+    stopPolling();
+    fileInput.value = '';
+    currentRequestId = '';
+    clearOutputPreview();
+    updateInputPreview();
+    setStatus('');
+    updateStageVisibility();
+  }
+  if (browseBtn) browseBtn.addEventListener('click', () => fileInput.click());
+  if (resetBtn) resetBtn.addEventListener('click', resetImage);
+  if (cancelBtn) cancelBtn.addEventListener('click', cancelRequest);
+  if (showOriginalToggle) showOriginalToggle.addEventListener('change', applyViewMode);
+
+  // Drag-and-drop onto the empty-state zone.
+  if (dropzone) {
+    const stop = (event) => { event.preventDefault(); event.stopPropagation(); };
+    ['dragenter', 'dragover'].forEach((type) => dropzone.addEventListener(type, (event) => {
+      stop(event);
+      if (!isBusy) dropzone.classList.add('is-dragover');
+    }));
+    ['dragleave', 'dragend'].forEach((type) => dropzone.addEventListener(type, (event) => {
+      stop(event);
+      dropzone.classList.remove('is-dragover');
+    }));
+    dropzone.addEventListener('drop', (event) => {
+      stop(event);
+      dropzone.classList.remove('is-dragover');
+      const file = event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files[0];
+      if (!file || isBusy) return;
+      const dt = new DataTransfer();
+      dt.items.add(file);
+      fileInput.files = dt.files;
+      onFileChosen();
+    });
+  }
+
   regressionAddTestsetBtn.addEventListener('click', addToTestset);
   regressionCaptureBtn.addEventListener('click', captureFixture);
-  toggleInput.addEventListener('change', applyToggle);
   previewZoomInput.addEventListener('input', updatePreviewZoom);
   previewArtifactSelect.addEventListener('change', () => {
     if (lastPreviewResult) renderOutputPreview(lastPreviewResult);
   });
   modelSelect.addEventListener('change', updateModelSelectColor);
-  submitBtn.addEventListener('click', () => submitRequest());
-  cancelBtn.addEventListener('click', cancelRequest);
-  retranslateBtn.addEventListener('click', retranslateRequest);
+  // Switching target language on a completed run re-translates it in place (cached units, no
+  // VLM/OCR); changing a render param re-renders it in place (cached translations, no LLM at
+  // all). With nothing loaded these selects just set the values the next submit will use.
+  targetInput.addEventListener('change', retranslateRequest);
+  renderSizeModeSelect.addEventListener('change', rerenderRequest);
+  eraseFillModeSelect.addEventListener('change', rerenderRequest);
 
   container.__onDeactivate = () => {
     stopPolling();
@@ -924,11 +1060,11 @@ export function createTranslationRequestsView() {
   };
 
   clearOutputPreview();
+  applyViewMode();
   updatePreviewZoom();
   updateInputPreview();
   renderTimings(null);
   populateLanguageSelect();
-  retranslateLangSelect.value = String(targetInput.value || 'nl').trim() || 'nl';
   setBusy(false);
   loadPromptChoices();
   loadModelChoices();

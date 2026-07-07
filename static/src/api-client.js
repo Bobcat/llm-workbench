@@ -355,6 +355,14 @@ export const api = {
     });
   },
 
+  async rerenderImageRequest(sourceRequestId, body) {
+    return fetchJson(`/api/translation/requests/${encodeURIComponent(sourceRequestId)}/rerender`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body || {}),
+    });
+  },
+
   async getRegressionStatus(name) {
     return fetchJson(`/api/translation/regression/status?name=${encodeURIComponent(name || '')}`);
   },
