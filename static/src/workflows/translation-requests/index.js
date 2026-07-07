@@ -120,6 +120,13 @@ export function createTranslationRequestsView() {
                   </select>
                 </label>
                 <label class="translation-prompts-field">
+                  <span>Size metric</span>
+                  <select id="translationSizeMetricMode" title="Where a line's source size comes from. extent sizes from the OCR polygon's full ink extent; band clamps each line to its strong ink band scaled by the document's own norm, so sparse tall glyphs (parentheses, brackets) cannot inflate a line past its siblings. One-sided: band only ever shrinks an outlier.">
+                    <option value="extent" selected>extent — polygon height</option>
+                    <option value="band">band — clamp outliers to text band</option>
+                  </select>
+                </label>
+                <label class="translation-prompts-field">
                   <span>Width fit</span>
                   <select id="translationWidthFitMode" title="How a translation wider than its original line is fitted. footprint keeps it inside the original line's width (condense, then shrink); extend first widens into verified clean background right of the line (never over other text, ink or a surface change), so short list items keep their size.">
                     <option value="footprint" selected>footprint — exact fit</option>
@@ -262,6 +269,7 @@ export function createTranslationRequestsView() {
   const renderSizeModeSelect = container.querySelector('#translationRenderSizeMode');
   const eraseFillModeSelect = container.querySelector('#translationEraseFillMode');
   const widthFitModeSelect = container.querySelector('#translationWidthFitMode');
+  const sizeMetricModeSelect = container.querySelector('#translationSizeMetricMode');
   const detailEls = {
     vlmInput: container.querySelector('#trtVlmInput'),
     vlmResponse: container.querySelector('#trtVlmResponse'),
@@ -329,6 +337,7 @@ export function createTranslationRequestsView() {
     renderSizeModeSelect.disabled = isBusy;
     eraseFillModeSelect.disabled = isBusy;
     widthFitModeSelect.disabled = isBusy;
+    sizeMetricModeSelect.disabled = isBusy;
     retranslatePromptSelect.disabled = isBusy;
     renderRegressionInfo();
   }
@@ -366,6 +375,7 @@ export function createTranslationRequestsView() {
       render_size_mode: String(renderSizeModeSelect.value || 'median'),
       erase_fill_mode: String(eraseFillModeSelect.value || 'flat'),
       width_fit_mode: String(widthFitModeSelect.value || 'footprint'),
+      size_metric_mode: String(sizeMetricModeSelect.value || 'extent'),
     };
     // Source is auto-detected downstream (llm-pool for translategemma) and unused by the generic
     // prompt; the dropdown was removed. Send a fixed 'auto' to satisfy the pipeline's required guard.
@@ -509,6 +519,7 @@ export function createTranslationRequestsView() {
     body.render_size_mode = String(renderSizeModeSelect.value || 'median');
     body.erase_fill_mode = String(eraseFillModeSelect.value || 'flat');
     body.width_fit_mode = String(widthFitModeSelect.value || 'footprint');
+    body.size_metric_mode = String(sizeMetricModeSelect.value || 'extent');
     await submitReentry('retranslate', `Re-translating cached units to ${lang || '?'}...`,
       (sourceRequestId) => api.retranslateImageRequest(sourceRequestId, body));
   }
@@ -522,6 +533,7 @@ export function createTranslationRequestsView() {
       render_size_mode: String(renderSizeModeSelect.value || 'median'),
       erase_fill_mode: String(eraseFillModeSelect.value || 'flat'),
       width_fit_mode: String(widthFitModeSelect.value || 'footprint'),
+      size_metric_mode: String(sizeMetricModeSelect.value || 'extent'),
     };
     await submitReentry('rerender', 'Re-rendering with the new render params...',
       (sourceRequestId) => api.rerenderImageRequest(sourceRequestId, body));
@@ -1060,6 +1072,7 @@ export function createTranslationRequestsView() {
   renderSizeModeSelect.addEventListener('change', rerenderRequest);
   eraseFillModeSelect.addEventListener('change', rerenderRequest);
   widthFitModeSelect.addEventListener('change', rerenderRequest);
+  sizeMetricModeSelect.addEventListener('change', rerenderRequest);
 
   container.__onDeactivate = () => {
     stopPolling();
