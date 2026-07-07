@@ -114,9 +114,16 @@ export function createTranslationRequestsView() {
                 </label>
                 <label class="translation-prompts-field">
                   <span>Erase fill</span>
-                  <select id="translationEraseFillMode" title="How erased source text is filled. Currently a no-op: inpaint renders exactly like flat until a fill that beats flat lands (Telea and plane-fit were tried and removed 2026-07-06).">
+                  <select id="translationEraseFillMode" title="How erased source text is filled. flat paints each erased line with its sampled background colour; inpaint is the hybrid model-based fill — flat paint on designed flat ground, model reconstruction where the ground varies (GPU-only).">
                     <option value="flat" selected>flat — one colour per line</option>
-                    <option value="inpaint">inpaint — no-op (renders as flat)</option>
+                    <option value="inpaint">inpaint — hybrid model fill</option>
+                  </select>
+                </label>
+                <label class="translation-prompts-field">
+                  <span>Width fit</span>
+                  <select id="translationWidthFitMode" title="How a translation wider than its original line is fitted. footprint keeps it inside the original line's width (condense, then shrink); extend first widens into verified clean background right of the line (never over other text, ink or a surface change), so short list items keep their size.">
+                    <option value="footprint" selected>footprint — exact fit</option>
+                    <option value="extend">extend — grow into clean space</option>
                   </select>
                 </label>
               </div>
@@ -254,6 +261,7 @@ export function createTranslationRequestsView() {
   const useGeometryColumnsInput = container.querySelector('#translationUseGeometryColumns');
   const renderSizeModeSelect = container.querySelector('#translationRenderSizeMode');
   const eraseFillModeSelect = container.querySelector('#translationEraseFillMode');
+  const widthFitModeSelect = container.querySelector('#translationWidthFitMode');
   const detailEls = {
     vlmInput: container.querySelector('#trtVlmInput'),
     vlmResponse: container.querySelector('#trtVlmResponse'),
@@ -320,6 +328,7 @@ export function createTranslationRequestsView() {
     useGeometryColumnsInput.disabled = isBusy;
     renderSizeModeSelect.disabled = isBusy;
     eraseFillModeSelect.disabled = isBusy;
+    widthFitModeSelect.disabled = isBusy;
     retranslatePromptSelect.disabled = isBusy;
     renderRegressionInfo();
   }
@@ -356,6 +365,7 @@ export function createTranslationRequestsView() {
       use_geometry_columns: Boolean(useGeometryColumnsInput.checked),
       render_size_mode: String(renderSizeModeSelect.value || 'median'),
       erase_fill_mode: String(eraseFillModeSelect.value || 'flat'),
+      width_fit_mode: String(widthFitModeSelect.value || 'footprint'),
     };
     // Source is auto-detected downstream (llm-pool for translategemma) and unused by the generic
     // prompt; the dropdown was removed. Send a fixed 'auto' to satisfy the pipeline's required guard.
@@ -498,6 +508,7 @@ export function createTranslationRequestsView() {
     body.use_geometry_columns = Boolean(useGeometryColumnsInput.checked);
     body.render_size_mode = String(renderSizeModeSelect.value || 'median');
     body.erase_fill_mode = String(eraseFillModeSelect.value || 'flat');
+    body.width_fit_mode = String(widthFitModeSelect.value || 'footprint');
     await submitReentry('retranslate', `Re-translating cached units to ${lang || '?'}...`,
       (sourceRequestId) => api.retranslateImageRequest(sourceRequestId, body));
   }
@@ -510,6 +521,7 @@ export function createTranslationRequestsView() {
     const body = {
       render_size_mode: String(renderSizeModeSelect.value || 'median'),
       erase_fill_mode: String(eraseFillModeSelect.value || 'flat'),
+      width_fit_mode: String(widthFitModeSelect.value || 'footprint'),
     };
     await submitReentry('rerender', 'Re-rendering with the new render params...',
       (sourceRequestId) => api.rerenderImageRequest(sourceRequestId, body));
@@ -551,7 +563,7 @@ export function createTranslationRequestsView() {
     if (String(result?.state) !== 'completed') {
       setStatus(`${action === 'rerender' ? 'Re-render' : 'Re-translate'} ${String(result?.state || 'ended')}.`);
     } else if (action === 'rerender') {
-      setStatus(`Re-rendered (${String(renderSizeModeSelect.value)}, ${String(eraseFillModeSelect.value)}).`);
+      setStatus(`Re-rendered (${String(renderSizeModeSelect.value)}, ${String(eraseFillModeSelect.value)}, ${String(widthFitModeSelect.value)}).`);
     } else {
       setStatus(`Re-translated to ${lastTargetLang || '?'}.`);
     }
@@ -1047,6 +1059,7 @@ export function createTranslationRequestsView() {
   targetInput.addEventListener('change', retranslateRequest);
   renderSizeModeSelect.addEventListener('change', rerenderRequest);
   eraseFillModeSelect.addEventListener('change', rerenderRequest);
+  widthFitModeSelect.addEventListener('change', rerenderRequest);
 
   container.__onDeactivate = () => {
     stopPolling();
