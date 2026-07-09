@@ -280,6 +280,10 @@ def _normalize_admin_model(model: dict) -> dict:
         capabilities = {}
     generation_parameters = _dict_or_empty(model.get("generation_parameters"))
     image_to_video_parameters = _dict_or_empty(model.get("image_to_video_parameters"))
+    load_constraints = _dict_or_empty(model.get("load_constraints"))
+    load_recommendations = _dict_or_empty(model.get("load_recommendations"))
+    load_override = _dict_or_empty(model.get("load_override"))
+    raw_definition = _dict_or_empty(model.get("definition"))
 
     backend = str(model.get("backend") or model.get("resolved_backend") or "").strip()
     target_inflight = _to_non_negative_int(
@@ -302,7 +306,11 @@ def _normalize_admin_model(model: dict) -> dict:
         "capabilities": capabilities,
         "generation_parameters": generation_parameters,
         "image_to_video_parameters": image_to_video_parameters,
+        "load_constraints": load_constraints,
+        "load_recommendations": load_recommendations,
+        "load_override": load_override,
         "definition": {
+            **raw_definition,
             "model_path": model.get("model_path"),
             "backend": backend,
             "enabled": bool(model.get("enabled", model.get("configured_enabled", False))),

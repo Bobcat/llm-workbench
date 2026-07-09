@@ -60,10 +60,11 @@ export function createVideoPoolView() {
   let refreshIntervalId = null;
   let refreshToken = 0;
   const expandedModels = new Set();
+  const loadSettingDrafts = new Map();
 
   function render() {
     const sorted = [...models].sort((left, right) => String(left.name || '').localeCompare(String(right.name || ''), 'nl'));
-    rowsHost.innerHTML = buildRowsMarkup(sorted, expandedModels, activeActionModel, activeActionKind);
+    rowsHost.innerHTML = buildRowsMarkup(sorted, expandedModels, activeActionModel, activeActionKind, loadSettingDrafts);
     statsEl.textContent = buildStatsText(models);
     addressEl.textContent = `${poolAddressLabel} - ${buildGpuUsageLabel(gpuMemory)}`;
     refreshEl.textContent = lastError
@@ -103,6 +104,7 @@ export function createVideoPoolView() {
       lastError = '';
       lastRefreshLabel = formatClockTime(new Date());
       pruneExpandedModels(expandedModels, models);
+      pruneLoadSettingDrafts(loadSettingDrafts, models);
     } catch (err) {
       if (!container.isConnected || token !== refreshToken) return;
       models = [];
@@ -111,6 +113,7 @@ export function createVideoPoolView() {
       lastError = formatApiError(err);
       lastRefreshLabel = formatClockTime(new Date());
       expandedModels.clear();
+      loadSettingDrafts.clear();
     }
     render();
   }
@@ -123,7 +126,8 @@ export function createVideoPoolView() {
 
     try {
       if (kind === 'load') {
-        await api.loadVideoPoolAdminModel(modelName);
+        const model = models.find((entry) => entry.name === modelName) || null;
+        await api.loadVideoPoolAdminModel(modelName, buildLoadPayload(model, loadSettingDrafts.get(modelName)));
       } else if (kind === 'unload') {
         await api.unloadVideoPoolAdminModel(modelName);
       }
@@ -162,6 +166,28 @@ export function createVideoPoolView() {
       expandedModels.add(modelName);
     }
     render();
+  });
+
+  container.addEventListener('input', (event) => {
+    const control = event.target.closest('input[data-load-setting][data-model]');
+    if (!control || !container.contains(control)) return;
+    const modelName = String(control.dataset.model || '');
+    const settingKey = String(control.dataset.loadSetting || '');
+    const model = models.find((entry) => entry.name === modelName) || null;
+    const value = parseLoadSettingControlValue(model, settingKey, control.value);
+    if (!modelName || !settingKey || value === undefined) return;
+    setLoadSettingDraft(loadSettingDrafts, modelName, settingKey, value);
+  });
+
+  container.addEventListener('change', (event) => {
+    const control = event.target.closest('select[data-load-setting][data-model]');
+    if (!control || !container.contains(control)) return;
+    const modelName = String(control.dataset.model || '');
+    const settingKey = String(control.dataset.loadSetting || '');
+    const model = models.find((entry) => entry.name === modelName) || null;
+    const value = parseLoadSettingControlValue(model, settingKey, control.value);
+    if (!modelName || !settingKey || value === undefined) return;
+    setLoadSettingDraft(loadSettingDrafts, modelName, settingKey, value);
   });
 
   container.__onActivate = () => {
@@ -205,12 +231,15 @@ function normalizeModelsPayload(payload, gpuPayload) {
       vram_estimate_mib: toNullableNonNegativeInt(vramEntry.mib ?? model?.vram_estimate_mib),
       vram_estimate_source: String(vramEntry.source ?? model?.vram_estimate_source ?? ''),
       capabilities: asPlainObject(model?.capabilities),
+      load_constraints: asPlainObject(model?.load_constraints),
+      load_recommendations: asPlainObject(model?.load_recommendations),
+      load_override: asPlainObject(model?.load_override),
       definition: asPlainObject(model?.definition),
     };
   });
 }
 
-function buildRowsMarkup(models, expandedModels, activeActionModel, activeActionKind) {
+function buildRowsMarkup(models, expandedModels, activeActionModel, activeActionKind, loadSettingDrafts) {
   if (!models.length) {
     return `
       <article class="llm-pool-row">
@@ -251,6 +280,10 @@ function buildRowsMarkup(models, expandedModels, activeActionModel, activeAction
     const targetInflight = `${model.configured_target_inflight} configured / ${model.effective_target_inflight} effective`;
     const capabilities = buildCapabilitiesSummary(model.capabilities);
     const lastError = model.last_error == null || model.last_error === '' ? 'none' : String(model.last_error);
+    const loadSettingsHtml = buildLoadSettingsMarkup(model, loadSettingDrafts.get(name), runtimeForUi);
+    const definitionGridClass = loadSettingsHtml
+      ? 'llm-pool-definition-grid llm-pool-definition-grid-with-divider'
+      : 'llm-pool-definition-grid';
     const rowClass = [
       'llm-pool-row',
       'is-expandable',
@@ -283,7 +316,8 @@ function buildRowsMarkup(models, expandedModels, activeActionModel, activeAction
         <div class="llm-pool-cell vram ${vramClassForRuntime(runtimeForUi)}">${vramHtml}</div>
       </article>
       <article class="llm-pool-row-details${isExpanded ? ' is-open' : ''}" id="${detailsId}" ${isExpanded ? '' : 'hidden'}>
-        <div class="llm-pool-definition-grid">
+        ${loadSettingsHtml}
+        <div class="${definitionGridClass}">
           <div><span>Path</span><code>${escapeHtml(modelPath)}</code></div>
           <div><span>Backend</span><strong>${escapeHtml(backend)}</strong></div>
           <div><span>Configured enabled</span><strong>${escapeHtml(String(model.configured_enabled ?? '-'))}</strong></div>
@@ -295,6 +329,94 @@ function buildRowsMarkup(models, expandedModels, activeActionModel, activeAction
       </article>
     `;
   }).join('');
+}
+
+function buildLoadSettingsMarkup(model, draft, runtimeState) {
+  const constraints = asPlainObject(model?.load_constraints);
+  const entries = Object.entries(constraints);
+  if (!entries.length) return '';
+  const canConfigure = runtimeState === 'unloaded' || runtimeState === 'failed' || runtimeState === 'error';
+  const controls = entries.map(([key, definition]) => buildLoadSettingMarkup({
+    modelName: model.name,
+    key,
+    definition,
+    value: getDraftOrEffectiveLoadValue(model, draft, key, definition),
+    disabled: !canConfigure,
+  })).filter(Boolean);
+  if (!controls.length) return '';
+  const compactColumnCount = Math.min(Math.max(controls.length, 1), 3);
+  return `
+    <div class="llm-pool-load-settings">
+      <div class="llm-pool-load-settings-compact llm-pool-load-settings-compact-${compactColumnCount}">
+        ${controls.join('')}
+      </div>
+    </div>
+  `;
+}
+
+function buildLoadSettingMarkup({modelName, key, definition, value, disabled}) {
+  const kind = String(definition?.kind || '').trim();
+  const label = parameterLabel(definition, key);
+  if (kind === 'enum' || kind === 'boolean') {
+    const options = kind === 'boolean' ? ['false', 'true'] : enumValues(definition);
+    if (!options.length) return '';
+    const selectedValue = kind === 'boolean' ? String(value === true || value === 'true') : String(value ?? '');
+    return `
+      <div class="llm-pool-load-setting">
+        <span>${escapeHtml(label)}</span>
+        <select
+          class="llm-pool-load-select"
+          data-load-setting="${escapeAttr(key)}"
+          data-model="${escapeAttr(modelName)}"
+          ${disabled ? 'disabled' : ''}
+        >
+          ${options.map((option) => {
+            const selected = String(option) === selectedValue ? ' selected' : '';
+            return `<option value="${escapeAttr(String(option))}"${selected}>${escapeHtml(String(option))}</option>`;
+          }).join('')}
+        </select>
+      </div>
+    `;
+  }
+  if (kind === 'integer' || kind === 'number' || kind === 'float' || kind === 'integer_or_null' || kind === 'number_or_null') {
+    const minAttr = definition?.minimum == null ? '' : ` min="${escapeAttr(String(definition.minimum))}"`;
+    const maxAttr = definition?.maximum == null ? '' : ` max="${escapeAttr(String(definition.maximum))}"`;
+    const step = definition?.step == null ? (kind === 'integer' || kind === 'integer_or_null' ? 1 : 0.1) : definition.step;
+    return `
+      <div class="llm-pool-load-setting">
+        <span>${escapeHtml(label)}</span>
+        <input
+          class="llm-pool-load-input"
+          type="number"
+          ${minAttr}
+          ${maxAttr}
+          step="${escapeAttr(String(step))}"
+          value="${escapeAttr(formatLoadInputValue(value))}"
+          data-load-setting="${escapeAttr(key)}"
+          data-model="${escapeAttr(modelName)}"
+          ${disabled ? 'disabled' : ''}
+        />
+      </div>
+    `;
+  }
+  if (kind === 'string' || kind === 'string_or_null' || kind === 'integer_list') {
+    return `
+      <div class="llm-pool-load-setting">
+        <span>${escapeHtml(label)}</span>
+        <input
+          class="llm-pool-load-input"
+          type="text"
+          value="${escapeAttr(formatLoadInputValue(value))}"
+          data-load-setting="${escapeAttr(key)}"
+          data-model="${escapeAttr(modelName)}"
+          autocomplete="off"
+          spellcheck="false"
+          ${disabled ? 'disabled' : ''}
+        />
+      </div>
+    `;
+  }
+  return '';
 }
 
 function asPlainObject(value) {
@@ -379,6 +501,98 @@ function buildCapabilitiesSummary(capabilities) {
     outputModalities.length ? `out: ${outputModalities.join(', ')}` : '',
   ].filter(Boolean);
   return parts.join(' / ') || '-';
+}
+
+function getDraftOrEffectiveLoadValue(model, draft, key, definition) {
+  if (draft && Object.prototype.hasOwnProperty.call(draft, key)) {
+    return draft[key];
+  }
+  if (Object.prototype.hasOwnProperty.call(model?.load_override || {}, key)) {
+    return model.load_override[key];
+  }
+  if (Object.prototype.hasOwnProperty.call(model?.definition || {}, key)) {
+    return model.definition[key];
+  }
+  return definition?.default;
+}
+
+function parseLoadSettingControlValue(model, key, rawValue) {
+  const definition = model?.load_constraints?.[key];
+  const kind = String(definition?.kind || '').trim();
+  const text = String(rawValue ?? '').trim();
+  if (!kind) return undefined;
+  if (kind === 'boolean') {
+    return text === 'true';
+  }
+  if (kind === 'integer') {
+    const parsed = Number.parseInt(text, 10);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  if (kind === 'integer_or_null') {
+    if (!text) return null;
+    const parsed = Number.parseInt(text, 10);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  if (kind === 'number' || kind === 'float') {
+    const parsed = Number(text);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  if (kind === 'number_or_null') {
+    if (!text) return null;
+    const parsed = Number(text);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  if (kind === 'string_or_null') {
+    return text || null;
+  }
+  if (kind === 'integer_list') {
+    if (!text) return [];
+    const values = text.split(',').map((part) => Number.parseInt(part.trim(), 10));
+    return values.every((value) => Number.isFinite(value)) ? values : undefined;
+  }
+  return text;
+}
+
+function setLoadSettingDraft(drafts, modelName, key, value) {
+  const draft = {...(drafts.get(modelName) || {})};
+  draft[key] = value;
+  drafts.set(modelName, draft);
+}
+
+function pruneLoadSettingDrafts(drafts, models) {
+  const known = new Set(models.map((model) => model.name));
+  [...drafts.keys()].forEach((name) => {
+    if (!known.has(name)) drafts.delete(name);
+  });
+}
+
+function buildLoadPayload(model, draft) {
+  if (!model || !draft || typeof draft !== 'object') return {};
+  const constraints = asPlainObject(model.load_constraints);
+  const payload = {};
+  Object.entries(draft).forEach(([key, value]) => {
+    if (Object.prototype.hasOwnProperty.call(constraints, key)) {
+      payload[key] = value;
+    }
+  });
+  return payload;
+}
+
+function parameterLabel(definition, fallback) {
+  const label = String(definition?.label || '').trim();
+  return label || fallback;
+}
+
+function enumValues(definition) {
+  return Array.isArray(definition?.allowed_values)
+    ? definition.allowed_values.map((item) => String(item)).filter(Boolean)
+    : [];
+}
+
+function formatLoadInputValue(value) {
+  if (value == null) return '';
+  if (Array.isArray(value)) return value.join(', ');
+  return String(value);
 }
 
 function buildStatsText(models) {

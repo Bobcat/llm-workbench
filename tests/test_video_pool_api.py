@@ -124,6 +124,13 @@ class VideoPoolApiTests(unittest.TestCase):
                     "image_to_video_parameters": {
                         "duration_seconds": {"kind": "number", "target": "request", "default": 5.0},
                     },
+                    "load_constraints": {
+                        "wan_vae_tiling": {"kind": "boolean", "default": True},
+                    },
+                    "load_recommendations": {},
+                    "load_override": {
+                        "wan_vae_tiling": False,
+                    },
                     "capabilities": {
                         "tasks": ["text_to_video", "image_to_video"],
                         "input_modalities": ["text", "image"],
@@ -148,6 +155,8 @@ class VideoPoolApiTests(unittest.TestCase):
         self.assertEqual(payload["models"][0]["definition"]["recommended_guidance"], 1.0)
         self.assertEqual(payload["models"][0]["generation_parameters"]["steps"]["default"], 4)
         self.assertEqual(payload["models"][0]["image_to_video_parameters"]["duration_seconds"]["default"], 5.0)
+        self.assertEqual(payload["models"][0]["load_constraints"]["wan_vae_tiling"]["default"], True)
+        self.assertEqual(payload["models"][0]["load_override"]["wan_vae_tiling"], False)
         request_json.assert_called_once_with(method="GET", path="/v1/admin/models", timeout=3.0)
 
     def test_video_generation_forwards_payload_and_rewrites_artifact_url(self) -> None:

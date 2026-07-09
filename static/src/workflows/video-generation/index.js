@@ -9,6 +9,12 @@ const DEFAULT_PARAMETER_LABELS = {
   num_frames: 'Frames',
   steps: 'Steps',
   guidance: 'Guidance',
+  guidance_2: 'guidance_scale_2',
+  negative_prompt: 'negative_prompt',
+  max_sequence_length: 'max_sequence_length',
+  use_prompt_enhancer: 'use_prompt_enhancer',
+  lora_name: 'lora_name',
+  lora_strength: 'lora_strength',
   seed: 'Seed',
   quality: 'Quality',
 };
@@ -60,8 +66,35 @@ export function createVideoGenerationView() {
                   <input id="videoGenerationGuidance" type="number" min="0" max="20" step="0.1" value="1">
                 </label>
                 <label class="translation-prompts-field">
+                  <span data-parameter-label="guidance_2">guidance_scale_2</span>
+                  <input id="videoGenerationGuidance2" type="number" min="0" max="20" step="0.1" placeholder="Default">
+                </label>
+                <label class="translation-prompts-field">
+                  <span data-parameter-label="max_sequence_length">max_sequence_length</span>
+                  <input id="videoGenerationMaxSequenceLength" type="number" min="64" max="1024" step="64" value="512">
+                </label>
+                <label class="translation-prompts-field">
+                  <span data-parameter-label="use_prompt_enhancer">use_prompt_enhancer</span>
+                  <select id="videoGenerationUsePromptEnhancer">
+                    <option value="false">false</option>
+                    <option value="true">true</option>
+                  </select>
+                </label>
+                <label class="translation-prompts-field">
                   <span data-parameter-label="seed">Seed</span>
                   <input id="videoGenerationSeed" type="number" step="1" placeholder="Random">
+                </label>
+                <label class="translation-prompts-field">
+                  <span data-parameter-label="negative_prompt">negative_prompt</span>
+                  <input id="videoGenerationNegativePrompt" type="text" autocomplete="off" spellcheck="false">
+                </label>
+                <label class="translation-prompts-field">
+                  <span data-parameter-label="lora_name">lora_name</span>
+                  <input id="videoGenerationLoraName" type="text" autocomplete="off" spellcheck="false" placeholder="None">
+                </label>
+                <label class="translation-prompts-field">
+                  <span data-parameter-label="lora_strength">lora_strength</span>
+                  <input id="videoGenerationLoraStrength" type="number" min="0" max="3" step="0.05" placeholder="Default">
                 </label>
                 <label class="translation-prompts-field video-generation-quality-field" hidden>
                   <span data-parameter-label="quality">Quality</span>
@@ -120,7 +153,13 @@ export function createVideoGenerationView() {
   const framesEl = container.querySelector('#videoGenerationFrames');
   const stepsEl = container.querySelector('#videoGenerationSteps');
   const guidanceEl = container.querySelector('#videoGenerationGuidance');
+  const guidance2El = container.querySelector('#videoGenerationGuidance2');
+  const maxSequenceLengthEl = container.querySelector('#videoGenerationMaxSequenceLength');
+  const usePromptEnhancerEl = container.querySelector('#videoGenerationUsePromptEnhancer');
   const seedEl = container.querySelector('#videoGenerationSeed');
+  const negativePromptEl = container.querySelector('#videoGenerationNegativePrompt');
+  const loraNameEl = container.querySelector('#videoGenerationLoraName');
+  const loraStrengthEl = container.querySelector('#videoGenerationLoraStrength');
   const qualityField = container.querySelector('.video-generation-quality-field');
   const qualityEl = container.querySelector('#videoGenerationQuality');
   const outputZoomEl = container.querySelector('#videoGenerationOutputZoom');
@@ -201,11 +240,8 @@ export function createVideoGenerationView() {
 
   function applyParameterSchema({ reset = false } = {}) {
     const model = selectedModel();
-    const operation = activeOperation();
     const schema = activeParameterSchema();
-    parametersSummaryEl.textContent = operation === 'image_to_video'
-      ? 'Image-to-video parameters'
-      : 'Generation parameters';
+    parametersSummaryEl.textContent = 'Generation parameters';
 
     applyParameterLabels(schema);
     configureEnumControl(sizeEl, schema.size, { reset, fallbackValues: ['832x480'] });
@@ -215,7 +251,13 @@ export function createVideoGenerationView() {
     configureOptionalIntegerControl(framesEl, schema.num_frames, { reset, hardMin: 1, hardMax: 600 });
     configureIntegerControl(stepsEl, schema.steps, { reset, fallback: model?.recommendedSteps || 4, hardMin: 1, hardMax: 80 });
     configureNumberControl(guidanceEl, schema.guidance, { reset, fallback: model?.recommendedGuidance ?? 1, hardMin: 0, hardMax: 20 });
+    configureOptionalNumberControl(guidance2El, schema.guidance_2, { reset, hardMin: 0, hardMax: 20 });
+    configureIntegerControl(maxSequenceLengthEl, schema.max_sequence_length, { reset, fallback: 512, hardMin: 64, hardMax: 1024 });
+    configureBooleanControl(usePromptEnhancerEl, schema.use_prompt_enhancer, { reset });
     configureOptionalIntegerControl(seedEl, schema.seed, { reset, hardMin: 0, hardMax: Number.MAX_SAFE_INTEGER });
+    configureStringControl(negativePromptEl, schema.negative_prompt, { reset });
+    configureStringControl(loraNameEl, schema.lora_name, { reset });
+    configureOptionalNumberControl(loraStrengthEl, schema.lora_strength, { reset, hardMin: 0, hardMax: 3 });
     configureEnumControl(qualityEl, schema.quality, {
       reset,
       fallbackValues: ['auto', 'low', 'medium', 'high'],
@@ -294,6 +336,36 @@ export function createVideoGenerationView() {
     input.closest('label').hidden = !definition;
     const nextValue = reset ? defaultValue : input.value;
     input.value = String(clampNumber(nextValue, min, max, defaultValue));
+  }
+
+  function configureOptionalNumberControl(input, definition, { reset, hardMin, hardMax }) {
+    const min = parameterNumber(definition?.minimum, hardMin);
+    const max = parameterNumber(definition?.maximum, hardMax);
+    input.min = String(min);
+    input.max = String(max);
+    input.step = String(parameterNumber(definition?.step, 0.1));
+    input.hidden = !definition;
+    input.closest('label').hidden = !definition;
+    if (reset) {
+      const defaultValue = definition?.default;
+      input.value = defaultValue == null ? '' : String(clampNumber(defaultValue, min, max, min));
+    }
+  }
+
+  function configureBooleanControl(select, definition, { reset }) {
+    select.hidden = !definition;
+    select.closest('label').hidden = !definition;
+    if (reset) {
+      select.value = definition?.default === true ? 'true' : 'false';
+    }
+  }
+
+  function configureStringControl(input, definition, { reset }) {
+    input.hidden = !definition;
+    input.closest('label').hidden = !definition;
+    if (reset) {
+      input.value = definition?.default == null ? '' : String(definition.default);
+    }
   }
 
   function renderModelOptions() {
@@ -425,6 +497,48 @@ export function createVideoGenerationView() {
         parameterNumber(schema.guidance.maximum, 20),
         parameterNumber(schema.guidance.default, model?.recommendedGuidance ?? 1)
       );
+    }
+    if (schema.guidance_2) {
+      const value = parseOptionalNumber(guidance2El.value);
+      if (value != null) {
+        metadata.guidance_2 = clampNumber(
+          value,
+          parameterNumber(schema.guidance_2.minimum, 0),
+          parameterNumber(schema.guidance_2.maximum, 20),
+          value
+        );
+      }
+    }
+    if (schema.max_sequence_length) {
+      metadata.max_sequence_length = clampInt(
+        maxSequenceLengthEl.value,
+        parameterNumber(schema.max_sequence_length.minimum, 64),
+        parameterNumber(schema.max_sequence_length.maximum, 1024),
+        parameterNumber(schema.max_sequence_length.default, 512)
+      );
+    }
+    if (schema.negative_prompt) {
+      metadata.negative_prompt = String(negativePromptEl.value || '');
+    }
+    if (schema.use_prompt_enhancer) {
+      metadata.use_prompt_enhancer = usePromptEnhancerEl.value === 'true';
+    }
+    if (schema.lora_name) {
+      const loraName = String(loraNameEl.value || '').trim();
+      if (loraName) {
+        metadata.lora_name = loraName;
+      }
+    }
+    if (schema.lora_strength) {
+      const loraStrength = parseOptionalNumber(loraStrengthEl.value);
+      if (loraStrength != null) {
+        metadata.lora_strength = clampNumber(
+          loraStrength,
+          parameterNumber(schema.lora_strength.minimum, 0),
+          parameterNumber(schema.lora_strength.maximum, 3),
+          loraStrength
+        );
+      }
     }
 
     const payload = {
@@ -653,6 +767,13 @@ function parseOptionalInt(value) {
   const text = String(value || '').trim();
   if (!text) return null;
   const parsed = Number.parseInt(text, 10);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function parseOptionalNumber(value) {
+  const text = String(value || '').trim();
+  if (!text) return null;
+  const parsed = Number(text);
   return Number.isFinite(parsed) ? parsed : null;
 }
 
