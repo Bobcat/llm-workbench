@@ -3636,7 +3636,13 @@
 
 /* Progress / result status, on its own line below the images. */
 .translation-requests-view .translation-requests-status {
-  min-height: 1.2em;
+  min-height: 0;
+}
+
+/* Empty (the routine info is suppressed in setStatus) -> take no space, so the control
+   groups sit right under the images; only a real error message reopens it. */
+.translation-requests-view .translation-requests-status:empty {
+  display: none;
 }
 
 /* "Show original" toggle switch (label before the switch). */
@@ -3831,6 +3837,34 @@
   display: grid;
   gap: 10px;
   padding-top: 10px;
+}
+
+/* Render options: wrap the compact dropdowns into as many columns as fit instead of
+   stacking five full-width rows. Each select shrinks to its column (long option labels
+   truncate; the full text stays in the title tooltip). */
+.translation-requests-view .translation-requests-render-grid {
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 8px 12px;
+}
+
+.translation-requests-view .translation-requests-render-grid select {
+  min-width: 0;
+  width: 100%;
+  text-overflow: ellipsis;
+}
+
+/* Grouping + translation model dropdowns side by side when the panel is wide enough,
+   stacking to one column on a narrow screen. */
+.translation-requests-view .translation-requests-model-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px 12px;
+}
+
+.translation-requests-view .translation-requests-model-grid select {
+  min-width: 0;
+  width: 100%;
+  text-overflow: ellipsis;
 }
 
 .translation-requests-view .translation-requests-details-body textarea {

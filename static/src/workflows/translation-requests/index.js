@@ -102,9 +102,9 @@ export function createTranslationRequestsView() {
           </section>
 
           <section class="translation-requests-controls">
-            <details class="translation-prompts-system-details translation-requests-details" open>
+            <details class="translation-prompts-system-details translation-requests-details">
               <summary>Render</summary>
-              <div class="translation-requests-details-body">
+              <div class="translation-requests-details-body translation-requests-render-grid">
                 <label class="translation-prompts-field">
                   <span>Render size mode</span>
                   <select id="translationRenderSizeMode" title="How a render group's one font size is chosen from its lines: median resists one under-measured (lowercase) line dragging the whole block down; min never overflows the smallest line's band. Changing this re-renders the shown result from its cached translations (no new translation).">
@@ -115,37 +115,46 @@ export function createTranslationRequestsView() {
                 <label class="translation-prompts-field">
                   <span>Erase fill</span>
                   <select id="translationEraseFillMode" title="How erased source text is filled. flat paints each erased line with its sampled background colour; inpaint is the hybrid model-based fill — flat paint on designed flat ground, model reconstruction where the ground varies (GPU-only).">
-                    <option value="flat" selected>flat — one colour per line</option>
-                    <option value="inpaint">inpaint — hybrid model fill</option>
+                    <option value="flat">flat — one colour</option>
+                    <option value="inpaint" selected>inpaint — hybrid fill</option>
                   </select>
                 </label>
                 <label class="translation-prompts-field">
                   <span>Size metric</span>
                   <select id="translationSizeMetricMode" title="Where a line's source size comes from. extent sizes from the OCR polygon's full ink extent; band clamps each line to its strong ink band scaled by the document's own norm, so sparse tall glyphs (parentheses, brackets) cannot inflate a line past its siblings. One-sided: band only ever shrinks an outlier.">
-                    <option value="extent" selected>extent — polygon height</option>
-                    <option value="band">band — clamp outliers to text band</option>
+                    <option value="extent" selected>extent — polygon</option>
+                    <option value="band">band — clamp outliers</option>
+                  </select>
+                </label>
+                <label class="translation-prompts-field">
+                  <span>Size cohort</span>
+                  <select id="translationSizeCohortMode" title="Cross-element size uniformity from the VLM font-size (pt) label. off sizes each element from its own OCR true-height. vlm groups elements the VLM gave one pt and, when their OCR heights agree, snaps the whole cohort to its OCR median — so a list the VLM judged one size renders uniform, and a short item sizes up and re-wraps over its lines instead of collapsing to one tiny line. A cohort whose OCR heights disagree keeps per-element sizing.">
+                    <option value="off" selected>off — per element</option>
+                    <option value="vlm">vlm — snap siblings</option>
                   </select>
                 </label>
                 <label class="translation-prompts-field">
                   <span>Width fit</span>
                   <select id="translationWidthFitMode" title="How a translation wider than its original line is fitted. footprint keeps it inside the original line's width (condense, then shrink); extend first widens into verified clean background right of the line (never over other text, ink or a surface change), so short list items keep their size.">
                     <option value="footprint" selected>footprint — exact fit</option>
-                    <option value="extend">extend — grow into clean space</option>
+                    <option value="extend">extend — grow</option>
                   </select>
                 </label>
               </div>
             </details>
-            <details class="translation-prompts-system-details translation-requests-details" open>
+            <details class="translation-prompts-system-details translation-requests-details">
               <summary>Settings</summary>
               <div class="translation-requests-details-body">
-                <label class="translation-prompts-field">
-                  <span>Grouping model</span>
-                  <select id="translationRequestModel"><option value="">Loading models…</option></select>
-                </label>
-                <label class="translation-prompts-field">
-                  <span>Translation model</span>
-                  <select id="translationRequestTranslatorModel"><option value="">Same as grouping model</option></select>
-                </label>
+                <div class="translation-requests-model-grid">
+                  <label class="translation-prompts-field">
+                    <span>Grouping model</span>
+                    <select id="translationRequestModel"><option value="">Loading models…</option></select>
+                  </label>
+                  <label class="translation-prompts-field">
+                    <span>Translation model</span>
+                    <select id="translationRequestTranslatorModel"><option value="">Same as grouping model</option></select>
+                  </label>
+                </div>
                 <div class="translation-requests-options-row">
                   <label class="translation-requests-option">
                     <input id="translationPreserveHeuristicText" type="checkbox" checked>
@@ -166,17 +175,23 @@ export function createTranslationRequestsView() {
                 </label>
               </div>
             </details>
-            <div class="translation-requests-controls-cols">
-              <section class="translation-prompts-stats-block translation-requests-regression">
-                <div class="translation-requests-timings-title">Regression fixture</div>
+            <details class="translation-prompts-system-details translation-requests-details">
+              <summary>Regression fixture</summary>
+              <div class="translation-requests-details-body translation-requests-regression">
                 <div class="translation-prompts-inline-status" id="translationRegressionInfo"></div>
                 <div class="translation-prompts-run-actions">
                   <button type="button" id="translationRegressionAddTestset" disabled title="Copy this image into the testset">Add to testset</button>
                   <button type="button" id="translationRegressionCapture" disabled title="Freeze this completed result as a regression fixture (frozen units + re-OCR snapshot)">Capture fixture</button>
                 </div>
                 <div class="translation-prompts-inline-status" id="translationRegressionStatus"></div>
-              </section>
-            </div>
+              </div>
+            </details>
+            <details class="translation-prompts-system-details translation-requests-details">
+              <summary>Timings</summary>
+              <div class="translation-requests-details-body">
+                <div class="translation-requests-timings" id="translationRequestTimings"></div>
+              </div>
+            </details>
             <div class="translation-requests-controls-cols">
               <section class="translation-prompts-stats-block">
                 <div class="translation-prompts-stat translation-requests-id-stat">
@@ -197,10 +212,6 @@ export function createTranslationRequestsView() {
                     <strong id="translationRequestStatQueue">-</strong>
                   </div>
                 </div>
-              </section>
-              <section class="translation-prompts-stats-block">
-                <div class="translation-requests-timings-title">Timings</div>
-                <div class="translation-requests-timings" id="translationRequestTimings"></div>
               </section>
             </div>
             <details class="translation-prompts-system-details translation-requests-details">
@@ -270,6 +281,7 @@ export function createTranslationRequestsView() {
   const eraseFillModeSelect = container.querySelector('#translationEraseFillMode');
   const widthFitModeSelect = container.querySelector('#translationWidthFitMode');
   const sizeMetricModeSelect = container.querySelector('#translationSizeMetricMode');
+  const sizeCohortModeSelect = container.querySelector('#translationSizeCohortMode');
   const detailEls = {
     vlmInput: container.querySelector('#trtVlmInput'),
     vlmResponse: container.querySelector('#trtVlmResponse'),
@@ -321,7 +333,10 @@ export function createTranslationRequestsView() {
   let pendingAction = '';
 
   function setStatus(message, kind = '') {
-    statusEl.textContent = String(message || '');
+    // Only errors are shown; the routine "Request submitted." / "Re-rendered." chatter is
+    // suppressed so the status line stays empty (and collapses, see CSS :empty) and the
+    // control groups sit close under the images. Progress still shows via the pending overlay.
+    statusEl.textContent = kind === 'error' ? String(message || '') : '';
     statusEl.classList.toggle('is-error', kind === 'error');
   }
 
@@ -338,6 +353,7 @@ export function createTranslationRequestsView() {
     eraseFillModeSelect.disabled = isBusy;
     widthFitModeSelect.disabled = isBusy;
     sizeMetricModeSelect.disabled = isBusy;
+    sizeCohortModeSelect.disabled = isBusy;
     retranslatePromptSelect.disabled = isBusy;
     renderRegressionInfo();
   }
@@ -373,9 +389,10 @@ export function createTranslationRequestsView() {
       preserve_unchanged_text: Boolean(preserveUnchangedTextInput.checked),
       use_geometry_columns: Boolean(useGeometryColumnsInput.checked),
       render_size_mode: String(renderSizeModeSelect.value || 'median'),
-      erase_fill_mode: String(eraseFillModeSelect.value || 'flat'),
+      erase_fill_mode: String(eraseFillModeSelect.value || 'inpaint'),
       width_fit_mode: String(widthFitModeSelect.value || 'footprint'),
       size_metric_mode: String(sizeMetricModeSelect.value || 'extent'),
+      size_cohort_mode: String(sizeCohortModeSelect.value || 'off'),
     };
     // Source is auto-detected downstream (llm-pool for translategemma) and unused by the generic
     // prompt; the dropdown was removed. Send a fixed 'auto' to satisfy the pipeline's required guard.
@@ -517,9 +534,10 @@ export function createTranslationRequestsView() {
     body.preserve_unchanged_text = Boolean(preserveUnchangedTextInput.checked);
     body.use_geometry_columns = Boolean(useGeometryColumnsInput.checked);
     body.render_size_mode = String(renderSizeModeSelect.value || 'median');
-    body.erase_fill_mode = String(eraseFillModeSelect.value || 'flat');
+    body.erase_fill_mode = String(eraseFillModeSelect.value || 'inpaint');
     body.width_fit_mode = String(widthFitModeSelect.value || 'footprint');
     body.size_metric_mode = String(sizeMetricModeSelect.value || 'extent');
+    body.size_cohort_mode = String(sizeCohortModeSelect.value || 'off');
     await submitReentry('retranslate', `Re-translating cached units to ${lang || '?'}...`,
       (sourceRequestId) => api.retranslateImageRequest(sourceRequestId, body));
   }
@@ -531,9 +549,10 @@ export function createTranslationRequestsView() {
     if (!canReenter()) return;
     const body = {
       render_size_mode: String(renderSizeModeSelect.value || 'median'),
-      erase_fill_mode: String(eraseFillModeSelect.value || 'flat'),
+      erase_fill_mode: String(eraseFillModeSelect.value || 'inpaint'),
       width_fit_mode: String(widthFitModeSelect.value || 'footprint'),
       size_metric_mode: String(sizeMetricModeSelect.value || 'extent'),
+      size_cohort_mode: String(sizeCohortModeSelect.value || 'off'),
     };
     await submitReentry('rerender', 'Re-rendering with the new render params...',
       (sourceRequestId) => api.rerenderImageRequest(sourceRequestId, body));
@@ -1073,6 +1092,7 @@ export function createTranslationRequestsView() {
   eraseFillModeSelect.addEventListener('change', rerenderRequest);
   widthFitModeSelect.addEventListener('change', rerenderRequest);
   sizeMetricModeSelect.addEventListener('change', rerenderRequest);
+  sizeCohortModeSelect.addEventListener('change', rerenderRequest);
 
   container.__onDeactivate = () => {
     stopPolling();
