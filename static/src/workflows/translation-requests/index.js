@@ -129,8 +129,8 @@ export function createTranslationRequestsView() {
                 <label class="translation-prompts-field">
                   <span>Size cohort</span>
                   <select id="translationSizeCohortMode" title="Cross-element size uniformity from the VLM font-size (pt) label. off sizes each element from its own OCR true-height. vlm groups elements the VLM gave one pt and, when their OCR heights agree, snaps the whole cohort to its OCR median — so a list the VLM judged one size renders uniform, and a short item sizes up and re-wraps over its lines instead of collapsing to one tiny line. A cohort whose OCR heights disagree keeps per-element sizing.">
-                    <option value="off" selected>off — per element</option>
-                    <option value="vlm">vlm — snap siblings</option>
+                    <option value="off">off — per element</option>
+                    <option value="vlm" selected>vlm — snap siblings</option>
                   </select>
                 </label>
                 <label class="translation-prompts-field">
@@ -392,7 +392,7 @@ export function createTranslationRequestsView() {
       erase_fill_mode: String(eraseFillModeSelect.value || 'inpaint'),
       width_fit_mode: String(widthFitModeSelect.value || 'footprint'),
       size_metric_mode: String(sizeMetricModeSelect.value || 'extent'),
-      size_cohort_mode: String(sizeCohortModeSelect.value || 'off'),
+      size_cohort_mode: String(sizeCohortModeSelect.value || 'vlm'),
     };
     // Source is auto-detected downstream (llm-pool for translategemma) and unused by the generic
     // prompt; the dropdown was removed. Send a fixed 'auto' to satisfy the pipeline's required guard.
@@ -537,7 +537,7 @@ export function createTranslationRequestsView() {
     body.erase_fill_mode = String(eraseFillModeSelect.value || 'inpaint');
     body.width_fit_mode = String(widthFitModeSelect.value || 'footprint');
     body.size_metric_mode = String(sizeMetricModeSelect.value || 'extent');
-    body.size_cohort_mode = String(sizeCohortModeSelect.value || 'off');
+    body.size_cohort_mode = String(sizeCohortModeSelect.value || 'vlm');
     await submitReentry('retranslate', `Re-translating cached units to ${lang || '?'}...`,
       (sourceRequestId) => api.retranslateImageRequest(sourceRequestId, body));
   }
@@ -552,7 +552,7 @@ export function createTranslationRequestsView() {
       erase_fill_mode: String(eraseFillModeSelect.value || 'inpaint'),
       width_fit_mode: String(widthFitModeSelect.value || 'footprint'),
       size_metric_mode: String(sizeMetricModeSelect.value || 'extent'),
-      size_cohort_mode: String(sizeCohortModeSelect.value || 'off'),
+      size_cohort_mode: String(sizeCohortModeSelect.value || 'vlm'),
     };
     await submitReentry('rerender', 'Re-rendering with the new render params...',
       (sourceRequestId) => api.rerenderImageRequest(sourceRequestId, body));
