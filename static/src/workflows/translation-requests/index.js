@@ -93,6 +93,9 @@ export function createTranslationRequestsView() {
                       <button type="button" id="translationCancelBtn" class="translation-preview-cancel">Cancel</button>
                     </div>
                   </div>
+                  <div class="translation-requests-save-row">
+                    <button type="button" id="translationSaveBtn" hidden>Save image</button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -294,6 +297,7 @@ export function createTranslationRequestsView() {
   const inputPreview = container.querySelector('#translationInputPreview');
   const inputEmpty = container.querySelector('#translationInputEmpty');
   const outputPreview = container.querySelector('#translationOutputPreview');
+  const saveBtn = container.querySelector('#translationSaveBtn');
   const outputEmpty = container.querySelector('#translationOutputEmpty');
   const outputPending = container.querySelector('#translationOutputPending');
   const outputPendingLabel = container.querySelector('.translation-preview-pending-label');
@@ -368,6 +372,23 @@ export function createTranslationRequestsView() {
   function selectedFile() {
     return fileInput.files && fileInput.files.length > 0 ? fileInput.files[0] : null;
   }
+
+  // Download the currently shown translated-frame artifact as "<source-basename>_<target>.png".
+  // WYSIWYG: saves whichever artifact the preview selector shows (usually the rendered translation);
+  // same-origin /api URL, so the <a download> filename is honoured.
+  function saveOutputImage() {
+    const src = outputPreview.getAttribute('src');
+    if (outputPreview.hidden || !src) return;
+    const base = (selectedFile()?.name || 'image').replace(/\.[^.]+$/, '') || 'image';
+    const lang = String(lastTargetLang || '').toLowerCase() || 'out';
+    const link = document.createElement('a');
+    link.href = src;
+    link.download = `${base}_${lang}.png`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  }
+  saveBtn.addEventListener('click', saveOutputImage);
 
   function currentState() {
     return String(statStateEl.textContent || '').trim().toLowerCase();
@@ -823,6 +844,7 @@ export function createTranslationRequestsView() {
     previewArtifactSelect.disabled = true;
     outputPreview.hidden = true;
     outputPreview.removeAttribute('src');
+    saveBtn.hidden = true;
     outputPending.hidden = true;
     outputEmpty.hidden = false;
     comparePreview.removeAttribute('src');
@@ -865,6 +887,7 @@ export function createTranslationRequestsView() {
     outputPreview.hidden = false;
     outputEmpty.hidden = true;
     outputPending.hidden = true;
+    saveBtn.hidden = false;
     const hasInput = Boolean(result?.response?.artifacts?.input);
     if (hasInput) {
       comparePreview.src = `/api/translation/requests/${encodeURIComponent(requestId)}/artifacts/input`;

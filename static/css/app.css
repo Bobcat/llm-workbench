@@ -4020,6 +4020,8 @@
   height: auto;
 }
 
+.translation-requests-save-row { display: flex; justify-content: flex-end; margin-top: 6px; }
+
 .translation-requests-view .translation-preview-frame img[hidden] {
   display: none;
 }
@@ -4317,5 +4319,14 @@
 /* :not([hidden]) so the detail <img> can be truly hidden until its first decode — a plain
    `img { display: block }` overrides the hidden attribute and shows the broken-image icon while loading. */
 .reg-detail-frame img:not([hidden]) { display: block; }
+/* Both view: two columns that each fill half the frame (so both renders are visible at once at
+   100% zoom); each column scrolls the shared frame when zoomed past its width. */
+.reg-detail-frame.reg-both { display: flex; align-items: flex-start; gap: 1px; }
+.reg-both .reg-both-col { flex: 1 1 50%; min-width: 0; margin: 0; }
+.reg-both .reg-both-col figcaption {
+  position: sticky; top: 0; z-index: 1; padding: 3px 6px; font-size: 0.78em;
+  background: rgba(0, 0, 0, 0.72); color: #ccd; text-align: center;
+}
+.reg-both .reg-both-col img { display: block; }
 .reg-detail-meta { opacity: 0.8; margin: 8px 0; font-size: 0.9em; }
 .reg-diffs { margin-top: 8px; color: #e0a0a0; font-family: monospace; font-size: 0.85em; padding-left: 18px; }

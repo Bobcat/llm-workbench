@@ -171,6 +171,13 @@ export function createRegressionView() {
     const hasActual = Boolean(result && result.has_actual);
     if (detailView === 'actual' && !hasActual) detailView = 'snapshot';
 
+    // "Both" shows Snapshot on the left and, on the right, whichever second image is most useful:
+    // Actual when a run left one (a failure — snapshot-vs-actual is the diff), else Source (the
+    // before/after used while reviewing a fresh baseline). Column captions keep it unambiguous.
+    const both = detailView === 'both';
+    const bothRightFile = hasActual ? 'actual.png' : 'source';
+    const bothRightLabel = hasActual ? 'Actual' : 'Source';
+
     let src;
     if (detailView === 'source') src = imageUrl(name, lang, variant, 'source');
     else if (detailView === 'actual') src = imageUrl(name, lang, variant, 'actual.png');
@@ -189,9 +196,10 @@ export function createRegressionView() {
         <button type="button" data-view="snapshot" class="${detailView === 'snapshot' ? 'is-active' : ''}">Snapshot</button>
         ${hasActual ? `<button type="button" data-view="actual" class="${detailView === 'actual' ? 'is-active' : ''}">Actual</button>` : ''}
         <button type="button" data-view="source" class="${detailView === 'source' ? 'is-active' : ''}">Source</button>
+        <button type="button" data-view="both" class="${both ? 'is-active' : ''}">Both</button>
         <label class="reg-zoom" title="Image size"><input id="regZoom" type="range" min="25" max="200" step="5" value="${imgZoom}"><output>${imgZoom}%</output></label>
       </div>
-      <div class="reg-detail-frame"></div>
+      <div class="reg-detail-frame${both ? ' reg-both' : ''}"></div>
       <div class="reg-detail-meta">${meta ? `${escapeHtml(meta.target_lang)} · ${meta.units} units · ${meta.reocr_rows} ocr-rows` : ''}</div>
       <div class="translation-prompts-run-actions">
         <button type="button" id="regRun">Run replay</button>
@@ -199,10 +207,24 @@ export function createRegressionView() {
       </div>
       ${diffs}
     `;
-    detailImg.style.width = `${imgZoom}%`;
     const frame = detailEl.querySelector('.reg-detail-frame');
-    frame.appendChild(detailImg);
     const restoreKey = scrollKey();
+    if (both) {
+      // Two side-by-side columns; the persistent anti-flash <img> is single-view only, so build
+      // fresh <img>s here. Each fills its column at 100% (both visible at once); zoom > 100 grows
+      // them past the column and the shared frame scrolls.
+      frame.innerHTML = `
+        <figure class="reg-both-col"><figcaption>Snapshot</figcaption><img alt="snapshot" style="width:${imgZoom}%"></figure>
+        <figure class="reg-both-col"><figcaption>${escapeHtml(bothRightLabel)}</figcaption><img alt="${escapeAttr(bothRightLabel)}" style="width:${imgZoom}%"></figure>`;
+      const [imgA, imgB] = frame.querySelectorAll('img');
+      imgA.src = imageUrl(name, lang, variant, 'snapshot.png');
+      imgB.src = imageUrl(name, lang, variant, bothRightFile);
+      const pos = scrollByView.get(restoreKey);
+      if (pos) { frame.scrollTop = pos.top; frame.scrollLeft = pos.left; }
+      return;
+    }
+    detailImg.style.width = `${imgZoom}%`;
+    frame.appendChild(detailImg);
     loadDetailImage(src, () => {
       const pos = scrollByView.get(restoreKey);
       if (pos) { frame.scrollTop = pos.top; frame.scrollLeft = pos.left; }
@@ -349,8 +371,8 @@ export function createRegressionView() {
   detailEl.addEventListener('input', (event) => {
     if (event.target.id !== 'regZoom') return;
     imgZoom = Number(event.target.value);
-    const img = detailEl.querySelector('.reg-detail-frame img');
-    if (img) img.style.width = `${imgZoom}%`;
+    // querySelectorAll: the Both view holds two images that must scale together.
+    detailEl.querySelectorAll('.reg-detail-frame img').forEach((img) => { img.style.width = `${imgZoom}%`; });
     const output = detailEl.querySelector('.reg-zoom output');
     if (output) output.textContent = `${imgZoom}%`;
   });
