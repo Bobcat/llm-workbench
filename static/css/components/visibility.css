@@ -1,0 +1,4 @@
+/* The hidden attribute must win over component display declarations. */
+:where([hidden]) {
+  display: none !important;
+}

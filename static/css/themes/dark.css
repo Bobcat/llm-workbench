@@ -1,0 +1,57 @@
+:root[data-theme="dark"] {
+  --chrome-bg: hsl(220, 16%, 7%);
+  --surface-soft: hsl(220, 14%, 13%);
+  --surface-muted: hsl(220, 12%, 18%);
+  --surface-hover: hsl(220, 12%, 24%);
+  --surface-translucent: hsla(222, 18%, 17%, 0.92);
+  --surface-translucent-soft: hsla(222, 18%, 17%, 0.68);
+  --surface-inverse: hsl(220, 16%, 5%);
+  --surface-scrim: hsla(220, 16%, 8%, 0.82);
+
+  --text-strong: hsl(220, 10%, 95%);
+  --text-subtle: hsl(220, 8%, 62%);
+  --text-quiet: #8e949e;
+  --text-inverse-muted: hsl(220, 10%, 78%);
+
+  --border-soft: hsla(220, 10%, 56%, 0.24);
+  --border-subtle: hsla(220, 10%, 56%, 0.18);
+  --border-control: hsl(220, 12%, 31%);
+  --border-control-hover: hsl(220, 10%, 40%);
+  --field-border: #7f8796;
+  --border-strong: hsl(220, 10%, 42%);
+
+  --action-primary: hsl(224, 60%, 56%);
+  --action-primary-hover: hsl(224, 55%, 55%);
+  --action-primary-soft: hsl(224, 30%, 18%);
+  --action-primary-border: hsla(224, 60%, 65%, 0.5);
+  --focus: hsl(224, 60%, 65%);
+  --focus-ring: hsla(224, 60%, 65%, 0.24);
+
+  --danger: hsl(0, 72%, 65%);
+  --danger-bg: hsl(0, 35%, 16%);
+  --danger-bg-hover: hsl(0, 35%, 20%);
+  --danger-border: hsl(0, 30%, 32%);
+  --success: hsl(150, 40%, 65%);
+  --success-bg: hsl(150, 30%, 14%);
+  --success-border: hsl(150, 20%, 29%);
+  --warning: hsl(38, 70%, 65%);
+  --warning-bg: hsl(38, 35%, 15%);
+  --warning-bg-hover: hsl(38, 35%, 19%);
+  --warning-border: hsl(38, 30%, 30%);
+  --warning-accent: hsl(38, 75%, 60%);
+  --info: hsl(215, 70%, 70%);
+  --info-bg: hsl(215, 35%, 17%);
+  --info-border: hsl(215, 30%, 32%);
+
+  --control-track: hsl(220, 10%, 34%);
+  --media-placeholder: hsl(220, 12%, 20%);
+  --media-label-bg: hsla(220, 20%, 4%, 0.72);
+  --tooltip-bg: hsl(220, 16%, 12%);
+  --shadow-soft: 0 1px 2px hsla(220, 30%, 4%, 0.15);
+  --shadow-control: 0 1px 2px hsla(220, 30%, 4%, 0.28);
+  --shadow-tooltip: 0 2px 10px hsla(220, 30%, 4%, 0.5);
+  --replay-glow-primary: hsla(224, 60%, 65%, 0.08);
+  --replay-glow-secondary: hsla(220, 10%, 95%, 0.05);
+  --shell-brand-color: hsl(224, 60%, 72%);
+  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%239ca3af' d='M1.2.3 5 4.1 8.8.3 10 1.5 5 6 0 1.5z'/%3E%3C/svg%3E");
+}

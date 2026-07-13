@@ -1,0 +1,75 @@
+/* === Translation Regression view === */
+.translation-regression-view { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.translation-regression-toolbar { position: relative; display: flex; gap: 8px; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--border-subtle); }
+/* Start the status text at the detail pane's left edge (= the tree pane width) so it lines up under
+   the detail column instead of crowding the buttons. */
+.translation-regression-toolbar #regStatus { position: absolute; left: 240px; top: 50%; transform: translateY(-50%); font-size: 0.78rem; }
+.translation-regression-body { display: flex; flex: 1; min-height: 0; }
+.translation-regression-view button:not(.reg-del) {
+  border: 1px solid var(--border-control);
+  background: var(--surface);
+  color: var(--text);
+  border-radius: 8px; padding: 6px 14px; font-size: 0.85rem; font-weight: 500; line-height: 1.2;
+  cursor: pointer; transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+.translation-regression-view button:not(.reg-del):hover { border-color: var(--focus); }
+.translation-regression-view button:disabled { opacity: 0.45; cursor: default; }
+.translation-regression-tree-pane { width: 240px; overflow: auto; border-right: 1px solid var(--border-subtle); padding: 8px; background: var(--surface-soft); }
+.translation-regression-detail-pane { flex: 1; overflow: auto; padding: 8px 12px 12px; font-size: 0.82rem; }
+.translation-regression-tree, .translation-regression-tree ul { list-style: none; margin: 0; padding-left: 12px; font-size: 0.82rem; }
+.translation-regression-tree > .reg-name { margin-bottom: 6px; }
+.reg-row, .reg-variant { display: flex; align-items: center; gap: 6px; padding: 2px 4px; border-radius: 4px; }
+.reg-variant { cursor: pointer; }
+.reg-variant:hover { background: var(--surface-hover); }
+.reg-variant.is-selected { background: var(--action-primary-soft); }
+.reg-name-head { cursor: pointer; }
+.reg-name-head > .reg-label { font-weight: 600; }
+.reg-lang-head > .reg-label { opacity: 0.8; }
+.reg-glyph { width: 1em; text-align: center; }
+.reg-caret {
+  display: inline-block;
+  width: 0;
+  height: 0;
+  font-size: 0;
+  line-height: 0;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  border-left: 6px solid currentColor;
+  opacity: 0.7;
+  user-select: none;
+  transition: transform 0.15s ease;
+  transform-origin: 3px 4px;
+}
+.reg-caret.is-open { transform: rotate(90deg); }
+.reg-pass { color: var(--success); }
+.reg-fail { color: var(--danger); }
+.reg-glyph-none { opacity: 0.45; }
+.reg-timing { color: var(--text-subtle); font-size: 0.75rem; white-space: nowrap; position: relative; top: 2px; }
+.reg-warn { color: var(--warning); margin-left: 4px; }
+.reg-del { margin-left: auto; background: none; border: none; color: inherit; opacity: 0.35; cursor: pointer; font-size: 0.8em; padding: 0 4px; }
+.reg-del:hover { opacity: 1; color: var(--danger); }
+.reg-detail-head { font-weight: 600; margin-bottom: 8px; }
+.reg-detail-verdict { margin-left: 14px; }
+.reg-toggles { display: flex; gap: 4px; margin-bottom: 8px; align-items: center; }
+.reg-toggles button.is-active { background: var(--action-primary-soft); border-color: var(--focus); }
+.reg-zoom { display: flex; align-items: center; gap: 6px; margin-left: auto; font-size: 0.8em; opacity: 0.85; }
+.reg-zoom input[type="range"] { width: 220px; }
+/* outline (not border): the scrollbar of a tall receipt is painted inside the border box and
+   overpaints a border at the corners it touches, so the frame looked broken there. An outline is
+   drawn just OUTSIDE the box, untouched by the scrollbar, so the frame stays whole. No radius —
+   the scrollbar would clip rounded corners anyway. */
+.reg-detail-frame { outline: 1px solid var(--border-subtle); overflow: auto; max-height: 70vh; background: var(--surface-inverse); }
+/* :not([hidden]) so the detail <img> can be truly hidden until its first decode — a plain
+   `img { display: block }` overrides the hidden attribute and shows the broken-image icon while loading. */
+.reg-detail-frame img:not([hidden]) { display: block; }
+/* Both view: two columns that each fill half the frame (so both renders are visible at once at
+   100% zoom); each column scrolls the shared frame when zoomed past its width. */
+.reg-detail-frame.reg-both { display: flex; align-items: flex-start; gap: 1px; }
+.reg-both .reg-both-col { flex: 1 1 50%; min-width: 0; margin: 0; }
+.reg-both .reg-both-col figcaption {
+  position: sticky; top: 0; z-index: 1; padding: 3px 6px; font-size: 0.78em;
+  background: var(--media-label-bg); color: var(--text-inverse-muted); text-align: center;
+}
+.reg-both .reg-both-col img { display: block; }
+.reg-detail-meta { opacity: 0.8; margin: 8px 0; font-size: 0.9em; }
+.reg-diffs { margin-top: 8px; color: var(--danger); font-family: var(--font-mono); font-size: 0.85em; padding-left: 18px; }

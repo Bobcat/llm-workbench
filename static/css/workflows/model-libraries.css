@@ -1,0 +1,417 @@
+/* Image-pool and LoRA-library extensions to the shared model-pool component. */
+.image-pool-view .llm-pool-table-shell {
+  --llm-pool-table-columns: minmax(240px, 2fr) 90px 96px 64px 64px minmax(104px, 0.8fr) 92px;
+}
+
+.image-pool-view .llm-pool-table-header .llm-pool-header-cell:nth-child(6),
+.image-pool-view .llm-pool-table-header .llm-pool-header-cell:nth-child(6) .llm-pool-sort-btn {
+  justify-content: flex-start;
+}
+
+.image-pool-view .llm-pool-table-header .llm-pool-header-cell:nth-child(6) .llm-pool-sort-label {
+  text-align: left;
+}
+
+.image-pool-view .llm-pool-cell.meta {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.image-pool-view .llm-pool-backend-label {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.image-lora-library-view .llm-pool-table-shell {
+  --llm-pool-table-columns: minmax(220px, 1.35fr) 110px 120px 80px minmax(130px, 0.95fr) minmax(190px, 1.2fr) minmax(180px, 1fr) 90px;
+}
+
+.image-lora-library-view .image-lora-library-filters {
+  display: grid;
+  grid-template-columns: minmax(160px, 1.2fr) minmax(130px, 0.75fr) minmax(170px, 1fr) minmax(130px, 0.75fr) auto auto;
+  align-items: center;
+}
+
+.image-lora-library-view .image-lora-library-filters input,
+.image-lora-library-view .image-lora-library-filters select {
+  min-width: 0;
+}
+
+.image-lora-library-view .llm-pool-row.is-expandable {
+  cursor: pointer;
+}
+
+.image-lora-library-view .llm-pool-cell {
+  min-width: 0;
+}
+
+.image-lora-library-view .image-lora-library-subline {
+  margin-top: 3px;
+  color: var(--text-subtle);
+  font-size: 0.76rem;
+  font-weight: 400;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.image-lora-library-view .image-lora-library-warning {
+  color: var(--warning);
+  font-weight: 600;
+}
+
+.image-lora-library-view .image-lora-library-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+}
+
+.image-lora-library-view .image-lora-library-badge {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  min-height: 22px;
+  padding: 2px 7px;
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  background: var(--surface-soft);
+  color: var(--text);
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.image-lora-library-view .image-lora-library-muted {
+  color: var(--text-quiet);
+  font-size: 0.8rem;
+}
+
+.image-lora-library-view .image-lora-library-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.image-lora-library-view .image-lora-library-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+  cursor: default;
+}
+
+.image-lora-library-view .image-lora-library-edit-button,
+.image-lora-library-view .image-lora-library-delete-button {
+  min-height: 30px;
+  padding: 5px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.image-lora-library-view .image-lora-library-edit-button {
+  border: 1px solid var(--border-control);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.image-lora-library-view .image-lora-library-delete-button {
+  border: 1px solid var(--danger-border);
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+.image-lora-library-view .image-lora-library-edit-button:disabled,
+.image-lora-library-view .image-lora-library-delete-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.image-lora-library-view .image-lora-library-details {
+  cursor: default;
+}
+
+.image-lora-library-view .image-lora-library-detail-grid {
+  margin-bottom: 14px;
+}
+
+.image-lora-library-view .image-lora-edit-panel {
+  display: grid;
+  gap: 12px;
+  margin: 0 0 16px;
+  padding: 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  background: var(--surface-soft);
+}
+
+.image-lora-library-view .image-lora-edit-head,
+.image-lora-library-view .image-lora-edit-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.image-lora-library-view .image-lora-edit-head strong {
+  color: var(--text-strong);
+  font-size: 0.9rem;
+  line-height: 1.2;
+}
+
+.image-lora-library-view .image-lora-edit-actions {
+  justify-content: flex-end;
+}
+
+.image-lora-library-view .image-lora-edit-actions button {
+  border: 1px solid var(--border-control);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 500;
+  line-height: 1.2;
+  padding: 8px 16px;
+}
+
+.image-lora-library-view .image-lora-edit-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.image-lora-library-view .image-lora-library-metadata {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  margin-top: 14px;
+}
+
+.image-lora-library-view .image-lora-library-metadata-title {
+  color: var(--text);
+  font-size: 0.84rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.image-lora-library-view .image-lora-library-metadata-grid {
+  display: grid;
+  grid-template-columns: minmax(160px, 0.35fr) minmax(0, 1fr);
+  gap: 7px 12px;
+  max-height: 320px;
+  overflow: auto;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-soft);
+}
+
+.image-lora-library-view .image-lora-library-metadata-key {
+  min-width: 0;
+  color: var(--text-subtle);
+  font-size: 0.76rem;
+  font-weight: 600;
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.image-lora-library-view .image-lora-library-metadata code {
+  min-width: 0;
+  color: var(--text-strong);
+  font-size: 0.75rem;
+  line-height: 1.35;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.image-lora-library-view .image-lora-library-key-list {
+  display: grid;
+  gap: 4px;
+  max-height: 220px;
+  overflow: auto;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-soft);
+}
+
+.image-lora-library-view .image-lora-library-key-list code {
+  min-width: 0;
+  color: var(--text-strong);
+  font-size: 0.75rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.image-lora-library-view .image-lora-import-panel {
+  display: grid;
+  gap: 12px;
+  flex: 0 0 auto;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border-soft);
+  background: var(--surface-soft);
+}
+
+.image-lora-library-view .image-lora-import-head,
+.image-lora-library-view .image-lora-import-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.image-lora-library-view .image-lora-import-head > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.image-lora-library-view .image-lora-import-head strong {
+  color: var(--text-strong);
+  font-size: 0.95rem;
+  line-height: 1.2;
+}
+
+.image-lora-library-view .image-lora-import-head span {
+  color: var(--text-subtle);
+  font-size: 0.8125rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.image-lora-library-view .image-lora-import-head button,
+.image-lora-library-view .image-lora-import-actions button {
+  border: 1px solid var(--border-control);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 500;
+  line-height: 1.2;
+  padding: 8px 16px;
+}
+
+.image-lora-library-view .image-lora-import-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.image-lora-library-view .image-lora-import-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px 12px;
+}
+
+.image-lora-library-view .image-lora-import-grid .translation-prompts-field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.image-lora-library-view .image-lora-import-grid .translation-prompts-field > span,
+.image-lora-library-view .image-lora-import-compatible > legend {
+  color: var(--text-subtle);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.image-lora-library-view .image-lora-import-grid input,
+.image-lora-library-view .image-lora-import-grid select,
+.image-lora-library-view .image-lora-import-grid textarea {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--field-border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.9rem;
+  padding: 8px 10px;
+}
+
+.image-lora-library-view .image-lora-import-description,
+.image-lora-library-view .image-lora-import-compatible {
+  grid-column: span 3;
+}
+
+.image-lora-library-view .image-lora-import-compatible {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.image-lora-library-view .image-lora-import-compatible > legend {
+  flex: 0 0 100%;
+  padding: 0;
+}
+
+.image-lora-library-view .image-lora-import-model-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 4px 8px;
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.image-lora-library-view .image-lora-import-model-option input {
+  width: auto;
+  margin: 0;
+}
+
+.image-lora-library-view .image-lora-import-warnings {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.image-lora-library-view .image-lora-import-warnings span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--warning-bg);
+  color: var(--warning);
+  font-size: 0.76rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+@media (max-width: 900px) {
+  .image-lora-library-view .image-lora-library-filters,
+  .image-lora-library-view .image-lora-import-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .image-lora-library-view .image-lora-import-description,
+  .image-lora-library-view .image-lora-import-compatible {
+    grid-column: auto;
+  }
+
+  .image-lora-library-view .image-lora-library-metadata-grid {
+    grid-template-columns: 1fr;
+  }
+}

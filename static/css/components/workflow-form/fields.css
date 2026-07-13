@@ -1,0 +1,52 @@
+/* Shared fields, statistics, and response presentation. */
+.translation-prompts-view .translation-prompts-field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.translation-prompts-view .translation-prompts-field > span,
+.translation-prompts-view .translation-prompts-stat > span {
+  color: var(--text-subtle);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.translation-prompts-view .translation-prompts-field-response {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.translation-prompts-view #renderedUserPrompt {
+  background: var(--surface-muted);
+}
+
+.translation-prompts-view .translation-prompts-stats-block {
+  display: grid;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  background: var(--surface-soft);
+}
+
+.translation-prompts-view .translation-prompts-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 16px;
+}
+
+.translation-prompts-view .translation-prompts-stat {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.translation-prompts-view .translation-prompts-stat > strong {
+  color: var(--text-strong);
+  font-size: 0.88rem;
+  font-weight: 500;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}

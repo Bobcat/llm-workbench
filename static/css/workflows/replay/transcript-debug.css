@@ -1,0 +1,134 @@
+/* Transcript presentation and developer diagnostics. */
+.replay-view .replay-dev-section {
+  display: block;
+  padding: 24px 16px 48px;
+  border-top: 1px solid var(--border-soft);
+  background: var(--bg);
+}
+
+.replay-view .replay-dev-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(240px, 0.8fr) minmax(260px, 0.9fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.replay-view .replay-dev-card {
+  min-width: 0;
+}
+
+.replay-view .replay-dev-card-label {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  border: 1px solid var(--warning-border);
+  border-bottom: 0;
+  border-radius: 10px 10px 0 0;
+  padding: 10px 12px 0;
+  background: var(--warning-bg);
+}
+
+.replay-view .replay-dev-card-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.replay-view .replay-source-timestamps-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.replay-view .replay-source-timestamps-toggle input {
+  margin: 0;
+}
+
+.replay-view .replay-dev-card-text {
+  margin-top: 0;
+  border: 1px solid var(--warning-border);
+  border-top: 0;
+  border-radius: 0 0 10px 10px;
+  padding: 10px 12px;
+  background: var(--warning-bg);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.85rem;
+  font-weight: 400;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.replay-view .replay-dev-card-text.is-placeholder {
+  color: var(--text-subtle);
+  font-family: inherit;
+  font-style: normal;
+  font-weight: 400;
+}
+
+.replay-view .replay-text {
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, "Noto Sans", "Liberation Sans", sans-serif;
+  font-weight: 400;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 0.94rem;
+  line-height: 1.55;
+  color: var(--text);
+}
+
+.replay-view .placeholder,
+.replay-view .preview-fragment {
+  color: var(--text-subtle);
+  font-style: italic;
+}
+
+.replay-view .committed-fragment {
+  color: var(--text);
+}
+
+.replay-view .replay-source-timed-line {
+  display: block;
+  margin: 0 0 0.45em;
+}
+
+.replay-view .replay-source-timed-line:last-child {
+  margin-bottom: 0;
+}
+
+.replay-view .replay-source-timed-line-text {
+  white-space: pre-wrap;
+}
+
+.replay-view .replay-source-timestamp {
+  color: var(--text-muted);
+  font-size: 0.78em;
+  font-variant-numeric: tabular-nums;
+  font-style: normal;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.replay-view .replay-source-timestamp-start {
+  margin-right: 0.45em;
+}
+
+.replay-view .replay-source-timestamp-end {
+  margin-left: 0.45em;
+}
+
+.replay-view code {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 0.9em;
+}

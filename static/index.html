@@ -9,11 +9,15 @@
       document.documentElement.classList.add('shell-booting');
       try {
         const saved = JSON.parse(window.localStorage.getItem('llm-workbench.shell') || 'null');
+        const preset = saved?.preset === 'dark' ? 'dark' : 'modern';
         window.__LLM_WORKBENCH_INITIAL_SHELL__ = {
+          preset,
           sidebarOpen: typeof saved?.sidebarOpen === 'boolean' ? saved.sidebarOpen : true,
         };
+        document.documentElement.dataset.theme = preset === 'dark' ? 'dark' : 'light';
       } catch {
-        window.__LLM_WORKBENCH_INITIAL_SHELL__ = { sidebarOpen: true };
+        window.__LLM_WORKBENCH_INITIAL_SHELL__ = { preset: 'modern', sidebarOpen: true };
+        document.documentElement.dataset.theme = 'light';
       }
     }());
   </script>
@@ -24,9 +28,22 @@
     href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0">
   <link rel="stylesheet" href="foundation/spa-foundation/css/base.css">
   <link rel="stylesheet" href="foundation/spa-foundation/css/shell.css">
-  <link rel="stylesheet" href="foundation/spa-foundation/css/preset-modern.css" id="presetStylesheet">
+  <link
+    rel="stylesheet"
+    id="presetStylesheet"
+    data-modern-href="foundation/spa-foundation/css/preset-modern.css"
+    data-dark-href="foundation/spa-foundation/css/preset-dark.css"
+  >
+  <script>
+    (function () {
+      const initialShell = window.__LLM_WORKBENCH_INITIAL_SHELL__;
+      const presetStylesheet = document.getElementById('presetStylesheet');
+      presetStylesheet.href = initialShell.preset === 'dark'
+        ? presetStylesheet.dataset.darkHref
+        : presetStylesheet.dataset.modernHref;
+    }());
+  </script>
   <link rel="stylesheet" href="css/app.css">
-  <link rel="stylesheet" href="css/sidebar-overrides.css">
 </head>
 <body>
   <div class="app-container">
@@ -43,6 +60,12 @@
         <ul id="workflowList" class="nav-links">
           <!-- Workflows loaded dynamically -->
         </ul>
+        <div class="sidebar-footer">
+          <button id="themeToggle" class="theme-toggle" type="button" aria-pressed="false">
+            <span class="material-symbols-outlined" aria-hidden="true">dark_mode</span>
+            <span class="theme-toggle-label">Dark theme</span>
+          </button>
+        </div>
       </div>
     </aside>
 

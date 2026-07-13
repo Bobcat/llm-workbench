@@ -1,0 +1,629 @@
+/* Stacked layout: key controls on top, the image comparison in the middle, the rest below. */
+.translation-requests-view .translation-requests-stacked {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
+  padding: 16px 20px 24px;
+}
+
+/* STAGE — the images, the visual focus of the page. */
+.translation-requests-view .translation-requests-stage {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* Empty state: a drop zone + a browse button, side by side like the reference tool. */
+.translation-requests-view .translation-requests-dropzone {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 24px;
+  min-height: clamp(220px, 34vh, 320px);
+  padding: 24px;
+  border: 1px solid var(--field-border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.translation-requests-view .translation-requests-dropzone.is-dragover {
+  border-color: var(--focus);
+  border-style: dashed;
+  background: var(--action-primary-soft);
+}
+
+.translation-requests-view .translation-requests-dropzone-drop {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  color: var(--text-quiet);
+}
+
+.translation-requests-view .translation-requests-dropzone.is-dragover .translation-requests-dropzone-drop {
+  color: var(--focus);
+}
+
+.translation-requests-view .translation-requests-dropzone-cloud {
+  color: var(--info-border);
+}
+
+.translation-requests-view .translation-requests-dropzone.is-dragover .translation-requests-dropzone-cloud {
+  color: var(--focus);
+}
+
+.translation-requests-view .translation-requests-dropzone-hint {
+  font-size: 1.05rem;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.translation-requests-view .translation-requests-dropzone-sep {
+  width: 1px;
+  align-self: stretch;
+  background: var(--border-strong);
+  justify-self: center;
+}
+
+.translation-requests-view .translation-requests-dropzone-choose {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+
+.translation-requests-view .translation-requests-dropzone-choose > span {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.translation-requests-view .translation-requests-browse-btn {
+  border: 1px solid var(--action-primary-border);
+  border-radius: 8px;
+  padding: 9px 18px;
+  background: var(--action-primary);
+  color: var(--text-inverse);
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.translation-requests-view .translation-requests-browse-btn:hover:not(:disabled) {
+  background: var(--action-primary-hover);
+}
+
+.translation-requests-view .translation-requests-browse-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/* Bar above the images: one flex row that wraps gracefully when narrow. The right group
+   (artifact/zoom/reset) is pushed to the right; it is NOT aligned to the image grid — a
+   forced two-column split made the right controls wrap onto extra lines on smaller widths. */
+.translation-requests-view .translation-requests-stage-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+}
+
+.translation-requests-view .translation-requests-bar-left,
+.translation-requests-view .translation-requests-bar-right {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+}
+
+.translation-requests-view .translation-requests-bar-right {
+  margin-left: auto;
+}
+
+/* Image-only controls: hidden until an image is loaded, so the empty state shows just the
+   target-language picker. */
+.translation-requests-view .translation-requests-stage:not(.has-image) .translation-requests-loaded-only {
+  display: none;
+}
+
+/* Target-language picker, inline in the bar (no separate top strip: the whole view is one
+   scrolling column). Label sits before the select. */
+.translation-requests-view .translation-requests-barfield {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.86rem;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.translation-requests-view .translation-requests-barfield select {
+  min-width: 150px;
+}
+
+/* Progress / result status, on its own line below the images. */
+.translation-requests-view .translation-requests-status {
+  min-height: 0;
+}
+
+/* Empty (the routine info is suppressed in setStatus) -> take no space, so the control
+   groups sit right under the images; only a real error message reopens it. */
+.translation-requests-view .translation-requests-status:empty {
+  display: none;
+}
+
+/* "Show original" toggle switch (label before the switch). */
+.translation-requests-view .translation-requests-showtoggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.86rem;
+  font-weight: 500;
+  color: var(--text);
+  cursor: pointer;
+  user-select: none;
+}
+
+.translation-requests-view .translation-requests-showtoggle input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.translation-requests-view .translation-requests-switch {
+  position: relative;
+  flex: 0 0 auto;
+  width: 38px;
+  height: 22px;
+  border-radius: 999px;
+  background: var(--control-track);
+  transition: background-color 0.15s ease;
+}
+
+.translation-requests-view .translation-requests-switch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: var(--shadow-control);
+  transition: transform 0.15s ease;
+}
+
+.translation-requests-view .translation-requests-showtoggle input:checked + .translation-requests-switch {
+  background: var(--focus);
+}
+
+.translation-requests-view .translation-requests-showtoggle input:checked + .translation-requests-switch::after {
+  transform: translateX(16px);
+}
+
+.translation-requests-view .translation-requests-showtoggle input:focus-visible + .translation-requests-switch {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* "Choose another image" reset. */
+.translation-requests-view .translation-requests-reset {
+  margin-left: auto;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  background: var(--surface);
+  color: var(--text-subtle);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.translation-requests-view .translation-requests-reset:hover {
+  background: var(--surface-muted);
+  color: var(--text-strong);
+}
+
+.translation-requests-view .translation-requests-frames {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+/* Translated-only ("Show original" off): a single, horizontally centred image. */
+.translation-requests-view .translation-requests-stage.is-single .translation-requests-frames {
+  grid-template-columns: minmax(0, 1fr);
+  justify-items: center;
+}
+
+.translation-requests-view .translation-requests-stage.is-single .translation-requests-frame-original {
+  display: none;
+}
+
+.translation-requests-view .translation-requests-stage.is-single .translation-requests-frame-translated {
+  width: 100%;
+}
+
+/* The stage frames follow their image's height (see .translation-preview-frame): the page
+   gets longer or shorter with the image instead of scrolling a fixed-height box. */
+.translation-requests-view .translation-requests-frames .translation-preview-frame {
+  background: var(--surface);
+}
+
+/* BOTTOM — secondary controls and inspection panels. */
+.translation-requests-view .translation-requests-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.translation-requests-view .translation-requests-controls-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  align-items: start;
+}
+
+.translation-requests-view .translation-requests-stats {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.translation-requests-view #translationRequestRaw {
+  min-height: 220px;
+  max-height: 45vh;
+  overflow: auto;
+  resize: vertical;
+}
+
+/* Choose File: match the workbench button look */
+.translation-requests-view input[type="file"]::file-selector-button {
+  margin-right: 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 6px 12px;
+  background: var(--surface);
+  color: var(--text-strong);
+  font-size: 0.86rem;
+  font-weight: 500;
+  line-height: 1.2;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.translation-requests-view input[type="file"]::file-selector-button:hover {
+  background: var(--surface-muted);
+}
+
+.translation-requests-view .translation-requests-options-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 16px;
+  margin-bottom: 10px;
+  min-width: 0;
+}
+
+.translation-requests-view .translation-requests-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-subtle);
+  font-size: 0.82rem;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.translation-requests-view .translation-requests-option input {
+  margin: 0;
+}
+
+/* Raw response sits right under its label (no stretched gap) */
+.translation-requests-view .translation-prompts-field-response {
+  flex: 0 0 auto;
+}
+
+/* Collapsible prompts/responses inspector: editable, selectable text boxes fed from
+   response.llm_calls (grouping VLM + translation + fallbacks). */
+.translation-requests-view .translation-requests-details {
+  margin-top: 12px;
+}
+
+.translation-requests-view .translation-requests-details-body {
+  display: grid;
+  gap: 10px;
+  padding-top: 10px;
+}
+
+/* Render options: wrap the compact dropdowns into as many columns as fit instead of
+   stacking five full-width rows. Each select shrinks to its column (long option labels
+   truncate; the full text stays in the title tooltip). */
+.translation-requests-view .translation-requests-render-grid {
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 8px 12px;
+}
+
+.translation-requests-view .translation-requests-render-grid select {
+  min-width: 0;
+  width: 100%;
+  text-overflow: ellipsis;
+}
+
+/* Grouping + translation model dropdowns side by side when the panel is wide enough,
+   stacking to one column on a narrow screen. */
+.translation-requests-view .translation-requests-model-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px 12px;
+}
+
+.translation-requests-view .translation-requests-model-grid select {
+  min-width: 0;
+  width: 100%;
+  text-overflow: ellipsis;
+}
+
+.translation-requests-view .translation-requests-details-body textarea {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  resize: vertical;
+}
+
+/* Model dropdown: each model coloured by load state (green = loaded, red = not),
+   and the closed select mirrors the picked option's state. */
+.translation-requests-view #translationRequestModel.is-loaded,
+.translation-requests-view #translationRequestModel option.is-loaded {
+  color: var(--success);
+}
+
+.translation-requests-view #translationRequestModel.is-unloaded,
+.translation-requests-view #translationRequestModel option.is-unloaded {
+  color: var(--danger);
+}
+
+/* Request id on its own full-width line above State/Stage/Queue */
+.translation-requests-view .translation-requests-id-stat #translationRequestStatId {
+  font-size: 0.92rem;
+}
+
+.translation-requests-view .translation-requests-timings {
+  display: grid;
+  gap: 4px;
+  font-size: 0.84rem;
+}
+
+.translation-requests-view .trt-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.translation-requests-view .trt-row > span {
+  color: var(--text-subtle);
+}
+
+.translation-requests-view .trt-row > strong {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.translation-requests-view .trt-row.trt-total > span {
+  color: var(--text-strong);
+  font-weight: 600;
+}
+
+.translation-requests-view .trt-row.trt-total > strong {
+  font-weight: 700;
+}
+
+.translation-requests-view .trt-l1 {
+  padding-left: 16px;
+}
+
+.translation-requests-view .trt-placeholder > span {
+  color: var(--text-quiet);
+  font-style: italic;
+}
+
+/* Zoom slider + percentage (the "Size" label was dropped): two columns, no label cell. */
+.translation-requests-view .translation-preview-zoom {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) 48px;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-subtle);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.translation-requests-view .translation-preview-zoom input[type="range"] {
+  width: 100%;
+}
+
+.translation-requests-view .translation-preview-zoom output {
+  color: var(--text-strong);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.translation-requests-view .translation-preview-artifact {
+  display: grid;
+  grid-template-columns: auto minmax(180px, 1fr);
+  align-items: center;
+  gap: 10px;
+  color: var(--text-subtle);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.translation-requests-view .translation-preview-artifact select {
+  min-width: 0;
+}
+
+.translation-requests-view .translation-preview-block {
+  display: grid;
+  gap: 8px;
+}
+
+.translation-requests-view .translation-preview-block > span {
+  color: var(--text-subtle);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+/* The frame takes its height from the image (no fixed height, no inner scrollbars): the
+   whole view scrolls as one page. min-height only carries the empty/pending states. */
+.translation-requests-view .translation-preview-frame {
+  position: relative;
+  display: grid;
+  align-items: start;
+  justify-items: center;
+  min-height: 220px;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  background: var(--surface-soft);
+  overflow-x: auto;
+}
+
+/* Zoom is relative to the image's NATIVE size (CSS zoom scales layout size, so the frame
+   grows with it), capped at the column width so a phone-screenshot original never forces
+   the page wide; height follows via the aspect ratio. */
+.translation-requests-view .translation-preview-frame img {
+  display: block;
+  grid-area: 1 / 1;
+  align-self: start;
+  justify-self: center;
+  zoom: var(--translation-preview-zoom, 0.7);
+  width: auto;
+  max-width: 100%;
+  height: auto;
+}
+
+.translation-requests-save-row { display: flex; justify-content: flex-end; margin-top: 6px; }
+
+.translation-requests-view .translation-preview-empty {
+  grid-area: 1 / 1;
+  align-self: center;
+  color: var(--text-quiet);
+  font-size: 0.86rem;
+  justify-self: center;
+  line-height: 1.2;
+  text-align: center;
+  padding: 16px;
+}
+
+/* Progress overlay while a run is in flight: blue arc spinner + label + cancel, centred over
+   the frame — on a re-entry the previous render stays visible underneath the translucent veil. */
+.translation-requests-view .translation-preview-pending {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  background: var(--surface-scrim);
+  border-radius: 8px;
+}
+
+.translation-requests-view .translation-spinner {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 4px solid var(--focus);
+  border-right-color: transparent;
+  animation: translation-spinner-spin 0.8s linear infinite;
+}
+
+@keyframes translation-spinner-spin {
+  to { transform: rotate(360deg); }
+}
+
+.translation-requests-view .translation-preview-pending-label {
+  color: var(--text-strong);
+  font-size: 1.05rem;
+}
+
+.translation-requests-view .translation-preview-cancel {
+  border: 0;
+  background: none;
+  padding: 4px 8px;
+  color: var(--focus);
+  font-size: 0.86rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.translation-requests-view .translation-preview-cancel:hover {
+  text-decoration: underline;
+}
+
+.translation-requests-view .translation-requests-stats .translation-prompts-stat {
+  min-width: 0;
+}
+
+.translation-requests-view #translationRequestStatId {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 760px) {
+  .translation-requests-view .translation-requests-stacked {
+    padding: 12px 14px 20px;
+  }
+
+  .translation-requests-view .translation-requests-frames,
+  .translation-requests-view .translation-requests-controls-cols {
+    grid-template-columns: 1fr;
+  }
+
+  .translation-requests-view .translation-requests-dropzone {
+    grid-template-columns: 1fr;
+  }
+
+  .translation-requests-view .translation-requests-dropzone-sep {
+    width: auto;
+    height: 1px;
+    align-self: auto;
+  }
+
+  .translation-requests-view .translation-requests-stats {
+    grid-template-columns: 1fr;
+  }
+
+  .translation-requests-view #translationRequestRaw {
+    min-height: 260px;
+    max-height: 55vh;
+  }
+
+  .translation-prompts-view .translation-prompts-language-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .translation-prompts-view .translation-prompts-stats-grid {
+    grid-template-columns: 1fr;
+  }
+}

@@ -28,8 +28,11 @@ const appRoot = byId('appRoot');
 const sidebar = byId('sidebar');
 const sidebarToggle = byId('sidebarToggle');
 const workflowList = byId('workflowList');
+const presetStylesheet = byId('presetStylesheet');
+const themeToggle = byId('themeToggle');
 const SHELL_STORAGE_KEY = 'llm-workbench.shell';
 const initialShell = window.__LLM_WORKBENCH_INITIAL_SHELL__ || {};
+let activePreset = initialShell.preset === 'dark' ? 'dark' : 'modern';
 let replayIsRunning = false;
 const PERSISTENT_WORKFLOW_IDS = new Set([
   'replay-translate',
@@ -67,9 +70,21 @@ const shellState = new ShellState({
 const shellPersistence = createShellPersistence({
   storageKey: SHELL_STORAGE_KEY,
   shellState,
-  getPreset: () => '',
+  getPreset: () => activePreset,
   getRoundedSidebar: () => false,
 });
+
+function applyPreset(preset) {
+  activePreset = preset === 'dark' ? 'dark' : 'modern';
+  const dark = activePreset === 'dark';
+  document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+  presetStylesheet.href = dark
+    ? presetStylesheet.dataset.darkHref
+    : presetStylesheet.dataset.modernHref;
+  themeToggle.setAttribute('aria-pressed', String(dark));
+  themeToggle.setAttribute('aria-label', dark ? 'Use light theme' : 'Use dark theme');
+  themeToggle.title = dark ? 'Use light theme' : 'Use dark theme';
+}
 
 // === Hardcoded workflow for testing ===
 const WORKFLOW_GROUPS = [
@@ -353,6 +368,11 @@ sidebarToggle.addEventListener('click', () => {
   shellState.toggleSidebar('app.sidebarToggle');
 });
 
+themeToggle.addEventListener('click', () => {
+  applyPreset(activePreset === 'dark' ? 'modern' : 'dark');
+  shellPersistence.save();
+});
+
 // Navigation clicks
 workflowList.addEventListener('click', (e) => {
   const item = e.target.closest('[data-route]');
@@ -374,6 +394,7 @@ window.addEventListener('llm-workbench:replay-status', (event) => {
 function init() {
   // Initialize sidebar UI to match state
   updateSidebarUI(shellState.getSnapshot().sidebarOpen);
+  applyPreset(activePreset);
 
   bindMobileSidebarDismiss(shellState, sidebar, 600);
   renderWorkflows();
