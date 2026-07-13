@@ -183,6 +183,11 @@ export function createTranslationRequestsView() {
               <div class="translation-requests-details-body translation-requests-regression">
                 <div class="translation-prompts-inline-status" id="translationRegressionInfo"></div>
                 <div class="translation-prompts-run-actions">
+                  <label class="translation-reg-subdir" title="Destination folder in the testset (the fixture mirrors it)">
+                    <span>Subdir</span>
+                    <select id="translationRegressionSubdir"></select>
+                  </label>
+                  <input type="text" id="translationRegressionSubdirNew" class="translation-reg-subdir-new" placeholder="new subdir, e.g. docpack" style="display:none">
                   <button type="button" id="translationRegressionAddTestset" disabled title="Copy this image into the testset">Add to testset</button>
                   <button type="button" id="translationRegressionCapture" disabled title="Freeze this completed result as a regression fixture (frozen units + re-OCR snapshot)">Capture fixture</button>
                 </div>
@@ -319,6 +324,8 @@ export function createTranslationRequestsView() {
   const regressionInfoEl = container.querySelector('#translationRegressionInfo');
   const regressionAddTestsetBtn = container.querySelector('#translationRegressionAddTestset');
   const regressionCaptureBtn = container.querySelector('#translationRegressionCapture');
+  const regressionSubdirSel = container.querySelector('#translationRegressionSubdir');
+  const regressionSubdirNew = container.querySelector('#translationRegressionSubdirNew');
   const regressionStatusEl = container.querySelector('#translationRegressionStatus');
 
   let isBusy = false;
@@ -941,6 +948,29 @@ export function createTranslationRequestsView() {
     regressionStatusEl.classList.toggle('is-error', kind === 'error');
   }
 
+  // Destination-subdir picker for Add-to-testset. The fixture mirrors the source's subdir, so this
+  // chooses where a fresh image is filed; '' = flat testset root. The sentinel option reveals a
+  // free-text field for a brand-new subdir.
+  const NEW_SUBDIR = ' new';
+  async function populateSubdirs() {
+    let dirs = [];
+    try {
+      dirs = (await api.listRegressionSubdirs()).subdirs || [];
+    } catch (err) { /* backend down or old: root-only picker */ }
+    regressionSubdirSel.innerHTML = ['<option value="">(root)</option>']
+      .concat(dirs.map((d) => `<option value="${escapeAttr(d)}">${escapeHtml(d)}</option>`))
+      .concat([`<option value="${NEW_SUBDIR}">+ new subdir…</option>`])
+      .join('');
+    syncSubdirNew();
+  }
+  function syncSubdirNew() {
+    regressionSubdirNew.style.display = regressionSubdirSel.value === NEW_SUBDIR ? '' : 'none';
+  }
+  function subdirValue() {
+    const raw = regressionSubdirSel.value === NEW_SUBDIR ? regressionSubdirNew.value : regressionSubdirSel.value;
+    return String(raw || '').trim().replace(/^\/+|\/+$/g, '');
+  }
+
   function renderRegressionInfo() {
     const name = regressionName();
     const status = regressionStatus;
@@ -963,6 +993,10 @@ export function createTranslationRequestsView() {
     const targetLang = (lastTargetLang || String(targetInput.value || '')).trim();
     const hasForLang = Boolean(langs[targetLang] && langs[targetLang].length);
     regressionAddTestsetBtn.disabled = isBusy || !ready || !hasName || inTestset;
+    // The subdir picker only matters while the image can still be added (not yet in the testset).
+    const canAdd = !regressionAddTestsetBtn.disabled;
+    regressionSubdirSel.disabled = !canAdd;
+    regressionSubdirNew.disabled = !canAdd;
     regressionCaptureBtn.disabled = isBusy || !ready || !hasName || !inTestset;
     regressionCaptureBtn.textContent = `${hasForLang ? 'Capture variant' : 'Capture fixture'} (${targetLang || '?'})`;
   }
@@ -987,8 +1021,9 @@ export function createTranslationRequestsView() {
     if (!currentRequestId || !regressionName()) return;
     setRegressionStatus('Adding to testset…');
     try {
-      regressionStatus = await api.addRegressionTestset({ request_id: currentRequestId, name: regressionName() });
+      regressionStatus = await api.addRegressionTestset({ request_id: currentRequestId, name: regressionName(), subdir: subdirValue() });
       setRegressionStatus('Added to testset.');
+      populateSubdirs();  // a freshly-typed subdir now exists — offer it next time
     } catch (err) {
       setRegressionStatus(formatApiError(err), 'error');
     }
@@ -1102,6 +1137,8 @@ export function createTranslationRequestsView() {
 
   regressionAddTestsetBtn.addEventListener('click', addToTestset);
   regressionCaptureBtn.addEventListener('click', captureFixture);
+  regressionSubdirSel.addEventListener('change', syncSubdirNew);
+  populateSubdirs();
   previewZoomInput.addEventListener('input', updatePreviewZoom);
   previewArtifactSelect.addEventListener('change', () => {
     if (lastPreviewResult) renderOutputPreview(lastPreviewResult);

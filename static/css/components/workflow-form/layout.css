@@ -175,6 +175,10 @@
   flex-wrap: wrap;
 }
 
+.translation-reg-subdir { display: inline-flex; align-items: center; gap: 5px; }
+.translation-reg-subdir > span { font-size: 0.78rem; opacity: 0.7; }
+.translation-reg-subdir-new { max-width: 12rem; }
+
 .translation-prompts-view .translation-prompts-library-actions button.is-pending-load {
   border-color: var(--warning-border);
   background: var(--warning-bg);

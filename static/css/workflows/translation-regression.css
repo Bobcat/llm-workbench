@@ -18,6 +18,11 @@
 .translation-regression-detail-pane { flex: 1; overflow: auto; padding: 8px 12px 12px; font-size: 0.82rem; }
 .translation-regression-tree, .translation-regression-tree ul { list-style: none; margin: 0; padding-left: 12px; font-size: 0.82rem; }
 .translation-regression-tree > .reg-name { margin-bottom: 6px; }
+.reg-group {
+  margin: 10px 0 3px; padding: 0 4px; font-size: 0.7rem; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.04em; opacity: 0.55;
+}
+.reg-group:first-child { margin-top: 0; }
 .reg-row, .reg-variant { display: flex; align-items: center; gap: 6px; padding: 2px 4px; border-radius: 4px; }
 .reg-variant { cursor: pointer; }
 .reg-variant:hover { background: var(--surface-hover); }

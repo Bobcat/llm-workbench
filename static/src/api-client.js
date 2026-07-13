@@ -387,6 +387,10 @@ export const api = {
     return fetchJson('/api/translation/regression/fixtures');
   },
 
+  async listRegressionSubdirs() {
+    return fetchJson('/api/translation/regression/subdirs');
+  },
+
   async runRegressionVariant(body) {
     return fetchJson('/api/translation/regression/run', {
       method: 'POST',

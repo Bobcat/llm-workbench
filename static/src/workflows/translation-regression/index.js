@@ -120,7 +120,7 @@ export function createRegressionView() {
       treeEl.innerHTML = '<li class="translation-preview-empty">No fixtures</li>';
       return;
     }
-    treeEl.innerHTML = images.map((image) => {
+    const renderImage = (image) => {
       const isCollapsed = collapsed.has(image.name);
       let body = '';
       if (!isCollapsed) {
@@ -149,6 +149,19 @@ export function createRegressionView() {
       return `<li class="reg-name">
         <div class="reg-row reg-name-head" data-collapse="${escapeAttr(image.name)}">${caret}${aggGlyph(nameState(image))}<span class="reg-label">${escapeHtml(image.name)}</span>${badge}${delButton('name', image.name)}</div>
         ${body}</li>`;
+    };
+    // Group by reldir (observability): root images first, then one header per source subdir, so the
+    // tree mirrors testset/ (docpack/… clusters under its own heading).
+    const groups = new Map();
+    images.forEach((image) => {
+      const g = image.reldir || '';
+      if (!groups.has(g)) groups.set(g, []);
+      groups.get(g).push(image);
+    });
+    const keys = Array.from(groups.keys()).sort((a, b) => (a === '' ? -1 : b === '' ? 1 : a.localeCompare(b)));
+    treeEl.innerHTML = keys.map((g) => {
+      const header = g ? `<li class="reg-group">${escapeHtml(g)}</li>` : '';
+      return header + groups.get(g).map(renderImage).join('');
     }).join('');
   }
 

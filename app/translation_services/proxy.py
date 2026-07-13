@@ -201,6 +201,11 @@ def regression_fixtures_list() -> dict:
     return _request_json(method="GET", path="/v1/regression/fixtures", timeout=5.0)
 
 
+@router.get("/regression/subdirs")
+def regression_subdirs() -> dict:
+    return _request_json(method="GET", path="/v1/regression/subdirs", timeout=5.0)
+
+
 @router.get("/regression/fixtures/{name}/{lang}/{variant}/{artifact}")
 def regression_variant_artifact(name: str, lang: str, variant: str, artifact: str) -> Response:
     seg = lambda value: parse.quote(value, safe="")
