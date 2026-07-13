@@ -47,8 +47,14 @@
   display: none;
 }
 
-.sidebar .sidebar-content > .nav-links > li .material-symbols-outlined {
-  font-size: 20px;
+.sidebar .sidebar-content > .nav-links > li .sidebar-icon {
+  width: 20px;
+  height: 20px;
+  margin-right: var(--sidebar-item-icon-gap);
+}
+
+.sidebar:not(.expanded) .sidebar-content > .nav-links > li .sidebar-icon {
+  margin-right: 0;
 }
 
 @media (min-width: 601px) {
@@ -92,9 +98,10 @@
   background: var(--hover-bg);
 }
 
-.sidebar .theme-toggle .material-symbols-outlined {
+.sidebar .theme-toggle .app-icon {
   flex: 0 0 auto;
-  font-size: 20px;
+  width: 20px;
+  height: 20px;
 }
 
 .sidebar:not(.expanded) .theme-toggle {
@@ -114,33 +121,16 @@
   }
 }
 
-/* Collapsed sidebar: show the item name as a tooltip on hover (the labels are hidden when
-   collapsed, so without this you can't tell items apart without expanding). The foundation
-   reserves the [data-tooltip] hook (and disables it on mobile); this is its desktop styling.
-   The tooltip must escape the clipping ancestors, so overflow is opened up in collapsed state. */
-@media (min-width: 601px) {
-  .sidebar:not(.expanded) .sidebar-content,
-  .sidebar:not(.expanded) .sidebar-content > .nav-links > li[data-tooltip] {
-    overflow: visible;
-  }
-  .sidebar:not(.expanded) .sidebar-content > .nav-links > li[data-tooltip] {
-    position: relative;
-  }
-  .sidebar:not(.expanded) .sidebar-content > .nav-links > li[data-tooltip]:hover::after {
-    content: attr(data-tooltip);
-    position: absolute;
-    left: calc(100% + 10px);
-    top: 50%;
-    transform: translateY(-50%);
-    white-space: nowrap;
-    background: var(--tooltip-bg);
-    color: var(--text-inverse);
-    padding: 4px 9px;
-    border-radius: 6px;
-    font-size: 0.78rem;
-    line-height: 1.2;
-    box-shadow: var(--shadow-tooltip);
-    pointer-events: none;
-    z-index: 200;
-  }
+.sidebar-tooltip {
+  position: fixed;
+  z-index: 10100;
+  padding: 4px 9px;
+  border-radius: 6px;
+  background: var(--tooltip-bg);
+  color: var(--text-inverse);
+  box-shadow: var(--shadow-tooltip);
+  font-size: 0.78rem;
+  line-height: 1.2;
+  white-space: nowrap;
+  pointer-events: none;
 }

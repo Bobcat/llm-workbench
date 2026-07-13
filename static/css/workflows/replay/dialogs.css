@@ -63,7 +63,7 @@
   box-shadow: var(--shadow-soft);
 }
 
-.nav-links li.is-running .material-symbols-outlined {
+.nav-links li.is-running .sidebar-icon {
   color: var(--warning-accent);
 }
 

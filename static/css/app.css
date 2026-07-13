@@ -1,5 +1,6 @@
 @import url("./tokens.css");
 @import url("./components/visibility.css");
+@import url("./components/icons.css");
 @import url("./workflows/replay/layout.css");
 @import url("./workflows/replay/transcript-debug.css");
 @import url("./workflows/replay/dialogs.css");

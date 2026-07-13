@@ -1,79 +1,160 @@
+.icons-view,
 .icons-view .icons-view-content-area {
-  display: block;
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow: auto;
+  min-height: 100%;
   background: var(--surface-soft);
 }
 
-.icons-view .icons-view-pane {
-  min-width: 0;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-  padding: 16px;
+.icons-view .icons-view-content-area {
+  height: 100%;
   overflow: auto;
-  background: var(--surface-soft);
+}
+
+.icons-view .icons-view-pane {
+  display: grid;
+  gap: 28px;
+  min-width: 0;
+  padding: 20px;
 }
 
 .icons-view .icons-view-group {
   display: grid;
-  gap: 12px;
+  gap: 10px;
+  min-width: 0;
 }
 
-.icons-view .icons-view-group + .icons-view-group {
-  padding-top: 18px;
-  border-top: 1px solid var(--border-subtle);
-}
-
-.icons-view .icons-view-group-header h2 {
+.icons-view .icons-view-group h2 {
   margin: 0;
   color: var(--text-strong);
   font-size: 0.88rem;
-  font-weight: 600;
+  font-weight: 650;
   line-height: 1.2;
 }
 
-.icons-view .icons-view-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
-  gap: 12px;
+.icons-view .icons-view-matrix {
+  min-width: 0;
+  overflow-x: auto;
+  border-top: 1px solid var(--border-soft);
+  border-bottom: 1px solid var(--border-soft);
+  background: var(--surface);
 }
 
-.icons-view .icons-view-option {
+.icons-view .icons-view-row {
   display: grid;
-  justify-items: center;
-  gap: 8px;
-  padding: 14px 12px;
-  border: 1px solid var(--border-subtle);
-  border-radius: 12px;
-  background: var(--surface);
+  grid-template-columns: minmax(220px, 1fr) repeat(3, 64px) repeat(3, 88px);
+  align-items: center;
+  min-width: 680px;
+  min-height: 56px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.icons-view .icons-view-row:first-child {
+  border-top: 0;
+}
+
+.icons-view .icons-view-row > * {
+  min-width: 0;
+  padding: 8px 10px;
+}
+
+.icons-view .icons-view-header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  min-height: 36px;
+  background: var(--surface-muted);
+  color: var(--text-subtle);
+  font-size: 0.75rem;
+  font-weight: 650;
   text-align: center;
 }
 
-.icons-view .icons-view-option.is-current {
-  border-color: var(--focus-ring);
-  background: var(--action-primary-soft);
+.icons-view .icons-view-header > :first-child {
+  text-align: left;
 }
 
-.icons-view .icons-view-option-glyph {
+.icons-view .icons-view-identity {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 3px 10px;
+  align-items: center;
+}
+
+.icons-view .icons-view-label {
+  min-width: 0;
   color: var(--text-strong);
-  font-size: 1.65rem;
-  line-height: 1;
-}
-
-.icons-view .icons-view-option-name {
-  color: var(--text-subtle);
-  font-size: 0.76rem;
-  font-weight: 500;
-  line-height: 1.2;
+  font-size: 0.86rem;
+  font-weight: 600;
   overflow-wrap: anywhere;
 }
 
-.icons-view .icons-view-option-badge {
-  color: var(--info);
+.icons-view .icons-view-identity code {
+  grid-column: 1;
+  color: var(--text-subtle);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+}
+
+.icons-view .icons-view-source {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  color: var(--text-subtle);
   font-size: 0.75rem;
   font-weight: 600;
-  line-height: 1.1;
+}
+
+.icons-view .icons-view-sample {
+  display: grid;
+  place-items: center;
+  color: var(--text);
+}
+
+.icons-view .icons-view-size-16 .app-icon {
+  width: 16px;
+  height: 16px;
+}
+
+.icons-view .icons-view-size-20 .app-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.icons-view .icons-view-size-24 .app-icon {
+  width: 24px;
+  height: 24px;
+}
+
+.icons-view .icons-view-state-sample {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 36px;
+  border-radius: 8px;
+  color: var(--text);
+}
+
+.icons-view .icons-view-state-sample .app-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.icons-view .icons-view-state-sample.is-active {
+  background: var(--active-bg);
+  color: var(--active-text);
+}
+
+.icons-view .icons-view-state-sample.is-running {
+  color: var(--warning-accent);
+}
+
+.icons-view .icons-view-state-sample.is-collapsed {
+  border: 1px solid var(--border-soft);
+  background: var(--chrome-bg);
+}
+
+@media (max-width: 600px) {
+  .icons-view .icons-view-pane {
+    gap: 22px;
+    padding: 14px;
+  }
 }

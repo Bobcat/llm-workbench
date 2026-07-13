@@ -20,6 +20,7 @@ import { createImageGenerationView } from './src/workflows/image-generation/inde
 import { createVideoGenerationView } from './src/workflows/video-generation/index.js';
 import { createChatView } from './src/workflows/chat/index.js';
 import { createIconsView } from './src/workflows/icons/index.js';
+import { iconMarkup } from './src/shared/icons.js';
 
 // === Initialization ===
 const byId = (id) => document.getElementById(id);
@@ -30,6 +31,13 @@ const sidebarToggle = byId('sidebarToggle');
 const workflowList = byId('workflowList');
 const presetStylesheet = byId('presetStylesheet');
 const themeToggle = byId('themeToggle');
+const themeToggleIcon = byId('themeToggleIcon').querySelector('use');
+const themeToggleLabel = byId('themeToggleLabel');
+const sidebarTooltip = document.createElement('div');
+sidebarTooltip.className = 'sidebar-tooltip';
+sidebarTooltip.hidden = true;
+sidebarTooltip.setAttribute('role', 'tooltip');
+document.body.append(sidebarTooltip);
 const SHELL_STORAGE_KEY = 'llm-workbench.shell';
 const initialShell = window.__LLM_WORKBENCH_INITIAL_SHELL__ || {};
 let activePreset = initialShell.preset === 'dark' ? 'dark' : 'modern';
@@ -81,9 +89,11 @@ function applyPreset(preset) {
   presetStylesheet.href = dark
     ? presetStylesheet.dataset.darkHref
     : presetStylesheet.dataset.modernHref;
-  themeToggle.setAttribute('aria-pressed', String(dark));
-  themeToggle.setAttribute('aria-label', dark ? 'Use light theme' : 'Use dark theme');
-  themeToggle.title = dark ? 'Use light theme' : 'Use dark theme';
+  const themeAction = dark ? 'Light theme' : 'Dark theme';
+  themeToggleIcon.setAttribute('href', `assets/icons.svg#${dark ? 'sun' : 'moon'}`);
+  themeToggleLabel.textContent = themeAction;
+  themeToggle.setAttribute('aria-label', themeAction);
+  themeToggle.title = themeAction;
 }
 
 // === Hardcoded workflow for testing ===
@@ -95,7 +105,7 @@ const WORKFLOW_GROUPS = [
         id: 'replay-translate',
         route: 'replay-translate',
         name: 'Replay & Translate',
-        icon: 'translate',
+        icon: 'languages',
       },
     ],
   },
@@ -106,7 +116,7 @@ const WORKFLOW_GROUPS = [
         id: 'replay-speak',
         route: 'replay-speak',
         name: 'Replay & Speak',
-        icon: 'record_voice_over',
+        icon: 'volume-2',
       },
     ],
   },
@@ -117,19 +127,20 @@ const WORKFLOW_GROUPS = [
         id: 'llm-pool-models',
         route: 'llm-pool-models',
         name: 'Models',
-        icon: 'swap_horiz',
+        tooltip: 'LLM pool models',
+        icon: 'pool-llm',
       },
       {
         id: 'text-generation',
         route: 'text-generation',
         name: 'Text generation',
-        icon: 'chat',
+        icon: 'file-plus',
       },
       {
         id: 'chat',
         route: 'chat',
         name: 'Chat',
-        icon: 'forum',
+        icon: 'messages-square',
       },
     ],
   },
@@ -140,7 +151,8 @@ const WORKFLOW_GROUPS = [
         id: 'tts-pool-models',
         route: 'tts-pool-models',
         name: 'Models',
-        icon: 'record_voice_over',
+        tooltip: 'TTS pool models',
+        icon: 'pool-tts',
       },
     ],
   },
@@ -151,25 +163,26 @@ const WORKFLOW_GROUPS = [
         id: 'image-pool-models',
         route: 'image-pool-models',
         name: 'Models',
-        icon: 'image_search',
+        tooltip: 'Image pool models',
+        icon: 'pool-image',
       },
       {
         id: 'image-generation',
         route: 'image-generation',
         name: 'Image generation',
-        icon: 'image',
+        icon: 'image-plus',
       },
       {
         id: 'image-lora-library',
         route: 'image-lora-library',
         name: 'LoRA Library',
-        icon: 'style',
+        icon: 'layers-3',
       },
       {
         id: 'image-train',
         route: 'image-train',
         name: 'Tuning',
-        icon: 'model_training',
+        icon: 'sliders-horizontal',
       },
     ],
   },
@@ -180,13 +193,14 @@ const WORKFLOW_GROUPS = [
         id: 'video-pool-models',
         route: 'video-pool-models',
         name: 'Models',
-        icon: 'movie',
+        tooltip: 'Video pool models',
+        icon: 'pool-video',
       },
       {
         id: 'video-generation',
         route: 'video-generation',
         name: 'Video generation',
-        icon: 'movie_creation',
+        icon: 'video-plus',
       },
     ],
   },
@@ -197,19 +211,19 @@ const WORKFLOW_GROUPS = [
         id: 'image-translation',
         route: 'image-translation',
         name: 'Image translation',
-        icon: 'upload_file',
+        icon: 'image',
       },
       {
         id: 'translation-regression',
         route: 'translation-regression',
         name: 'Regression testing',
-        icon: 'fact_check',
+        icon: 'clipboard-check',
       },
       {
         id: 'prompt-library',
         route: 'prompt-library',
         name: 'Prompt Library',
-        icon: 'edit_note',
+        icon: 'book-open-text',
       },
     ],
   },
@@ -220,7 +234,7 @@ const AUXILIARY_WORKFLOWS = [
     id: 'icons',
     route: 'icons',
     name: 'Icons',
-    icon: 'apps',
+    icon: 'shapes',
   }
 ];
 
@@ -232,8 +246,8 @@ const WORKFLOWS = [
 function renderWorkflows() {
   const groupedMarkup = WORKFLOW_GROUPS.map((group) => {
     const sectionItems = group.items.map((wf) => `
-      <li data-route="${wf.route}" data-tooltip="${wf.name}">
-        <span class="material-symbols-outlined" aria-hidden="true">${wf.icon}</span>
+      <li data-route="${wf.route}" data-tooltip="${wf.tooltip || wf.name}">
+        ${iconMarkup(wf.icon, 'sidebar-icon')}
         <span class="link-text">${wf.name}</span>
       </li>
     `).join('');
@@ -244,8 +258,8 @@ function renderWorkflows() {
   }).join('');
 
   const auxiliaryMarkup = AUXILIARY_WORKFLOWS.map((wf) => `
-    <li data-route="${wf.route}" data-tooltip="${wf.name}" class="sidebar-route-bottom">
-      <span class="material-symbols-outlined" aria-hidden="true">${wf.icon}</span>
+    <li data-route="${wf.route}" data-tooltip="${wf.tooltip || wf.name}" class="sidebar-route-bottom">
+      ${iconMarkup(wf.icon, 'sidebar-icon')}
       <span class="link-text">${wf.name}</span>
     </li>
   `).join('');
@@ -355,6 +369,7 @@ WORKFLOWS.forEach(wf => {
 function updateSidebarUI(isOpen) {
   sidebar.classList.toggle('expanded', isOpen);
   sidebar.classList.toggle('collapsed', !isOpen);
+  sidebarTooltip.hidden = true;
 }
 
 // Subscribe to state changes
@@ -382,6 +397,30 @@ workflowList.addEventListener('click', (e) => {
   if (router.has(route)) {
     router.navigate(route, null, { url: `#${route}` });
   }
+});
+
+workflowList.addEventListener('pointerover', (event) => {
+  const item = event.target.closest('[data-tooltip]');
+  if (!item || item.contains(event.relatedTarget) || sidebar.classList.contains('expanded')) return;
+  const itemRect = item.getBoundingClientRect();
+  sidebarTooltip.textContent = item.dataset.tooltip;
+  sidebarTooltip.hidden = false;
+  const tooltipRect = sidebarTooltip.getBoundingClientRect();
+  sidebarTooltip.style.left = `${itemRect.right + 10}px`;
+  sidebarTooltip.style.top = `${Math.min(
+    Math.max(8, itemRect.top + (itemRect.height - tooltipRect.height) / 2),
+    window.innerHeight - tooltipRect.height - 8,
+  )}px`;
+});
+
+workflowList.addEventListener('pointerout', (event) => {
+  const item = event.target.closest('[data-tooltip]');
+  if (!item || item.contains(event.relatedTarget)) return;
+  sidebarTooltip.hidden = true;
+});
+
+workflowList.addEventListener('scroll', () => {
+  sidebarTooltip.hidden = true;
 });
 
 window.addEventListener('llm-workbench:replay-status', (event) => {
