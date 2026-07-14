@@ -49,7 +49,7 @@ export function createRegressionView() {
   detailImg.alt = 'render';
   detailImg.hidden = true;  // stay hidden until the first image actually decodes (no broken-icon band)
   let detailImgToken = 0;
-  function loadDetailImage(src, onShown) {
+  function loadDetailImage(src, onShown, fallbackSrc = null) {
     const token = (detailImgToken += 1);
     const apply = () => {
       if (token !== detailImgToken) return;
@@ -59,7 +59,11 @@ export function createRegressionView() {
     };
     const pre = new Image();
     pre.onload = apply;
-    pre.onerror = () => { if (token === detailImgToken) { detailImg.removeAttribute('src'); detailImg.hidden = true; } };
+    pre.onerror = () => {
+      if (token !== detailImgToken) return;
+      if (fallbackSrc) { loadDetailImage(fallbackSrc, onShown); return; }  // e.g. marked snapshot from an older run
+      detailImg.removeAttribute('src'); detailImg.hidden = true;
+    };
     pre.src = src;
     if (pre.complete) apply();  // already cached: onload may not fire
   }
@@ -168,7 +172,7 @@ export function createRegressionView() {
   function imageUrl(name, lang, variant, file) {
     // Stable per-file version (not Date.now): re-renders and toggles reuse the cached image instead
     // of re-fetching it — the re-fetch was the black flash. Bumped only when the file changes.
-    const version = file === 'actual.png' ? actualVer : (file === 'snapshot.png' ? snapshotVer : null);
+    const version = (file === 'actual.png' || file === 'snapshot_diff.png') ? actualVer : (file === 'snapshot.png' ? snapshotVer : null);
     const base = `${REG_BASE}/fixtures/${encodeURIComponent(name)}/${encodeURIComponent(lang)}/${encodeURIComponent(variant)}/${file}`;
     return version === null ? base : `${base}?v=${version}`;
   }
@@ -190,11 +194,16 @@ export function createRegressionView() {
     const both = detailView === 'both';
     const bothRightFile = hasActual ? 'actual.png' : 'source';
     const bothRightLabel = hasActual ? 'Actual' : 'Source';
+    // On a failure the run wrote snapshot_diff.png: the snapshot with a box around every
+    // mismatched re-OCR segment (red = missing/moved, orange = extra), so the reviewer sees
+    // WHERE to compare instead of searching. Only the snapshot side is marked; the actual
+    // stays clean for judging.
+    const snapshotFile = hasActual ? 'snapshot_diff.png' : 'snapshot.png';
 
     let src;
     if (detailView === 'source') src = imageUrl(name, lang, variant, 'source');
     else if (detailView === 'actual') src = imageUrl(name, lang, variant, 'actual.png');
-    else src = imageUrl(name, lang, variant, 'snapshot.png');
+    else src = imageUrl(name, lang, variant, snapshotFile);
 
     const resultLabel = result
       ? (result.passed ? '<span class="reg-pass">PASS</span>' : '<span class="reg-fail">FAIL</span>')
@@ -230,7 +239,8 @@ export function createRegressionView() {
         <figure class="reg-both-col"><figcaption>Snapshot</figcaption><img alt="snapshot" style="width:${imgZoom}%"></figure>
         <figure class="reg-both-col"><figcaption>${escapeHtml(bothRightLabel)}</figcaption><img alt="${escapeAttr(bothRightLabel)}" style="width:${imgZoom}%"></figure>`;
       const [imgA, imgB] = frame.querySelectorAll('img');
-      imgA.src = imageUrl(name, lang, variant, 'snapshot.png');
+      imgA.onerror = () => { imgA.onerror = null; imgA.src = imageUrl(name, lang, variant, 'snapshot.png'); };
+      imgA.src = imageUrl(name, lang, variant, snapshotFile);
       imgB.src = imageUrl(name, lang, variant, bothRightFile);
       const pos = scrollByView.get(restoreKey);
       if (pos) { frame.scrollTop = pos.top; frame.scrollLeft = pos.left; }
@@ -241,7 +251,8 @@ export function createRegressionView() {
     loadDetailImage(src, () => {
       const pos = scrollByView.get(restoreKey);
       if (pos) { frame.scrollTop = pos.top; frame.scrollLeft = pos.left; }
-    });
+    }, snapshotFile === 'snapshot_diff.png' && detailView === 'snapshot'
+      ? imageUrl(name, lang, variant, 'snapshot.png') : null);
   }
 
   async function refresh() {
