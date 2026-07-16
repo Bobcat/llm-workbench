@@ -124,9 +124,10 @@ export function createTranslationRequestsView() {
                 </label>
                 <label class="translation-prompts-field">
                   <span>Size metric</span>
-                  <select id="translationSizeMetricMode" title="Where a line's source size comes from. extent sizes from the OCR polygon's full ink extent; band clamps each line to its strong ink band scaled by the document's own norm, so sparse tall glyphs (parentheses, brackets) cannot inflate a line past its siblings. One-sided: band only ever shrinks an outlier.">
+                  <select id="translationSizeMetricMode" title="Where a line's source size comes from. extent sizes from the OCR polygon's full ink extent; band clamps each line to its strong ink band scaled by the document's own norm, so sparse tall glyphs (parentheses, brackets) cannot inflate a line past its siblings (one-sided, only shrinks an outlier). fill sizes each line so its rendered ink is as tall as the source line's ink — a direct per-line pixel match that fixes translated body text reading ~10-20% smaller/airier than the print. Changing this re-renders from the cached translations (no new translation). Flat, non-CJK groups only.">
                     <option value="extent" selected>extent — polygon</option>
                     <option value="band">band — clamp outliers</option>
+                    <option value="fill">fill — match source ink</option>
                   </select>
                 </label>
                 <label class="translation-prompts-field">
@@ -142,6 +143,10 @@ export function createTranslationRequestsView() {
                     <option value="footprint" selected>footprint — exact fit</option>
                     <option value="extend">extend — grow</option>
                   </select>
+                </label>
+                <label class="translation-requests-option" title="Text inside a detected image/chart region (a screenshot's labels, a figure that is really a table) keeps its original pixels by default. Uncheck to translate and render it too. Changing this re-aligns from the cached OCR + hint (no VLM/OCR) and re-translates, so it takes a translation pass, not just a re-render.">
+                  <input id="translationPreserveImageRegions" type="checkbox" checked>
+                  <span>Preserve figures/screenshots</span>
                 </label>
               </div>
             </details>
@@ -285,6 +290,7 @@ export function createTranslationRequestsView() {
   const preserveHeuristicTextInput = container.querySelector('#translationPreserveHeuristicText');
   const preserveUnchangedTextInput = container.querySelector('#translationPreserveUnchangedText');
   const useGeometryColumnsInput = container.querySelector('#translationUseGeometryColumns');
+  const preserveImageRegionsInput = container.querySelector('#translationPreserveImageRegions');
   const renderSizeModeSelect = container.querySelector('#translationRenderSizeMode');
   const eraseFillModeSelect = container.querySelector('#translationEraseFillMode');
   const widthFitModeSelect = container.querySelector('#translationWidthFitMode');
@@ -416,6 +422,7 @@ export function createTranslationRequestsView() {
       preserve_heuristic_text: Boolean(preserveHeuristicTextInput.checked),
       preserve_unchanged_text: Boolean(preserveUnchangedTextInput.checked),
       use_geometry_columns: Boolean(useGeometryColumnsInput.checked),
+      preserve_image_regions: Boolean(preserveImageRegionsInput.checked),
       render_size_mode: String(renderSizeModeSelect.value || 'median'),
       erase_fill_mode: String(eraseFillModeSelect.value || 'inpaint'),
       width_fit_mode: String(widthFitModeSelect.value || 'footprint'),
@@ -561,6 +568,7 @@ export function createTranslationRequestsView() {
     body.preserve_heuristic_text = Boolean(preserveHeuristicTextInput.checked);
     body.preserve_unchanged_text = Boolean(preserveUnchangedTextInput.checked);
     body.use_geometry_columns = Boolean(useGeometryColumnsInput.checked);
+    body.preserve_image_regions = Boolean(preserveImageRegionsInput.checked);
     body.render_size_mode = String(renderSizeModeSelect.value || 'median');
     body.erase_fill_mode = String(eraseFillModeSelect.value || 'inpaint');
     body.width_fit_mode = String(widthFitModeSelect.value || 'footprint');
@@ -1148,6 +1156,9 @@ export function createTranslationRequestsView() {
   // VLM/OCR); changing a render param re-renders it in place (cached translations, no LLM at
   // all). With nothing loaded these selects just set the values the next submit will use.
   targetInput.addEventListener('change', retranslateRequest);
+  // preserve_image_regions changes the align stage (which cells become units), so it re-aligns
+  // from cache + re-translates (no VLM/OCR) — a retranslate, not a cheap re-render.
+  preserveImageRegionsInput.addEventListener('change', retranslateRequest);
   renderSizeModeSelect.addEventListener('change', rerenderRequest);
   eraseFillModeSelect.addEventListener('change', rerenderRequest);
   widthFitModeSelect.addEventListener('change', rerenderRequest);
