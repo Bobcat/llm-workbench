@@ -1,23 +1,23 @@
 /* === Translation Regression view === */
-.translation-regression-view { display: flex; flex-direction: column; height: 100%; min-height: 0; }
-.translation-regression-toolbar { position: relative; display: flex; gap: 8px; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--border-subtle); }
+.image-translation-regression-view { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.image-translation-regression-toolbar { position: relative; display: flex; gap: 8px; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--border-subtle); }
 /* Start the status text at the detail pane's left edge (= the tree pane width) so it lines up under
    the detail column instead of crowding the buttons. */
-.translation-regression-toolbar #regStatus { position: absolute; left: 240px; top: 50%; transform: translateY(-50%); font-size: 0.78rem; }
-.translation-regression-body { display: flex; flex: 1; min-height: 0; }
-.translation-regression-view button:not(.reg-del) {
+.image-translation-regression-toolbar #regStatus { position: absolute; left: 240px; top: 50%; transform: translateY(-50%); font-size: 0.78rem; }
+.image-translation-regression-body { display: flex; flex: 1; min-height: 0; }
+.image-translation-regression-view button:not(.reg-del) {
   border: 1px solid var(--border-control);
   background: var(--surface);
   color: var(--text);
   border-radius: 8px; padding: 6px 14px; font-size: 0.85rem; font-weight: 500; line-height: 1.2;
   cursor: pointer; transition: background-color 0.15s ease, border-color 0.15s ease;
 }
-.translation-regression-view button:not(.reg-del):hover { border-color: var(--focus); }
-.translation-regression-view button:disabled { opacity: 0.45; cursor: default; }
-.translation-regression-tree-pane { width: 240px; overflow: auto; border-right: 1px solid var(--border-subtle); padding: 8px; background: var(--surface-soft); }
-.translation-regression-detail-pane { flex: 1; overflow: auto; padding: 8px 12px 12px; font-size: 0.82rem; }
-.translation-regression-tree, .translation-regression-tree ul { list-style: none; margin: 0; padding-left: 12px; font-size: 0.82rem; }
-.translation-regression-tree > .reg-name { margin-bottom: 6px; }
+.image-translation-regression-view button:not(.reg-del):hover { border-color: var(--focus); }
+.image-translation-regression-view button:disabled { opacity: 0.45; cursor: default; }
+.image-translation-regression-tree-pane { width: 240px; overflow: auto; border-right: 1px solid var(--border-subtle); padding: 8px; background: var(--surface-soft); }
+.image-translation-regression-detail-pane { flex: 1; overflow: auto; padding: 8px 12px 12px; font-size: 0.82rem; }
+.image-translation-regression-tree, .image-translation-regression-tree ul { list-style: none; margin: 0; padding-left: 12px; font-size: 0.82rem; }
+.image-translation-regression-tree > .reg-name { margin-bottom: 6px; }
 .reg-group {
   margin: 10px 0 3px; padding: 0 4px; font-size: 0.7rem; font-weight: 600;
   text-transform: uppercase; letter-spacing: 0.04em; opacity: 0.55;

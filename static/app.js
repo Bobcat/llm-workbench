@@ -14,9 +14,10 @@ import { createLoraLibraryView } from './src/workflows/lora-library/index.js';
 import { createVideoPoolView } from './src/workflows/video-pool/index.js';
 import { createTranslationRequestsView } from './src/workflows/translation-requests/index.js';
 import { createPdfTranslationView } from './src/workflows/pdf-translation/index.js';
+import { createPdfTranslationRegressionView } from './src/workflows/pdf-translation-regression/index.js';
 import { createPdfTestingView } from './src/workflows/pdf-testing/index.js';
 import { createTranslationPromptsView } from './src/workflows/translation-prompts/index.js';
-import { createRegressionView } from './src/workflows/translation-regression/index.js';
+import { createImageTranslationRegressionView } from './src/workflows/image-translation-regression/index.js';
 import { createTextGenerationView } from './src/workflows/text-generation/index.js';
 import { createImageGenerationView } from './src/workflows/image-generation/index.js';
 import { createVideoGenerationView } from './src/workflows/video-generation/index.js';
@@ -59,15 +60,18 @@ const PERSISTENT_WORKFLOW_IDS = new Set([
   'video-pool-models',
   'video-generation',
   'image-translation',
+  'image-translation-regression',
   'pdf-translation',
+  'pdf-translation-regression',
   'pdf-testing',
-  'translation-regression',
 ]);
 
 const ROUTE_ALIASES = new Map([
   ['ad-hoc-prompt', 'text-generation'],
   ['vlm-test', 'text-generation'],
   ['translation-requests', 'image-translation'],
+  // Old route from before the image/pdf regression split; keep bookmarks working.
+  ['translation-regression', 'image-translation-regression'],
 ]);
 
 function normalizeRoute(route) {
@@ -218,22 +222,28 @@ const WORKFLOW_GROUPS = [
         icon: 'image',
       },
       {
+        id: 'image-translation-regression',
+        route: 'image-translation-regression',
+        name: 'Image translation regression',
+        icon: 'clipboard-check',
+      },
+      {
         id: 'pdf-translation',
         route: 'pdf-translation',
         name: 'PDF translation',
         icon: 'file-text',
       },
       {
+        id: 'pdf-translation-regression',
+        route: 'pdf-translation-regression',
+        name: 'PDF translation regression',
+        icon: 'clipboard-check',
+      },
+      {
         id: 'pdf-testing',
         route: 'pdf-testing',
         name: 'PDF testing',
         icon: 'gauge',
-      },
-      {
-        id: 'translation-regression',
-        route: 'translation-regression',
-        name: 'Regression testing',
-        icon: 'clipboard-check',
       },
       {
         id: 'prompt-library',
@@ -314,14 +324,17 @@ function createWorkflowView(workflowId) {
   if (workflowId === 'pdf-translation') {
     return createPdfTranslationView();
   }
+  if (workflowId === 'pdf-translation-regression') {
+    return createPdfTranslationRegressionView();
+  }
   if (workflowId === 'pdf-testing') {
     return createPdfTestingView();
   }
   if (workflowId === 'prompt-library') {
     return createTranslationPromptsView();
   }
-  if (workflowId === 'translation-regression') {
-    return createRegressionView();
+  if (workflowId === 'image-translation-regression') {
+    return createImageTranslationRegressionView();
   }
   if (workflowId === 'text-generation') {
     return createTextGenerationView();

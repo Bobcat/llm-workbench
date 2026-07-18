@@ -53,10 +53,11 @@ These surfaces are expected to stay. Their UI can change.
 **Translation Services**
 
 - `Image translation` submits image translation requests and inspects artifacts.
-- `PDF translation` submits PDF translation requests and previews the translated document.
+- `Image translation regression` re-runs image translation fixtures and re-baselines approved changes (capture happens on the Image translation view).
+- `PDF translation` submits PDF translation requests, previews the translated document, and captures a completed run as a regression fixture.
+- `PDF translation regression` re-runs document fixtures (replay + per-page diffs) and shows the benchmark-on-replay score against the accepted baseline.
 - `PDF testing` shows the PDF benchmark comparison matrix and imports external translations for scoring.
 - `Prompt Library` manages prompts used by translation services.
-- `Regression testing` captures and re-runs image translation fixtures.
 
 The same pattern can host later service consoles. One likely example is TTS
 Services for shared voice libraries and stable generated voices.
@@ -172,6 +173,7 @@ Main endpoint families:
 | `/api/translation/*` | `translation-services` requests, prompts, artifacts, and regression fixtures. |
 | `/api/pdf-translation/*` | `translation-services` PDF translation requests and document artifacts. |
 | `/api/pdf-benchmark/*` | `translation-services` PDF benchmark results, testset listing, and scoring runs. |
+| `/api/pdf-regression/*` | `translation-services` PDF document-regression fixtures: capture, replay, accept, artifacts. |
 | `/api/replay*` | Realtime translation replay sessions. |
 | `/api/realtime-tts/replay*` | Realtime TTS replay sessions and audio artifacts. |
 | `/ws/replay/{session_id}` | Translation replay websocket updates. |

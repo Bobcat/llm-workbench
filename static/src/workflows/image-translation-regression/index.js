@@ -3,20 +3,20 @@ import { escapeAttr, escapeHtml, formatApiError } from '../../shared/ui-helpers.
 
 const REG_BASE = '/api/translation/regression';
 
-export function createRegressionView() {
+export function createImageTranslationRegressionView() {
   const container = document.createElement('div');
-  container.className = 'translation-regression-view';
+  container.className = 'image-translation-regression-view';
   container.innerHTML = `
-    <div class="translation-regression-toolbar">
+    <div class="image-translation-regression-toolbar">
       <button type="button" id="regRunAll">Run all</button>
       <button type="button" id="regRefresh">Refresh</button>
       <span class="translation-prompts-inline-status" id="regStatus"></span>
     </div>
-    <div class="translation-regression-body">
-      <section class="translation-regression-tree-pane">
-        <ul class="translation-regression-tree" id="regTree"></ul>
+    <div class="image-translation-regression-body">
+      <section class="image-translation-regression-tree-pane">
+        <ul class="image-translation-regression-tree" id="regTree"></ul>
       </section>
-      <section class="translation-regression-detail-pane" id="regDetail">
+      <section class="image-translation-regression-detail-pane" id="regDetail">
         <div class="translation-preview-empty">Select a fixture</div>
       </section>
     </div>

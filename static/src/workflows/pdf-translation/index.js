@@ -126,6 +126,32 @@ export function createPdfTranslationView() {
                 </div>
               </section>
             </div>
+            <!-- Freeze this completed run as a document regression fixture (frozen per-page
+                 cells/hint/translations + approved snapshots + accepted benchmark score). The
+                 fixture then lives in the PDF translation regression view. Same shape as the
+                 image "Regression fixture" panel: a status badge + a Capture button. PDF capture
+                 is self-contained (it stores source.pdf inside the fixture), so there is no
+                 separate "add to testset" step — the source is matched to a testset document by
+                 content hash, or captured under a name you type. -->
+            <details class="translation-prompts-system-details translation-requests-details">
+              <summary>Regression fixture</summary>
+              <div class="translation-requests-details-body pdf-translation-capture">
+                <div class="translation-prompts-inline-status" id="pdfRegInfo"></div>
+                <label class="translation-prompts-field pdf-translation-capture-namefield">
+                  <span>Name (blank = matching testset document)</span>
+                  <input type="text" id="pdfRegName" spellcheck="false" placeholder="auto">
+                </label>
+                <label class="pdf-translation-capture-check">
+                  <input type="checkbox" id="pdfRegScore" checked>
+                  <span>freeze accepted score</span>
+                </label>
+                <div class="translation-prompts-run-actions">
+                  <button type="button" id="pdfRegCaptureBtn" disabled
+                    title="Freeze this completed result as a document regression fixture">Capture fixture</button>
+                </div>
+                <div class="translation-prompts-inline-status" id="pdfRegCaptureStatus"></div>
+              </div>
+            </details>
             <details class="translation-prompts-system-details translation-requests-details">
               <summary>Raw response</summary>
               <div class="translation-requests-details-body">
@@ -162,6 +188,11 @@ export function createPdfTranslationView() {
   const cancelBtn = container.querySelector('#pdfCancelBtn');
   const downloadLink = container.querySelector('#pdfDownload');
   const benchmarkBtn = container.querySelector('#pdfBenchmarkBtn');
+  const regInfoEl = container.querySelector('#pdfRegInfo');
+  const regNameInput = container.querySelector('#pdfRegName');
+  const regScoreInput = container.querySelector('#pdfRegScore');
+  const regCaptureBtn = container.querySelector('#pdfRegCaptureBtn');
+  const regCaptureStatusEl = container.querySelector('#pdfRegCaptureStatus');
   const stageEl = container.querySelector('.translation-requests-stage');
   const dropzone = container.querySelector('#pdfDropzone');
   const stageLoaded = container.querySelector('#pdfStageLoaded');
@@ -175,6 +206,7 @@ export function createPdfTranslationView() {
   let pollTimer = null;
   let inputObjectUrl = '';
   let lastTargetLang = '';
+  let regStatus = null;   // {name, in_testset, langs} for the current completed run (capture badge)
 
   function setStatus(message, kind = '') {
     statusEl.textContent = kind === 'error' ? String(message || '') : '';
@@ -422,6 +454,57 @@ export function createPdfTranslationView() {
     benchmarkBtn.textContent = 'Benchmark this run';
     outputPending.hidden = true;
     outputEmpty.hidden = false;
+    regStatus = null;
+    renderRegInfo();
+    setCaptureStatus('');
+  }
+
+  function setCaptureStatus(message, kind = '') {
+    regCaptureStatusEl.textContent = String(message || '');
+    regCaptureStatusEl.classList.toggle('is-error', kind === 'error');
+  }
+
+  // The capture badge + button state, mirroring the image "Regression fixture" panel: it shows
+  // the fixture name this run maps to (a testset document matched by content hash), the fixtures
+  // that already exist for it, and enables Capture accordingly.
+  function renderRegInfo() {
+    const completed = currentState() === 'completed';
+    const typedName = String(regNameInput.value || '').trim();
+    const lang = String(lastTargetLang || '').toLowerCase() || '?';
+    if (!completed || !regStatus) {
+      regInfoEl.textContent = completed ? '' : 'Translate a PDF to capture it as a fixture.';
+      regCaptureBtn.disabled = true;
+      regCaptureBtn.textContent = 'Capture fixture';
+      return;
+    }
+    const langs = regStatus.langs || {};
+    const hasForLang = Array.isArray(langs[lang]) && langs[lang].length > 0;
+    if (regStatus.name) {
+      const fixtures = Object.keys(langs).length
+        ? Object.keys(langs).sort().map((l) => `${l}: ${langs[l].join(', ')}`).join(' · ')
+        : 'no fixture yet';
+      regInfoEl.textContent = `${regStatus.name} · testset document · ${fixtures}`;
+    } else {
+      regInfoEl.textContent = typedName
+        ? `${typedName} · not a testset document (capturing under this name)`
+        : 'Not a testset document — type a name to capture.';
+    }
+    regCaptureBtn.disabled = !(regStatus.name || typedName);
+    regCaptureBtn.textContent = `${hasForLang ? 'Capture variant' : 'Capture fixture'} (${lang})`;
+  }
+
+  async function refreshRegStatus() {
+    if (!currentRequestId || currentState() !== 'completed') {
+      regStatus = null;
+      renderRegInfo();
+      return;
+    }
+    try {
+      regStatus = await api.getPdfRegressionStatus(currentRequestId);
+    } catch {
+      regStatus = null;  // status is a nicety; capture still works with a typed name
+    }
+    renderRegInfo();
   }
 
   function showPending(label) {
@@ -463,6 +546,32 @@ export function createPdfTranslationView() {
     downloadLink.setAttribute('download', `${base}_${lang}.pdf`);
     downloadLink.hidden = false;
     benchmarkBtn.hidden = false;
+    // Capture is only meaningful once the run completed (the fixture freezes its per-page
+    // artifacts); resolve the fixture name + existing fixtures for the badge.
+    refreshRegStatus();
+  }
+
+  // Freeze the completed run as a document regression fixture (design doc slice 2b). The capture
+  // verifies the replay per page before writing, so a refusal (frozen-input drift, or a source not
+  // in the testset without a name) comes back as a clear message.
+  async function captureFixture() {
+    if (!currentRequestId || currentState() !== 'completed') return;
+    regCaptureBtn.disabled = true;
+    setCaptureStatus('Capturing… (per-page verification replay, then the accepted-score measurement)');
+    try {
+      const body = { request_id: currentRequestId, freeze_score: Boolean(regScoreInput.checked) };
+      const name = String(regNameInput.value || '').trim();
+      if (name) body.name = name;
+      const out = await api.capturePdfRegression(body);
+      const scoreNote = out.accepted_scores?.axes
+        ? ` · L ${out.accepted_scores.axes.layout} · R ${out.accepted_scores.axes.retention} · T ${out.accepted_scores.axes.typography}`
+        : '';
+      setCaptureStatus(`Captured ${out.name}/${out.target_lang}/${out.variant}: ${out.pages} page(s), ${out.units} unit(s)${scoreNote}. See the PDF translation regression view.`);
+      await refreshRegStatus();  // the new variant now shows in the badge
+    } catch (err) {
+      setCaptureStatus(formatApiError(err), 'error');
+      renderRegInfo();
+    }
   }
 
   // Scores the completed run against its own source (translation-services keeps
@@ -509,6 +618,9 @@ export function createPdfTranslationView() {
   if (browseBtn) browseBtn.addEventListener('click', () => fileInput.click());
   if (resetBtn) resetBtn.addEventListener('click', resetView);
   benchmarkBtn.addEventListener('click', benchmarkRun);
+  regCaptureBtn.addEventListener('click', captureFixture);
+  // Typing a name for a non-testset document enables Capture and updates the badge live.
+  regNameInput.addEventListener('input', renderRegInfo);
   if (cancelBtn) cancelBtn.addEventListener('click', cancelRequest);
   if (showOriginalToggle) showOriginalToggle.addEventListener('change', applyViewMode);
   modelSelect.addEventListener('change', updateModelSelectColor);

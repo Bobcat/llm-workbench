@@ -1,0 +1,67 @@
+/* PDF translation regression — the document counterpart of the image regression view. Reuses the
+   generic .reg-* primitives (glyphs, tree rows, carets) defined in the image regression stylesheet;
+   these rules cover the document tree, the detail pane, the score panel and the per-page frames. */
+
+.pdf-translation-regression-view { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.pdf-translation-regression-toolbar {
+  position: relative; display: flex; gap: 8px; align-items: center;
+  padding: 8px 12px; border-bottom: 1px solid var(--border-subtle);
+}
+.pdf-translation-regression-toolbar #pdfRegStatus { font-size: 0.78rem; margin-left: 8px; }
+.pdf-translation-regression-toolbar #pdfRegStatus.is-error { color: var(--danger); }
+.pdf-translation-regression-body { display: flex; flex: 1; min-height: 0; }
+.pdf-translation-regression-view button {
+  border: 1px solid var(--border-strong); border-radius: 8px; padding: 5px 12px;
+  background: var(--surface); color: var(--text-strong); font-size: 0.82rem; cursor: pointer;
+}
+.pdf-translation-regression-view button:hover { border-color: var(--focus); }
+.pdf-translation-regression-view button:disabled { opacity: 0.45; cursor: default; }
+
+.pdf-translation-regression-tree-pane {
+  width: 260px; overflow: auto; border-right: 1px solid var(--border-subtle);
+  padding: 8px; background: var(--surface-soft);
+}
+.pdf-translation-regression-detail-pane { flex: 1; overflow: auto; padding: 10px 14px 16px; font-size: 0.85rem; }
+.pdf-translation-regression-tree, .pdf-translation-regression-tree ul {
+  list-style: none; margin: 0; padding-left: 12px; font-size: 0.82rem;
+}
+.pdf-translation-regression-tree { padding-left: 0; }
+.pdf-translation-regression-tree > .reg-name { margin-bottom: 6px; }
+
+/* Detail pane -------------------------------------------------------------- */
+.pdf-reg-detail-head { font-weight: 600; margin-bottom: 8px; }
+.pdf-reg-detail-meta { opacity: 0.7; font-weight: 400; margin-left: 10px; font-size: 0.85em; }
+.pdf-reg-verdict { margin-left: 12px; }
+.pdf-reg-links { font-size: 0.82rem; display: flex; gap: 8px; margin: 8px 0; }
+
+/* Score panel: accepted vs replay + the exact delta. */
+.pdf-reg-score {
+  border: 1px solid var(--border-subtle); border-radius: 8px;
+  padding: 8px 12px; margin: 10px 0; max-width: 640px; background: var(--surface-soft);
+}
+.pdf-reg-score-row { display: flex; gap: 10px; font-size: 0.82rem; }
+.pdf-reg-score-row span { width: 72px; opacity: 0.7; }
+.pdf-reg-score-row strong { font-family: var(--font-mono); }
+.pdf-reg-score-delta { margin-top: 6px; font-size: 0.82rem; }
+.pdf-reg-none { opacity: 0.6; }
+
+/* Diff lists: compact, monospaced. Frozen-input diffs get a red box — not a re-baselinable change. */
+.pdf-reg-diffs {
+  margin: 6px 0; padding-left: 18px; font-family: var(--font-mono);
+  font-size: 0.78rem; line-height: 1.5; color: var(--text-strong);
+}
+.pdf-reg-frozen {
+  border: 1px solid var(--danger); border-radius: 8px; padding: 10px 12px;
+  margin: 10px 0; font-size: 0.84rem; color: var(--text-strong);
+}
+
+/* Per-page result + the snapshot/actual side-by-side on a failed page. */
+.pdf-reg-page { border-top: 1px solid var(--border-subtle); padding: 8px 0; }
+.pdf-reg-page-head { font-weight: 600; }
+.pdf-reg-frames { display: flex; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
+.pdf-reg-frames figure { margin: 0; flex: 1 1 320px; min-width: 0; }
+.pdf-reg-frames img {
+  width: 100%; height: auto; display: block;
+  outline: 1px solid var(--border-subtle); background: var(--surface-inverse);
+}
+.pdf-reg-frames figcaption { color: var(--text-quiet); font-size: 0.76rem; padding-top: 2px; }

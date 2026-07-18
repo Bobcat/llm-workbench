@@ -959,7 +959,7 @@ export function createTranslationRequestsView() {
   // Destination-subdir picker for Add-to-testset. The fixture mirrors the source's subdir, so this
   // chooses where a fresh image is filed; '' = flat testset root. The sentinel option reveals a
   // free-text field for a brand-new subdir.
-  const NEW_SUBDIR = ' new';
+  const NEW_SUBDIR = '\u0000new';
   async function populateSubdirs() {
     let dirs = [];
     try {

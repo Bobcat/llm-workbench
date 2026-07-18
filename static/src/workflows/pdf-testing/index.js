@@ -87,7 +87,6 @@ export function createPdfTestingView() {
                 </label>
                 <div class="translation-prompts-run-actions">
                   <button type="button" id="pdfTestingImportBtn">Measure &amp; score</button>
-                  <span class="pdf-testing-import-hint">measurement takes a few seconds per page</span>
                 </div>
                 <div class="translation-prompts-inline-status" id="pdfTestingImportStatus"></div>
               </div>

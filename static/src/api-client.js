@@ -399,6 +399,45 @@ export const api = {
     return fetchJson(`/api/pdf-benchmark/runs/${encodeURIComponent(docId)}/${encodeURIComponent(system)}`);
   },
 
+  async listPdfRegressionFixtures() {
+    return fetchJson('/api/pdf-regression/fixtures');
+  },
+
+  async getPdfRegressionStatus(requestId) {
+    return fetchJson(`/api/pdf-regression/status?request_id=${encodeURIComponent(requestId)}`);
+  },
+
+  async capturePdfRegression(body) {
+    return fetchJson('/api/pdf-regression/capture', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body || {}),
+    });
+  },
+
+  async runPdfRegression(body) {
+    return fetchJson('/api/pdf-regression/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body || {}),
+    });
+  },
+
+  async acceptPdfRegression(body) {
+    return fetchJson('/api/pdf-regression/accept', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body || {}),
+    });
+  },
+
+  async deletePdfRegressionFixture(name, lang, variant) {
+    return fetchJson(
+      `/api/pdf-regression/fixtures/${encodeURIComponent(name)}/${encodeURIComponent(lang)}/${encodeURIComponent(variant)}`,
+      { method: 'DELETE' },
+    );
+  },
+
   async getRegressionStatus(name) {
     return fetchJson(`/api/translation/regression/status?name=${encodeURIComponent(name || '')}`);
   },
