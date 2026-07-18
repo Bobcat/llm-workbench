@@ -399,6 +399,10 @@ export const api = {
     return fetchJson(`/api/pdf-benchmark/runs/${encodeURIComponent(docId)}/${encodeURIComponent(system)}`);
   },
 
+  async getPdfBenchmarkRunAnchors(docId, system, runId) {
+    return fetchJson(`/api/pdf-benchmark/runs/${encodeURIComponent(docId)}/${encodeURIComponent(system)}/${encodeURIComponent(runId)}/anchors`);
+  },
+
   async listPdfRegressionFixtures() {
     return fetchJson('/api/pdf-regression/fixtures');
   },

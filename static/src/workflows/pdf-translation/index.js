@@ -35,7 +35,7 @@ export function createPdfTranslationView() {
               </div>
               <div class="translation-requests-bar-right translation-requests-loaded-only">
                 <button type="button" id="pdfBenchmarkBtn" class="pdf-translation-benchmark" hidden
-                  title="Measure &amp; score this result against its source (layout / retention / typography); the run lands in the PDF-testing comparison as 'ours'">Benchmark this run</button>
+                  title="Measure &amp; score this result against its source (layout / anchors / typography); the run lands in the PDF-testing comparison as 'ours'">Benchmark this run</button>
                 <a id="pdfDownload" class="pdf-translation-download" download hidden>Download PDF</a>
                 <button type="button" id="pdfReset" class="translation-requests-reset" title="Choose another PDF" aria-label="Choose another PDF">✕</button>
               </div>
@@ -564,7 +564,7 @@ export function createPdfTranslationView() {
       if (name) body.name = name;
       const out = await api.capturePdfRegression(body);
       const scoreNote = out.accepted_scores?.axes
-        ? ` · L ${out.accepted_scores.axes.layout} · R ${out.accepted_scores.axes.retention} · T ${out.accepted_scores.axes.typography}`
+        ? ` · L ${out.accepted_scores.axes.layout} · A ${out.accepted_scores.axes.anchors} · T ${out.accepted_scores.axes.typography}`
         : '';
       setCaptureStatus(`Captured ${out.name}/${out.target_lang}/${out.variant}: ${out.pages} page(s), ${out.units} unit(s)${scoreNote}. See the PDF translation regression view.`);
       await refreshRegStatus();  // the new variant now shows in the badge
@@ -587,7 +587,7 @@ export function createPdfTranslationView() {
       formData.append('request_json', JSON.stringify({ request_id: currentRequestId }));
       const result = await api.runPdfBenchmark(formData);
       const axes = result?.axes || {};
-      benchmarkBtn.textContent = `L ${axes.layout} · R ${axes.retention} · T ${axes.typography}`;
+      benchmarkBtn.textContent = `L ${axes.layout} · A ${axes.anchors} · T ${axes.typography}`;
       benchmarkBtn.title = 'Scored — see the PDF testing view for the comparison';
     } catch (err) {
       benchmarkBtn.textContent = originalLabel;

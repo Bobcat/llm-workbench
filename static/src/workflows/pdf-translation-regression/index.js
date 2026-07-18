@@ -16,7 +16,7 @@ const REG_BASE = '/api/pdf-regression';
 
 const AXES = [
   { key: 'layout', label: 'L' },
-  { key: 'retention', label: 'R' },
+  { key: 'anchors', label: 'A' },
   { key: 'typography', label: 'T' },
 ];
 

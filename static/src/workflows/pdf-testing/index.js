@@ -10,7 +10,7 @@ import { escapeAttr, escapeHtml, formatApiError } from '../../shared/ui-helpers.
 
 const AXES = [
   { key: 'layout', label: 'L' },
-  { key: 'retention', label: 'R' },
+  { key: 'anchors', label: 'A' },
   { key: 'typography', label: 'T' },
 ];
 
@@ -27,20 +27,68 @@ export function createPdfTestingView() {
               <h2>Comparison</h2>
               <button type="button" id="pdfTestingRefresh" title="Reload stored benchmark runs">Refresh</button>
             </div>
-            <div class="pdf-testing-legend">
-              <span><strong>L</strong> layout: region overlap with the source (0-100)</span>
-              <span><strong>R</strong> retention: 100 minus the share of text that went missing</span>
-              <span><strong>T</strong> typography: penalizes stray text and size-ratio drift</span>
-              <span><strong>U</strong> unchanged: share of text left verbatim (indicator, not a verdict; compare it across systems on the same document)</span>
-            </div>
-            <div class="pdf-testing-note">
-              <strong>Informative, not a ranking.</strong> The numbers measure what survived the
-              translation, and fundamentally different approaches preserve different things
-              by design: a system that re-typesets the document scores low on layout no
-              matter how well it executes, and one that returns the source unchanged maxes
-              every axis. Read the flags and the unchanged share first; compare axes only
-              between comparable approaches, and mainly against our own earlier runs.
-              Visual quality and translation adequacy are not measured here.
+            <div class="pdf-testing-explain">
+              <p class="pdf-testing-explain-lead">Each system's translated PDF is measured against
+                its source. These are preservation measurements, not a quality ranking.</p>
+
+              <div class="pdf-testing-explain-group">
+                <h3>Text signals — detector-free, the first line of each cell</h3>
+                <ul>
+                  <li><strong>A — anchors.</strong> Share of the source's numbers still present in
+                    the translation. Locale reformatting is normalized (1,234.56 = 1.234,56;
+                    reordered dates match), so a lost anchor is real loss.</li>
+                  <li><strong>U — unchanged.</strong> Share of source text left verbatim. A deliberate
+                    keep and a missed translation look identical, so compare U across systems on the
+                    same document rather than judging it alone.</li>
+                  <li><strong>× — volume.</strong> Translated/source text volume. The language-pair
+                    component (e.g. EN→NL runs longer) is constant per row; translator style adds a
+                    few percent of spread on top — so only a clearly low outlier against the other
+                    systems on the row suggests dropped content.</li>
+                </ul>
+              </div>
+
+              <div class="pdf-testing-explain-group">
+                <h3>Layout-detector signals — the dimmed second line</h3>
+                <ul>
+                  <li><strong>L — layout.</strong> The detector's regions on both renders, matched
+                    one-to-one by overlap (IoU).</li>
+                  <li><strong>T — typography.</strong> Stray text outside every region, and font-size
+                    ratios drifting between matched regions.</li>
+                  <li><strong>⚑</strong> — a hard mismatch: page count (exact), or image/table region
+                    count (detector-based).</li>
+                  <li>These ride on the region matching. When a large share of the detected regions
+                    (counted by their size) finds no counterpart on the other side, the line dims
+                    further and shows <strong>≈</strong>: matching noise, not quality, may dominate
+                    there.</li>
+                </ul>
+              </div>
+
+              <div class="pdf-testing-explain-group">
+                <h3>Click a cell for evidence</h3>
+                <ul class="pdf-testing-swatch-list">
+                  <li>The evidence behind <strong>A</strong>: exactly which source numbers are
+                    missing from the translation, with page and surrounding text.</li>
+                  <li>Per-page overlays:
+                    <span class="pdf-testing-swatch is-matched"></span> matched ·
+                    <span class="pdf-testing-swatch is-covered"></span> covered (detector split/merge; not scored) ·
+                    <span class="pdf-testing-swatch is-lost"></span> lost ·
+                    <span class="pdf-testing-swatch is-invented"></span> invented</li>
+                  <li>An unmatched region is not necessarily lost or new content — detector splits,
+                    merges and misses land here too.</li>
+                </ul>
+              </div>
+
+              <div class="pdf-testing-explain-group">
+                <h3>Reading it</h3>
+                <ul>
+                  <li>Approaches preserve different things by design: a system that re-typesets
+                    scores low on L however well it executes; one that returns the source unchanged
+                    maxes every axis — watch U.</li>
+                  <li>Read the flags and the unchanged share first; compare mainly against our own
+                    earlier runs.</li>
+                  <li>Visual quality and translation adequacy are not measured here.</li>
+                </ul>
+              </div>
             </div>
             <div class="pdf-testing-matrix" id="pdfTestingMatrix">Loading…</div>
           </section>
@@ -50,18 +98,7 @@ export function createPdfTestingView() {
               <h2 id="pdfTestingDetailTitle"></h2>
               <button type="button" id="pdfTestingDetailClose" title="Close detail">✕</button>
             </div>
-            <div class="pdf-testing-detail-legend">
-              <span class="pdf-testing-swatch is-matched"></span> matched (with IoU)
-              <span class="pdf-testing-swatch is-covered"></span> covered (detector split/merge/nested; not scored)
-              <span class="pdf-testing-swatch is-lost"></span> lost (no counterpart in translation)
-              <span class="pdf-testing-swatch is-invented"></span> invented (no counterpart in source)
-            </div>
-            <div class="pdf-testing-note">
-              Region statuses reflect the layout detector's segmentation of each render and
-              the 1-to-1 matching behind L. An unmatched region is not necessarily missing
-              or new content: detector splits, merges and misses show up here too. Whether
-              the text itself survived is measured independently by R.
-            </div>
+            <div id="pdfTestingDetailAnchors"></div>
             <div id="pdfTestingDetailPages"></div>
           </section>
 
@@ -101,6 +138,7 @@ export function createPdfTestingView() {
   const refreshBtn = container.querySelector('#pdfTestingRefresh');
   const detailEl = container.querySelector('#pdfTestingDetail');
   const detailTitleEl = container.querySelector('#pdfTestingDetailTitle');
+  const detailAnchorsEl = container.querySelector('#pdfTestingDetailAnchors');
   const detailCloseBtn = container.querySelector('#pdfTestingDetailClose');
   const detailPagesEl = container.querySelector('#pdfTestingDetailPages');
   const sourceSelect = container.querySelector('#pdfTestingSource');
@@ -139,26 +177,22 @@ export function createPdfTestingView() {
     return docs;
   }
 
-  function median(values) {
-    if (!values.length) return null;
-    const sorted = [...values].sort((a, b) => a - b);
-    const mid = Math.floor(sorted.length / 2);
-    return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
-  }
-
-  // Representative axes for a system's entries: single run as-is, multiple runs
-  // (ours, N pipeline runs) the per-axis median.
+  // A cell shows the LATEST run of a system. Stored runs accumulate across code versions,
+  // so any aggregate (a median) would mix old pipeline behaviour into the current stand;
+  // the Δ-ours column and the detail's per-run list carry the history instead.
   function summarize(entries) {
+    const latest = entries[entries.length - 1] || {};
     const axes = {};
     for (const { key } of AXES) {
-      axes[key] = median(entries.map((run) => Number(run.axes?.[key])).filter(Number.isFinite));
+      axes[key] = Number(latest.axes?.[key]);
     }
-    const unchanged = median(entries.map((run) => Number(run.indicators?.unchanged_share)).filter(Number.isFinite));
-    const flagsBad = entries.some((run) => {
-      const flags = run.flags || {};
-      return ['page_count_equal', 'image_regions_equal', 'table_regions_equal'].some((key) => flags[key] === false);
-    });
-    return { axes, unchanged, count: entries.length, flagsBad };
+    const unchanged = Number(latest.indicators?.unchanged_share);
+    const volumeRatio = Number(latest.indicators?.volume_ratio);
+    const noise = Number(latest.indicators?.layout_noise_share);
+    const flags = latest.flags || {};
+    const flagsBad = ['page_count_equal', 'image_regions_equal', 'table_regions_equal']
+      .some((key) => flags[key] === false);
+    return { axes, unchanged, volumeRatio, noise, flagsBad };
   }
 
   // Our own progression per doc: the latest ours run against the best earlier
@@ -181,15 +215,25 @@ export function createPdfTestingView() {
     return biggest;
   }
 
+  // Above this share of unmatched region weight, matching noise (not quality) may dominate
+  // the detector-based figures: the model line dims further and carries a ≈ marker.
+  const NOISE_DIM_THRESHOLD = 0.2;
+
   function cellMarkup(entries) {
-    const { axes, unchanged, count, flagsBad } = summarize(entries);
-    const axesText = AXES
-      .map(({ key, label }) => `${label} ${Number.isFinite(axes[key]) ? axes[key].toFixed(1) : '—'}`)
-      .join(' · ');
-    const unchangedText = Number.isFinite(unchanged) ? `U ${unchanged.toFixed(1)}%` : '';
-    const countBadge = count > 1 ? `<span class="pdf-testing-count" title="median over ${count} runs">×${count}</span>` : '';
+    const { axes, unchanged, volumeRatio, noise, flagsBad } = summarize(entries);
+    const fmt = (key) => (Number.isFinite(axes[key]) ? axes[key].toFixed(1) : '—');
+    const hardParts = [`A ${fmt('anchors')}`];
+    if (Number.isFinite(unchanged)) hardParts.push(`U ${unchanged.toFixed(1)}%`);
+    if (Number.isFinite(volumeRatio)) hardParts.push(`×${volumeRatio.toFixed(2)}`);
+    const noisy = Number.isFinite(noise) && noise > NOISE_DIM_THRESHOLD;
+    const modelTitle = noisy
+      ? `layout-detector based; ${Math.round(noise * 100)}% of the detected regions (by size) has no counterpart on the other side — matching noise may dominate`
+      : 'layout-detector based';
     const flagBadge = flagsBad ? '<span class="pdf-testing-flag" title="structure flag raised (page/image/table count changed)">⚑</span>' : '';
-    return `<div class="pdf-testing-cell">${escapeHtml(axesText)}<span class="pdf-testing-unchanged">${escapeHtml(unchangedText)}</span>${countBadge}${flagBadge}</div>`;
+    return `<div class="pdf-testing-cell pdf-testing-cell-tiered">
+      <span class="pdf-testing-cell-hard">${escapeHtml(hardParts.join(' · '))}${flagBadge}</span>
+      <span class="pdf-testing-cell-model${noisy ? ' is-noisy' : ''}" title="${escapeAttr(modelTitle)}">L ${escapeHtml(fmt('layout'))} · T ${escapeHtml(fmt('typography'))}${noisy ? ' ≈' : ''}</span>
+    </div>`;
   }
 
   function renderMatrix(runs) {
@@ -276,7 +320,7 @@ export function createPdfTestingView() {
     try {
       const result = await api.runPdfBenchmark(formData);
       const axes = result?.axes || {};
-      setImportStatus(`Scored ${result?.doc_id || ''} / ${result?.system || ''}: layout ${axes.layout} · retention ${axes.retention} · typography ${axes.typography}.`);
+      setImportStatus(`Scored ${result?.doc_id || ''} / ${result?.system || ''}: layout ${axes.layout} · anchors ${axes.anchors} · typography ${axes.typography}.`);
       refreshMatrix();
     } catch (err) {
       setImportStatus(formatApiError(err), 'error');
@@ -288,9 +332,39 @@ export function createPdfTestingView() {
 
   // --- detail (per-page region overlays) -------------------------------------
 
+  // The anchors-axis evidence: which numbers went missing, with page + surrounding text —
+  // turns the A score from a claim into something verifiable next to the overlays below.
+  function renderAnchorEvidence(details) {
+    if (!details) {
+      detailAnchorsEl.innerHTML = '';
+      return;
+    }
+    const missing = details.missing || [];
+    const total = Number(details.anchors_source) || 0;
+    if (!missing.length) {
+      detailAnchorsEl.innerHTML = `<div class="pdf-testing-anchors is-clean">All ${total} digit anchors of the source are present in the translation.</div>`;
+      return;
+    }
+    const MAX_SHOWN = 40;
+    const items = missing.slice(0, MAX_SHOWN).map((entry) =>
+      `<li><code>${escapeHtml(entry.signature)}</code> — page ${entry.page} · “${escapeHtml(entry.text)}”</li>`
+    ).join('');
+    const more = missing.length > MAX_SHOWN ? `<li>… ${missing.length - MAX_SHOWN} more</li>` : '';
+    const added = (details.added || []).length
+      ? `<p class="pdf-testing-anchors-added">${details.added.length} digit anchor(s) appear only in the translation (renumbering or new content).</p>`
+      : '';
+    detailAnchorsEl.innerHTML = `
+      <div class="pdf-testing-anchors">
+        <h3>Missing digit anchors — ${missing.length} of ${total}</h3>
+        <ul>${items}${more}</ul>
+        ${added}
+      </div>`;
+  }
+
   async function openDetail(docId, system) {
     detailEl.hidden = false;
     detailTitleEl.textContent = `${docId} / ${system}`;
+    detailAnchorsEl.innerHTML = '';
     detailPagesEl.innerHTML = '<div class="pdf-testing-empty">Loading…</div>';
     let payload;
     try {
@@ -302,6 +376,13 @@ export function createPdfTestingView() {
     const runId = String(payload?.run_id || '');
     const perPage = (payload?.scores?.per_page) || [];
     detailTitleEl.textContent = `${docId} / ${system} (${runId})`;
+    api.getPdfBenchmarkRunAnchors(docId, system, runId)
+      .then(renderAnchorEvidence)
+      .catch((err) => {
+        // Surface the failure instead of a silent blank: a 404 here usually means the
+        // workbench backend predates the anchors proxy route and needs a restart.
+        detailAnchorsEl.innerHTML = `<div class="pdf-testing-empty is-error">Anchor evidence unavailable: ${escapeHtml(formatApiError(err))}</div>`;
+      });
     detailPagesEl.innerHTML = perPage.map((page) => {
       const raw = page.raw || {};
       const overlay = (side) =>
@@ -310,7 +391,7 @@ export function createPdfTestingView() {
         <div class="pdf-testing-detail-page">
           <div class="pdf-testing-detail-pagehead">
             <strong>page ${page.page}</strong>
-            <span>L ${page.layout} · R ${page.retention} · T ${page.typography}</span>
+            <span>L ${page.layout} · T ${page.typography}</span>
             <span>matched ${raw.regions_matched} · lost ${raw.regions_lost} · invented ${raw.regions_invented} · mean IoU ${raw.mean_matched_iou}</span>
           </div>
           <div class="pdf-testing-detail-frames">
@@ -329,6 +410,7 @@ export function createPdfTestingView() {
   });
   detailCloseBtn.addEventListener('click', () => {
     detailEl.hidden = true;
+    detailAnchorsEl.innerHTML = '';
     detailPagesEl.innerHTML = '';
   });
 

@@ -36,29 +36,54 @@
   background: var(--surface-muted);
 }
 
-/* Axis legend above the matrix: one compact definition per letter. */
-.pdf-testing-view .pdf-testing-legend {
+/* One consolidated explanation above the table: text signals, detector signals, the evidence
+   click-through and how to read it. Grouped with small headings and lists so it reads as
+   reference, not a wall of text. The named blind spots stay in the UI on purpose. */
+.pdf-testing-view .pdf-testing-explain {
+  color: var(--text-subtle);
+  font-size: 0.82rem;
+  line-height: 1.5;
+  max-width: 84ch;
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  color: var(--text-subtle);
-  font-size: 0.8rem;
-  line-height: 1.4;
+  gap: 12px;
 }
 
-.pdf-testing-view .pdf-testing-legend strong {
-  display: inline-block;
-  min-width: 1.2em;
+.pdf-testing-view .pdf-testing-explain-lead {
+  margin: 0;
   color: var(--text-strong);
 }
 
-/* The named blind spots, straight from the design doc: in the UI on purpose. */
-.pdf-testing-view .pdf-testing-note {
-  color: var(--text-subtle);
-  font-size: 0.82rem;
-  line-height: 1.45;
-  max-width: 72ch;
+.pdf-testing-view .pdf-testing-explain-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
+
+.pdf-testing-view .pdf-testing-explain-group h3 {
+  margin: 0;
+  font-size: 0.74rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-quiet);
+}
+
+.pdf-testing-view .pdf-testing-explain ul {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.pdf-testing-view .pdf-testing-explain strong { color: var(--text-strong); }
+
+.pdf-testing-view .pdf-testing-swatch-list { list-style: none; padding-left: 2px; }
+.pdf-testing-view .pdf-testing-swatch-list .pdf-testing-swatch {
+  margin: 0 4px 0 8px;
+  vertical-align: middle;
+}
+.pdf-testing-view .pdf-testing-swatch-list .pdf-testing-swatch:first-of-type { margin-left: 0; }
 
 .pdf-testing-view .pdf-testing-matrix {
   overflow-x: auto;
@@ -101,14 +126,35 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Tiered cell: detector-free text signals on top (strong), detector-based figures below
+   (dimmed; extra-dimmed with ≈ when matching noise dominates — see the explain block). */
+.pdf-testing-view .pdf-testing-cell-tiered {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+}
+
+.pdf-testing-view .pdf-testing-cell-hard {
+  color: var(--text-strong);
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.pdf-testing-view .pdf-testing-cell-model {
+  color: var(--text-quiet);
+  font-size: 0.76rem;
+}
+
+.pdf-testing-view .pdf-testing-cell-model.is-noisy {
+  opacity: 0.55;
+  font-style: italic;
+}
+
 .pdf-testing-view .pdf-testing-unchanged {
   color: var(--text-subtle);
 }
 
-.pdf-testing-view .pdf-testing-count {
-  color: var(--text-quiet);
-  font-size: 0.74rem;
-}
 
 .pdf-testing-view .pdf-testing-flag {
   color: var(--danger);
@@ -151,24 +197,53 @@
   gap: 10px;
 }
 
-.pdf-testing-view .pdf-testing-detail-legend {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--text-subtle);
+/* The anchors-axis evidence block: which numbers went missing, page + text excerpt. */
+.pdf-testing-view .pdf-testing-anchors {
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  padding: 8px 12px;
   font-size: 0.8rem;
+  color: var(--text-subtle);
+  max-width: 96ch;
 }
+
+.pdf-testing-view .pdf-testing-anchors.is-clean {
+  border: none;
+  padding: 0;
+}
+
+.pdf-testing-view .pdf-testing-anchors h3 {
+  margin: 0 0 4px;
+  font-size: 0.74rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-quiet);
+}
+
+.pdf-testing-view .pdf-testing-anchors ul {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pdf-testing-view .pdf-testing-anchors code {
+  font-family: var(--font-mono);
+  color: var(--danger);
+}
+
+.pdf-testing-view .pdf-testing-anchors-added {
+  margin: 6px 0 0;
+  color: var(--text-quiet);
+}
+
 
 .pdf-testing-view .pdf-testing-swatch {
   display: inline-block;
   width: 12px;
   height: 12px;
   border-radius: 3px;
-  margin-left: 12px;
-}
-
-.pdf-testing-view .pdf-testing-swatch:first-child {
-  margin-left: 0;
 }
 
 .pdf-testing-view .pdf-testing-swatch.is-matched { background: #16a34a; }

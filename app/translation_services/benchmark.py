@@ -44,6 +44,16 @@ def run_detail(doc_id: str, system: str) -> dict:
     return _request_json(method="GET", path=f"/v1/benchmark/runs/{seg(doc_id)}/{seg(system)}", timeout=15.0)
 
 
+@router.get("/runs/{doc_id}/{system}/{run_id}/anchors")
+def run_anchors(doc_id: str, system: str, run_id: str) -> dict:
+    seg = lambda value: parse.quote(value, safe="")
+    return _request_json(
+        method="GET",
+        path=f"/v1/benchmark/runs/{seg(doc_id)}/{seg(system)}/{seg(run_id)}/anchors",
+        timeout=30.0,
+    )
+
+
 @router.get("/runs/{doc_id}/{system}/{run_id}/overlay/{side}/{page}")
 def run_overlay(doc_id: str, system: str, run_id: str, side: str, page: int) -> Response:
     seg = lambda value: parse.quote(value, safe="")
