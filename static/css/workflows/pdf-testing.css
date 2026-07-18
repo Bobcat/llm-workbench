@@ -1,0 +1,238 @@
+/* PDF testing — the benchmark comparison matrix. Reuses the shared prompts-view
+   shell; these rules cover the matrix table, cell chips and the import panel. */
+
+.pdf-testing-view .pdf-testing-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px 20px 24px;
+}
+
+.pdf-testing-view .pdf-testing-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.pdf-testing-view .pdf-testing-toolbar h2 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.pdf-testing-view .pdf-testing-toolbar button {
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 6px 12px;
+  background: var(--surface);
+  color: var(--text-strong);
+  font-size: 0.86rem;
+  cursor: pointer;
+}
+
+.pdf-testing-view .pdf-testing-toolbar button:hover {
+  background: var(--surface-muted);
+}
+
+/* Axis legend above the matrix: one compact definition per letter. */
+.pdf-testing-view .pdf-testing-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: var(--text-subtle);
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+
+.pdf-testing-view .pdf-testing-legend strong {
+  display: inline-block;
+  min-width: 1.2em;
+  color: var(--text-strong);
+}
+
+/* The named blind spots, straight from the design doc: in the UI on purpose. */
+.pdf-testing-view .pdf-testing-note {
+  color: var(--text-subtle);
+  font-size: 0.82rem;
+  line-height: 1.45;
+  max-width: 72ch;
+}
+
+.pdf-testing-view .pdf-testing-matrix {
+  overflow-x: auto;
+}
+
+.pdf-testing-view .pdf-testing-table {
+  border-collapse: collapse;
+  font-size: 0.82rem;
+  min-width: 640px;
+}
+
+.pdf-testing-view .pdf-testing-table th,
+.pdf-testing-view .pdf-testing-table td {
+  border: 1px solid var(--border-soft);
+  padding: 6px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.pdf-testing-view .pdf-testing-table th {
+  background: var(--surface-muted);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.pdf-testing-view .pdf-testing-doc {
+  max-width: 26ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+}
+
+.pdf-testing-view .pdf-testing-cell {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.pdf-testing-view .pdf-testing-unchanged {
+  color: var(--text-subtle);
+}
+
+.pdf-testing-view .pdf-testing-count {
+  color: var(--text-quiet);
+  font-size: 0.74rem;
+}
+
+.pdf-testing-view .pdf-testing-flag {
+  color: var(--danger);
+}
+
+.pdf-testing-view .pdf-testing-none {
+  color: var(--text-quiet);
+}
+
+.pdf-testing-view .pdf-testing-gap {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.pdf-testing-view .pdf-testing-gap-system {
+  color: var(--text-subtle);
+}
+
+.pdf-testing-view .pdf-testing-empty {
+  color: var(--text-quiet);
+  padding: 24px 0;
+}
+
+.pdf-testing-view .pdf-testing-empty.is-error {
+  color: var(--danger);
+}
+
+.pdf-testing-view .pdf-testing-clickable {
+  cursor: pointer;
+}
+
+.pdf-testing-view .pdf-testing-clickable:hover {
+  background: var(--surface-muted);
+}
+
+/* Detail: per-page source/translated overlays with the region colours. */
+.pdf-testing-view .pdf-testing-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pdf-testing-view .pdf-testing-detail-legend {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-subtle);
+  font-size: 0.8rem;
+}
+
+.pdf-testing-view .pdf-testing-swatch {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  margin-left: 12px;
+}
+
+.pdf-testing-view .pdf-testing-swatch:first-child {
+  margin-left: 0;
+}
+
+.pdf-testing-view .pdf-testing-swatch.is-matched { background: #16a34a; }
+.pdf-testing-view .pdf-testing-swatch.is-covered { background: #2563eb; }
+.pdf-testing-view .pdf-testing-swatch.is-lost { background: #dc2626; }
+.pdf-testing-view .pdf-testing-swatch.is-invented { background: #ea580c; }
+
+.pdf-testing-view .pdf-testing-delta-down { color: var(--danger); }
+.pdf-testing-view .pdf-testing-delta-up { color: var(--success); }
+
+.pdf-testing-view .pdf-testing-detail-page {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 18px;
+}
+
+.pdf-testing-view .pdf-testing-detail-pagehead {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: baseline;
+  font-size: 0.84rem;
+  color: var(--text-subtle);
+}
+
+.pdf-testing-view .pdf-testing-detail-pagehead strong {
+  color: var(--text-strong);
+}
+
+.pdf-testing-view .pdf-testing-detail-frames {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  align-items: start;
+}
+
+.pdf-testing-view .pdf-testing-detail-frames figure {
+  margin: 0;
+}
+
+.pdf-testing-view .pdf-testing-detail-frames img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--border-soft);
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+.pdf-testing-view .pdf-testing-detail-frames figcaption {
+  color: var(--text-quiet);
+  font-size: 0.76rem;
+  padding-top: 2px;
+}
+
+.pdf-testing-view .pdf-testing-import-body {
+  display: grid;
+  gap: 10px;
+  padding-top: 10px;
+  max-width: 460px;
+}
+
+.pdf-testing-view .pdf-testing-import-hint {
+  color: var(--text-quiet);
+  font-size: 0.78rem;
+}

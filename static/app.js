@@ -13,6 +13,8 @@ import { createImageTrainView } from './src/workflows/image-train/index.js';
 import { createLoraLibraryView } from './src/workflows/lora-library/index.js';
 import { createVideoPoolView } from './src/workflows/video-pool/index.js';
 import { createTranslationRequestsView } from './src/workflows/translation-requests/index.js';
+import { createPdfTranslationView } from './src/workflows/pdf-translation/index.js';
+import { createPdfTestingView } from './src/workflows/pdf-testing/index.js';
 import { createTranslationPromptsView } from './src/workflows/translation-prompts/index.js';
 import { createRegressionView } from './src/workflows/translation-regression/index.js';
 import { createTextGenerationView } from './src/workflows/text-generation/index.js';
@@ -57,6 +59,8 @@ const PERSISTENT_WORKFLOW_IDS = new Set([
   'video-pool-models',
   'video-generation',
   'image-translation',
+  'pdf-translation',
+  'pdf-testing',
   'translation-regression',
 ]);
 
@@ -214,6 +218,18 @@ const WORKFLOW_GROUPS = [
         icon: 'image',
       },
       {
+        id: 'pdf-translation',
+        route: 'pdf-translation',
+        name: 'PDF translation',
+        icon: 'file-text',
+      },
+      {
+        id: 'pdf-testing',
+        route: 'pdf-testing',
+        name: 'PDF testing',
+        icon: 'gauge',
+      },
+      {
         id: 'translation-regression',
         route: 'translation-regression',
         name: 'Regression testing',
@@ -294,6 +310,12 @@ function createWorkflowView(workflowId) {
   }
   if (workflowId === 'image-translation') {
     return createTranslationRequestsView();
+  }
+  if (workflowId === 'pdf-translation') {
+    return createPdfTranslationView();
+  }
+  if (workflowId === 'pdf-testing') {
+    return createPdfTestingView();
   }
   if (workflowId === 'prompt-library') {
     return createTranslationPromptsView();

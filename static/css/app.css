@@ -14,6 +14,8 @@
 @import url("./components/workflow-form/fields.css");
 @import url("./workflows/chat.css");
 @import url("./workflows/image-translation.css");
+@import url("./workflows/pdf-translation.css");
+@import url("./workflows/pdf-testing.css");
 @import url("./workflows/icons.css");
 @import url("./workflows/translation-regression.css");
 @import url("./shell.css");

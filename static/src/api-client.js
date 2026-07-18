@@ -363,6 +363,42 @@ export const api = {
     });
   },
 
+  async submitPdfRequest(formData) {
+    return fetchJson('/api/pdf-translation/requests', {
+      method: 'POST',
+      body: formData,
+    });
+  },
+
+  async getPdfRequest(requestId) {
+    return fetchJson(`/api/pdf-translation/requests/${encodeURIComponent(requestId)}`);
+  },
+
+  async cancelPdfRequest(requestId) {
+    return fetchJson(`/api/pdf-translation/requests/${encodeURIComponent(requestId)}/cancel`, {
+      method: 'POST'
+    });
+  },
+
+  async getPdfBenchmarkResults() {
+    return fetchJson('/api/pdf-benchmark/results');
+  },
+
+  async getPdfBenchmarkTestset() {
+    return fetchJson('/api/pdf-benchmark/testset');
+  },
+
+  async runPdfBenchmark(formData) {
+    return fetchJson('/api/pdf-benchmark/run', {
+      method: 'POST',
+      body: formData,
+    });
+  },
+
+  async getPdfBenchmarkRunDetail(docId, system) {
+    return fetchJson(`/api/pdf-benchmark/runs/${encodeURIComponent(docId)}/${encodeURIComponent(system)}`);
+  },
+
   async getRegressionStatus(name) {
     return fetchJson(`/api/translation/regression/status?name=${encodeURIComponent(name || '')}`);
   },
