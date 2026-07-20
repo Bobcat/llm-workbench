@@ -380,6 +380,14 @@ export const api = {
     });
   },
 
+  async rerenderPdfRequest(sourceRequestId, body) {
+    return fetchJson(`/api/pdf-translation/requests/${encodeURIComponent(sourceRequestId)}/rerender`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body || {}),
+    });
+  },
+
   async getPdfBenchmarkResults() {
     return fetchJson('/api/pdf-benchmark/results');
   },

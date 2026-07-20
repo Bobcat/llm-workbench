@@ -86,6 +86,48 @@ export function createPdfTranslationView() {
 
           <section class="translation-requests-controls">
             <details class="translation-prompts-system-details translation-requests-details">
+              <summary>Render</summary>
+              <div class="translation-requests-details-body translation-requests-render-grid">
+                <label class="translation-prompts-field">
+                  <span>Render size mode</span>
+                  <select id="pdfRenderSizeMode" title="How a render group's one font size is chosen from its lines: median resists one under-measured (lowercase) line dragging the whole block down; min never overflows the smallest line's band. Changing this re-renders every page of the shown document from its cached translations (no new translation).">
+                    <option value="median" selected>median — default</option>
+                    <option value="min">min — never overflow</option>
+                  </select>
+                </label>
+                <label class="translation-prompts-field">
+                  <span>Erase fill</span>
+                  <select id="pdfEraseFillMode" title="How erased source text is filled. flat paints each erased line with its sampled background colour; inpaint is the hybrid model-based fill — flat paint on designed flat ground, model reconstruction where the ground varies (GPU-only).">
+                    <option value="flat">flat — one colour</option>
+                    <option value="inpaint" selected>inpaint — hybrid fill</option>
+                  </select>
+                </label>
+                <label class="translation-prompts-field">
+                  <span>Size metric</span>
+                  <select id="pdfSizeMetricMode" title="Where a line's source size comes from. extent sizes from the OCR polygon's full ink extent; band clamps each line to its strong ink band scaled by the document's own norm, so sparse tall glyphs (parentheses, brackets) cannot inflate a line past its siblings (one-sided, only shrinks an outlier). fill sizes each line so its rendered ink is as tall as the source line's ink — note that a born-digital page declares its own sizes, so fill has no effect there.">
+                    <option value="extent" selected>extent — polygon</option>
+                    <option value="band">band — clamp outliers</option>
+                    <option value="fill">fill — match source ink</option>
+                  </select>
+                </label>
+                <label class="translation-prompts-field">
+                  <span>Size cohort</span>
+                  <select id="pdfSizeCohortMode" title="Cross-element size uniformity from the VLM font-size (pt) label. off sizes each element from its own measured height. vlm groups elements the VLM gave one pt and, when their measured heights agree, snaps the whole cohort to its median — so a list the VLM judged one size renders uniform. A cohort whose heights disagree keeps per-element sizing.">
+                    <option value="off">off — per element</option>
+                    <option value="vlm" selected>vlm — snap siblings</option>
+                  </select>
+                </label>
+                <label class="translation-prompts-field">
+                  <span>Width fit</span>
+                  <select id="pdfWidthFitMode" title="How a translation wider than its original line is fitted. footprint keeps it inside the original line's width (condense, then shrink); extend first widens into verified clean background right of the line, so short list items keep their size; extend to margin is that same growth capped at the right margin of the text band the line sits in, so it cannot cross a column gutter or run into a page margin — on a document that cap is what you want, since extend knows only the image edge.">
+                    <option value="footprint" selected>footprint — exact fit</option>
+                    <option value="extend">extend — grow</option>
+                    <option value="extend_to_margin">extend to margin — grow, stop at the margin</option>
+                  </select>
+                </label>
+              </div>
+            </details>
+            <details class="translation-prompts-system-details translation-requests-details">
               <summary>Settings</summary>
               <div class="translation-requests-details-body">
                 <div class="translation-requests-model-grid">
@@ -179,6 +221,11 @@ export function createPdfTranslationView() {
   const rawEl = container.querySelector('#pdfRaw');
   const modelSelect = container.querySelector('#pdfModel');
   const translatorSelect = container.querySelector('#pdfTranslatorModel');
+  const renderSizeModeSelect = container.querySelector('#pdfRenderSizeMode');
+  const eraseFillModeSelect = container.querySelector('#pdfEraseFillMode');
+  const sizeMetricModeSelect = container.querySelector('#pdfSizeMetricMode');
+  const sizeCohortModeSelect = container.querySelector('#pdfSizeCohortMode');
+  const widthFitModeSelect = container.querySelector('#pdfWidthFitMode');
   const inputPreview = container.querySelector('#pdfInputPreview');
   const inputEmpty = container.querySelector('#pdfInputEmpty');
   const outputPreview = container.querySelector('#pdfOutputPreview');
@@ -207,6 +254,7 @@ export function createPdfTranslationView() {
   let inputObjectUrl = '';
   let lastTargetLang = '';
   let regStatus = null;   // {name, in_testset, langs} for the current completed run (capture badge)
+  let isRerendering = false;  // a render-flag re-entry is in flight: report it as a re-render, not a translation
 
   function setStatus(message, kind = '') {
     statusEl.textContent = kind === 'error' ? String(message || '') : '';
@@ -220,6 +268,27 @@ export function createPdfTranslationView() {
     targetInput.disabled = isBusy;
     modelSelect.disabled = isBusy;
     translatorSelect.disabled = isBusy;
+    renderSizeModeSelect.disabled = isBusy;
+    eraseFillModeSelect.disabled = isBusy;
+    sizeMetricModeSelect.disabled = isBusy;
+    sizeCohortModeSelect.disabled = isBusy;
+    widthFitModeSelect.disabled = isBusy;
+  }
+
+  // The render flags as the API takes them — one reader for both the initial submit and the
+  // re-render, so the two can never drift apart.
+  function renderFlags() {
+    return {
+      render_size_mode: String(renderSizeModeSelect.value || 'median'),
+      erase_fill_mode: String(eraseFillModeSelect.value || 'inpaint'),
+      size_metric_mode: String(sizeMetricModeSelect.value || 'extent'),
+      size_cohort_mode: String(sizeCohortModeSelect.value || 'vlm'),
+      width_fit_mode: String(widthFitModeSelect.value || 'footprint'),
+    };
+  }
+
+  function canReenter() {
+    return !isBusy && Boolean(currentRequestId) && currentState() === 'completed';
   }
 
   function selectedFile() {
@@ -257,8 +326,39 @@ export function createPdfTranslationView() {
     lastTargetLang = targetLang;
     const model = String(modelSelect.value || '').trim();
     if (model) payload.grouping_model = model;
-    Object.assign(payload, translatorFields(model));
+    Object.assign(payload, translatorFields(model), renderFlags());
     return payload;
+  }
+
+  // Fired by a Render select changing while a completed document is in view: re-render every
+  // page of the shown result from its cached per-page translations with the new flag — no new
+  // translation, so the A/B compares exactly the render.
+  async function rerenderRequest() {
+    if (!canReenter()) return;
+    const sourceRequestId = currentRequestId;
+    stopPolling();
+    // Keep the previous render visible until the new one replaces it: a re-render reuses the
+    // same source, so blanking the preview here would only flash.
+    setBusy(true);
+    showPending('Rendering…');
+    isRerendering = true;
+    try {
+      const result = await api.rerenderPdfRequest(sourceRequestId, renderFlags());
+      applyLifecycle(result);
+      currentRequestId = String(result?.request_id || '');
+      if (currentRequestId && !isTerminalState(result?.state)) {
+        startPolling();
+      } else {
+        renderOutputPreview(result);
+        isRerendering = false;
+      }
+    } catch (err) {
+      isRerendering = false;
+      hidePending();
+      setStatus(formatApiError(err), 'error');
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function submitRequest() {
@@ -299,6 +399,12 @@ export function createPdfTranslationView() {
       if (isTerminalState(result?.state)) {
         stopPolling();
         renderOutputPreview(result);
+        if (isRerendering) {
+          isRerendering = false;
+          setStatus(String(result?.state) === 'completed'
+            ? `Re-rendered (${String(renderSizeModeSelect.value)}, ${String(eraseFillModeSelect.value)}, ${String(widthFitModeSelect.value)}).`
+            : `Re-render ${String(result?.state || 'ended')}.`);
+        }
       }
     } catch (err) {
       stopPolling();
@@ -624,6 +730,10 @@ export function createPdfTranslationView() {
   if (cancelBtn) cancelBtn.addEventListener('click', cancelRequest);
   if (showOriginalToggle) showOriginalToggle.addEventListener('change', applyViewMode);
   modelSelect.addEventListener('change', updateModelSelectColor);
+  // A render flag changing on a completed document re-renders it; with nothing loaded the new
+  // value simply rides along on the next translation.
+  [renderSizeModeSelect, eraseFillModeSelect, sizeMetricModeSelect, sizeCohortModeSelect,
+    widthFitModeSelect].forEach((select) => select.addEventListener('change', rerenderRequest));
 
   if (dropzone) {
     const stop = (event) => { event.preventDefault(); event.stopPropagation(); };

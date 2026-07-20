@@ -139,9 +139,10 @@ export function createTranslationRequestsView() {
                 </label>
                 <label class="translation-prompts-field">
                   <span>Width fit</span>
-                  <select id="translationWidthFitMode" title="How a translation wider than its original line is fitted. footprint keeps it inside the original line's width (condense, then shrink); extend first widens into verified clean background right of the line (never over other text, ink or a surface change), so short list items keep their size.">
+                  <select id="translationWidthFitMode" title="How a translation wider than its original line is fitted. footprint keeps it inside the original line's width (condense, then shrink); extend first widens into verified clean background right of the line (never over other text, ink or a surface change), so short list items keep their size; extend to margin is that same growth capped at the right margin of the text band the line sits in, so it cannot cross a column gutter or run into a page margin — extend knows only the image edge, which suits a photo or sign but not a document.">
                     <option value="footprint" selected>footprint — exact fit</option>
                     <option value="extend">extend — grow</option>
+                    <option value="extend_to_margin">extend to margin — grow, stop at the margin</option>
                   </select>
                 </label>
                 <label class="translation-requests-option" title="Text inside a detected image/chart region (a screenshot's labels, a figure that is really a table) keeps its original pixels by default. Uncheck to translate and render it too. Changing this re-aligns from the cached OCR + hint (no VLM/OCR) and re-translates, so it takes a translation pass, not just a re-render.">
