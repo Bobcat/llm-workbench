@@ -119,9 +119,8 @@ export function createPdfTranslationView() {
                 </label>
                 <label class="translation-prompts-field">
                   <span>Width fit</span>
-                  <select id="pdfWidthFitMode" title="How a translation wider than its original line is fitted. footprint keeps it inside the original line's width (condense, then shrink); extend first widens into verified clean background right of the line, so short list items keep their size; extend to margin is that same growth capped at the right margin of the text band the line sits in, so it cannot cross a column gutter or run into a page margin — on a document that cap is what you want, since extend knows only the image edge.">
+                  <select id="pdfWidthFitMode" title="How a translation wider than its original line is fitted. footprint keeps it inside the original line's width (condense, then shrink); extend to margin first widens into verified clean background right of the line (never over other text, ink or a surface change), capped at the right margin of the text band the line sits in, so short list items keep their size without crossing a column gutter or running into a page margin.">
                     <option value="footprint" selected>footprint — exact fit</option>
-                    <option value="extend">extend — grow</option>
                     <option value="extend_to_margin">extend to margin — grow, stop at the margin</option>
                   </select>
                 </label>
