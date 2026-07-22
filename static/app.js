@@ -224,7 +224,7 @@ const WORKFLOW_GROUPS = [
       {
         id: 'image-translation-regression',
         route: 'image-translation-regression',
-        name: 'Image translation regression',
+        name: 'Image regression testing',
         icon: 'clipboard-check',
       },
       {
@@ -236,13 +236,13 @@ const WORKFLOW_GROUPS = [
       {
         id: 'pdf-translation-regression',
         route: 'pdf-translation-regression',
-        name: 'PDF translation regression',
+        name: 'PDF regression testing',
         icon: 'clipboard-check',
       },
       {
         id: 'pdf-testing',
         route: 'pdf-testing',
-        name: 'PDF testing',
+        name: 'PDF benchmark',
         icon: 'gauge',
       },
       {
