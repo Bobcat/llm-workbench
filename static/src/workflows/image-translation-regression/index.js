@@ -37,10 +37,14 @@ export function createImageTranslationRegressionView() {
   let snapshotVer = 0;          // bumped when snapshot.png changes (resnapshot), for cache-busting
   let actualVer = 0;            // bumped when actual.png changes (a run)
   let imgZoom = 100;            // detail image size (%)
-  const scrollByView = new Map(); // `${name/lang/variant}|${view}` -> {top, left}; per-view scroll memory
+  const scrollByView = new Map(); // `${name}|${view}` -> {top, left}; per-view scroll memory
 
   const key = (n, l, v) => `${n}/${l}/${v}`;
-  const scrollKey = () => (selected ? `${key(selected.name, selected.lang, selected.variant)}|${detailView}` : null);
+  // Keyed on the IMAGE, not the variant: every fixture of one image is the same page at the same
+  // pixel size, so a scroll position means the same place in all of them. Comparing variants is
+  // precisely clicking between them at one spot on the page — re-keying per variant would send
+  // the frame back to the top on every click and make that comparison impossible.
+  const scrollKey = () => (selected ? `${selected.name}|${detailView}` : null);
 
   // One persistent <img>, re-appended into each rebuilt detail frame so it keeps showing its last
   // decoded pixels until the next image is fully loaded — that swap is what removes the black flash
