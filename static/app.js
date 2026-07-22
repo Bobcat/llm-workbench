@@ -291,6 +291,7 @@ function renderWorkflows() {
   `).join('');
 
   workflowList.innerHTML = `${groupedMarkup}${auxiliaryMarkup}`;
+  updateSidebarScrollState();
 }
 
 function updateReplaySidebarState() {
@@ -401,10 +402,21 @@ WORKFLOWS.forEach(wf => {
 });
 
 // === Sidebar Interactions ===
+// When the nav list overflows vertically its scrollbar eats into the collapsed
+// sidebar's fixed width and clips the centred icons. Flag the overflow and hand
+// the measured scrollbar width to CSS so the collapsed rail can widen to match.
+function updateSidebarScrollState() {
+  const overflowing = workflowList.scrollHeight > workflowList.clientHeight;
+  const scrollbarWidth = workflowList.offsetWidth - workflowList.clientWidth;
+  sidebar.classList.toggle('has-scroll', overflowing);
+  sidebar.style.setProperty('--sidebar-scrollbar-width', `${scrollbarWidth}px`);
+}
+
 function updateSidebarUI(isOpen) {
   sidebar.classList.toggle('expanded', isOpen);
   sidebar.classList.toggle('collapsed', !isOpen);
   sidebarTooltip.hidden = true;
+  updateSidebarScrollState();
 }
 
 // Subscribe to state changes
@@ -457,6 +469,8 @@ workflowList.addEventListener('pointerout', (event) => {
 workflowList.addEventListener('scroll', () => {
   sidebarTooltip.hidden = true;
 });
+
+window.addEventListener('resize', updateSidebarScrollState);
 
 window.addEventListener('llm-workbench:replay-status', (event) => {
   const status = String(event?.detail?.status || 'idle').toLowerCase();

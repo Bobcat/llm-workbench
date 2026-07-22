@@ -61,6 +61,12 @@
   .sidebar:not(.expanded) {
     width: 66px;
   }
+
+  /* Nav list overflow adds a scrollbar that would clip the centred icons;
+     widen the collapsed rail by its measured width to keep them clear. */
+  .sidebar.has-scroll:not(.expanded) {
+    width: calc(66px + var(--sidebar-scrollbar-width, 0px));
+  }
 }
 
 .sidebar .sidebar-content {
