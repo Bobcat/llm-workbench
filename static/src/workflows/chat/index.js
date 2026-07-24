@@ -5,6 +5,32 @@ const MAX_IMAGES_PER_TURN = 4;
 const MAX_NATIVE_FILES_PER_TURN = 4;
 const MAX_NATIVE_FILE_BYTES = 100 * 1024 * 1024;
 const THINKING_MODES = new Set(['default', 'enabled', 'disabled']);
+const CHAT_MARKDOWN_TAGS = [
+  'a', 'blockquote', 'br', 'code', 'del', 'em', 'h1', 'h2', 'h3', 'h4', 'h5',
+  'h6', 'hr', 'li', 'ol', 'p', 'pre', 's', 'strong', 'table', 'tbody', 'td',
+  'th', 'thead', 'tr', 'ul',
+];
+const CHAT_MARKDOWN_ATTRIBUTES = ['href', 'rel', 'target', 'title'];
+const chatMarkdown = window.markdownit({
+  breaks: true,
+  html: false,
+  linkify: true,
+});
+const defaultLinkOpen = chatMarkdown.renderer.rules.link_open
+  || ((tokens, index, options, environment, renderer) => renderer.renderToken(tokens, index, options));
+
+chatMarkdown.renderer.rules.link_open = (tokens, index, options, environment, renderer) => {
+  tokens[index].attrSet('target', '_blank');
+  tokens[index].attrSet('rel', 'noopener noreferrer');
+  return defaultLinkOpen(tokens, index, options, environment, renderer);
+};
+
+function renderAssistantMarkdown(text) {
+  return window.DOMPurify.sanitize(chatMarkdown.render(text), {
+    ALLOWED_ATTR: CHAT_MARKDOWN_ATTRIBUTES,
+    ALLOWED_TAGS: CHAT_MARKDOWN_TAGS,
+  });
+}
 
 // System prompt + decode params persist across refreshes/boots (not the model
 // or allow-remote, which are per-session choices).
@@ -432,7 +458,10 @@ export function createChatView() {
         `).join('')}</div>`
       : '';
     const text = String(turn.text || '');
-    const textMarkup = text ? `<div class="chat-bubble-text">${escapeHtml(text)}</div>` : '';
+    const renderedText = turn.role === 'assistant'
+      ? renderAssistantMarkdown(text)
+      : escapeHtml(text);
+    const textMarkup = text ? `<div class="chat-bubble-text">${renderedText}</div>` : '';
     const copyText = copyableTurnText(turn);
     const copyMarkup = copyText.trim() === ''
       ? ''
