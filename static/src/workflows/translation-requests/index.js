@@ -205,28 +205,6 @@ export function createTranslationRequestsView() {
                 <div class="translation-requests-timings" id="translationRequestTimings"></div>
               </div>
             </details>
-            <div class="translation-requests-controls-cols">
-              <section class="translation-prompts-stats-block">
-                <div class="translation-prompts-stat translation-requests-id-stat">
-                  <span>Request</span>
-                  <strong id="translationRequestStatId">-</strong>
-                </div>
-                <div class="translation-prompts-stats-grid translation-requests-stats">
-                  <div class="translation-prompts-stat">
-                    <span>State</span>
-                    <strong id="translationRequestStatState">-</strong>
-                  </div>
-                  <div class="translation-prompts-stat">
-                    <span>Stage</span>
-                    <strong id="translationRequestStatStage">-</strong>
-                  </div>
-                  <div class="translation-prompts-stat">
-                    <span>Queue</span>
-                    <strong id="translationRequestStatQueue">-</strong>
-                  </div>
-                </div>
-              </section>
-            </div>
             <details class="translation-prompts-system-details translation-requests-details">
               <summary>Prompts &amp; responses</summary>
               <div class="translation-requests-details-body">
@@ -269,6 +247,28 @@ export function createTranslationRequestsView() {
                 </label>
               </div>
             </details>
+            <div class="translation-requests-controls-cols">
+              <section class="translation-prompts-stats-block">
+                <div class="translation-prompts-stat translation-requests-id-stat">
+                  <span>Request</span>
+                  <strong id="translationRequestStatId">-</strong>
+                </div>
+                <div class="translation-prompts-stats-grid translation-requests-stats">
+                  <div class="translation-prompts-stat">
+                    <span>State</span>
+                    <strong id="translationRequestStatState">-</strong>
+                  </div>
+                  <div class="translation-prompts-stat">
+                    <span>Stage</span>
+                    <strong id="translationRequestStatStage">-</strong>
+                  </div>
+                  <div class="translation-prompts-stat">
+                    <span>Queue</span>
+                    <strong id="translationRequestStatQueue">-</strong>
+                  </div>
+                </div>
+              </section>
+            </div>
           </section>
 
         </div>

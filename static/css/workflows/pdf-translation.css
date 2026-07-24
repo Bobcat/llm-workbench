@@ -78,9 +78,14 @@
    regression view. */
 .pdf-translation-view .pdf-translation-capture { display: flex; flex-direction: column; gap: 8px; }
 .pdf-translation-view #pdfRegInfo { font-size: 0.8rem; opacity: 0.85; }
-.pdf-translation-view .pdf-translation-capture-namefield span { font-size: 0.76rem; opacity: 0.75; }
 .pdf-translation-view .pdf-translation-capture-check {
-  display: flex; align-items: center; gap: 8px; font-size: 0.8rem; opacity: 0.85;
+  display: inline-flex; align-items: center; gap: 6px; font-size: 0.8rem; opacity: 0.85;
+  white-space: nowrap; flex: 0 0 auto;
 }
+.pdf-translation-view .pdf-translation-capture-check input { margin: 0; }
+
+/* The timings scope picker matches the timings card width (both constrained below). */
+.pdf-translation-view .pdf-timings-scope { max-width: 30rem; }
+.pdf-translation-view .pdf-timings-scope[hidden] { display: none; }
 .pdf-translation-view #pdfRegCaptureStatus { font-size: 0.78rem; }
 .pdf-translation-view #pdfRegCaptureStatus.is-error { color: var(--danger); }

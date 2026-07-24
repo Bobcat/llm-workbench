@@ -32,6 +32,18 @@ def status(request_id: str) -> dict:
     )
 
 
+@router.get("/subdirs")
+def subdirs() -> dict:
+    return _request_json(method="GET", path="/v1/pdf-regression/subdirs", timeout=15.0)
+
+
+@router.post("/add-testset")
+def add_testset(body: dict | None = None) -> dict:
+    return _request_json(
+        method="POST", path="/v1/pdf-regression/add-testset", payload=dict(body or {}), timeout=30.0
+    )
+
+
 @router.post("/capture")
 def capture(body: dict | None = None) -> dict:
     return _request_json(

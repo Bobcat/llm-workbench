@@ -141,6 +141,93 @@ export function createPdfTranslationView() {
                 </div>
               </div>
             </details>
+            <!-- Stage timings. The document response carries the run total in response.metrics
+                 and each page's stage breakdown in document.pages[].metrics — so the scope picker
+                 offers the whole document plus one entry per page. -->
+            <details class="translation-prompts-system-details translation-requests-details">
+              <summary>Timings</summary>
+              <div class="translation-requests-details-body">
+                <label class="translation-prompts-field pdf-timings-scope" id="pdfTimingsScopeField">
+                  <span>Scope</span>
+                  <select id="pdfTimingsScope"></select>
+                </label>
+                <div class="translation-requests-timings" id="pdfTimings"></div>
+              </div>
+            </details>
+            <!-- Prompts + responses, per page. The document response carries an EMPTY llm_calls
+                 on purpose — inlining every page's log would multiply an already multi-MB payload
+                 by the page count — so each page's log is its own artifact and this section
+                 fetches one at a time, only once opened. -->
+            <details class="translation-prompts-system-details translation-requests-details" id="pdfCallsDetails">
+              <summary>Prompts &amp; responses</summary>
+              <div class="translation-requests-details-body">
+                <label class="translation-prompts-field">
+                  <span>Page</span>
+                  <select id="pdfCallsPage"></select>
+                </label>
+                <div class="translation-prompts-inline-status" id="pdfCallsStatus"></div>
+                <label class="translation-prompts-field translation-prompts-field-response">
+                  <span>VLM grouping — input</span>
+                  <textarea id="pdfVlmInput" rows="6" spellcheck="false" placeholder="The user prompt sent to the grouping VLM for this page."></textarea>
+                </label>
+                <label class="translation-prompts-field translation-prompts-field-response">
+                  <span>VLM grouping — response</span>
+                  <textarea id="pdfVlmResponse" rows="6" spellcheck="false"></textarea>
+                </label>
+                <label class="translation-prompts-field translation-prompts-field-response">
+                  <span>Translation — system / instructions</span>
+                  <textarea id="pdfXlateSystem" rows="6" spellcheck="false"></textarea>
+                </label>
+                <label class="translation-prompts-field translation-prompts-field-response">
+                  <span>Translation — input</span>
+                  <textarea id="pdfXlateInput" rows="6" spellcheck="false"></textarea>
+                </label>
+                <label class="translation-prompts-field translation-prompts-field-response">
+                  <span>Translation — response</span>
+                  <textarea id="pdfXlateResponse" rows="6" spellcheck="false"></textarea>
+                </label>
+                <label class="translation-prompts-field translation-prompts-field-response">
+                  <span>Other calls (prompts + responses)</span>
+                  <textarea id="pdfOtherCalls" rows="8" spellcheck="false" placeholder="Every other call this page made, in order, with its role — the island batch, hint-line and per-unit calls."></textarea>
+                </label>
+              </div>
+            </details>
+            <!-- Freeze this completed run as a document regression fixture (frozen per-page
+                 cells/hint/translations + approved snapshots + accepted benchmark score). The
+                 fixture then lives in the PDF translation regression view. Same shape as the
+                 image "Regression fixture" panel: a status badge + a Capture button. PDF capture
+                 is self-contained (it stores source.pdf inside the fixture), so there is no
+                 separate "add to testset" step — the source is matched to a testset document by
+                 content hash, or captured under a name you type. -->
+            <details class="translation-prompts-system-details translation-requests-details">
+              <summary>Regression fixture</summary>
+              <div class="translation-requests-details-body translation-requests-regression pdf-translation-capture">
+                <div class="translation-prompts-inline-status" id="pdfRegInfo"></div>
+                <div class="translation-prompts-run-actions">
+                  <label class="translation-reg-subdir" title="Destination folder in the testset (the fixture mirrors it)">
+                    <span>Subdir</span>
+                    <select id="pdfRegSubdir"></select>
+                  </label>
+                  <input type="text" id="pdfRegSubdirNew" class="translation-reg-subdir-new" placeholder="new subdir, e.g. docpack" style="display:none">
+                  <button type="button" id="pdfRegAddTestset" disabled title="Copy this PDF into the testset">Add to testset</button>
+                  <label class="pdf-translation-capture-check" title="Freeze this run's benchmark score as the fixture's accepted baseline">
+                    <input type="checkbox" id="pdfRegScore" checked>
+                    <span>freeze score</span>
+                  </label>
+                  <button type="button" id="pdfRegCaptureBtn" disabled title="Freeze this completed result as a document regression fixture (frozen per-page snapshots)">Capture fixture</button>
+                </div>
+                <div class="translation-prompts-inline-status" id="pdfRegCaptureStatus"></div>
+              </div>
+            </details>
+            <details class="translation-prompts-system-details translation-requests-details">
+              <summary>Raw response</summary>
+              <div class="translation-requests-details-body">
+                <label class="translation-prompts-field translation-prompts-field-response">
+                  <span>Raw response</span>
+                  <textarea id="pdfRaw" rows="10" readonly></textarea>
+                </label>
+              </div>
+            </details>
             <div class="translation-requests-controls-cols">
               <section class="translation-prompts-stats-block">
                 <div class="translation-prompts-stat translation-requests-id-stat">
@@ -167,41 +254,6 @@ export function createPdfTranslationView() {
                 </div>
               </section>
             </div>
-            <!-- Freeze this completed run as a document regression fixture (frozen per-page
-                 cells/hint/translations + approved snapshots + accepted benchmark score). The
-                 fixture then lives in the PDF translation regression view. Same shape as the
-                 image "Regression fixture" panel: a status badge + a Capture button. PDF capture
-                 is self-contained (it stores source.pdf inside the fixture), so there is no
-                 separate "add to testset" step — the source is matched to a testset document by
-                 content hash, or captured under a name you type. -->
-            <details class="translation-prompts-system-details translation-requests-details">
-              <summary>Regression fixture</summary>
-              <div class="translation-requests-details-body pdf-translation-capture">
-                <div class="translation-prompts-inline-status" id="pdfRegInfo"></div>
-                <label class="translation-prompts-field pdf-translation-capture-namefield">
-                  <span>Name (blank = matching testset document)</span>
-                  <input type="text" id="pdfRegName" spellcheck="false" placeholder="auto">
-                </label>
-                <label class="pdf-translation-capture-check">
-                  <input type="checkbox" id="pdfRegScore" checked>
-                  <span>freeze accepted score</span>
-                </label>
-                <div class="translation-prompts-run-actions">
-                  <button type="button" id="pdfRegCaptureBtn" disabled
-                    title="Freeze this completed result as a document regression fixture">Capture fixture</button>
-                </div>
-                <div class="translation-prompts-inline-status" id="pdfRegCaptureStatus"></div>
-              </div>
-            </details>
-            <details class="translation-prompts-system-details translation-requests-details">
-              <summary>Raw response</summary>
-              <div class="translation-requests-details-body">
-                <label class="translation-prompts-field translation-prompts-field-response">
-                  <span>Raw response</span>
-                  <textarea id="pdfRaw" rows="10" readonly></textarea>
-                </label>
-              </div>
-            </details>
           </section>
 
         </div>
@@ -234,9 +286,25 @@ export function createPdfTranslationView() {
   const cancelBtn = container.querySelector('#pdfCancelBtn');
   const downloadLink = container.querySelector('#pdfDownload');
   const benchmarkBtn = container.querySelector('#pdfBenchmarkBtn');
+  const timingsScopeField = container.querySelector('#pdfTimingsScopeField');
+  const timingsScope = container.querySelector('#pdfTimingsScope');
+  const timingsEl = container.querySelector('#pdfTimings');
+  const callsDetails = container.querySelector('#pdfCallsDetails');
+  const callsPageSelect = container.querySelector('#pdfCallsPage');
+  const callsStatusEl = container.querySelector('#pdfCallsStatus');
+  const callEls = {
+    vlmInput: container.querySelector('#pdfVlmInput'),
+    vlmResponse: container.querySelector('#pdfVlmResponse'),
+    xlateSystem: container.querySelector('#pdfXlateSystem'),
+    xlateInput: container.querySelector('#pdfXlateInput'),
+    xlateResponse: container.querySelector('#pdfXlateResponse'),
+    other: container.querySelector('#pdfOtherCalls'),
+  };
   const regInfoEl = container.querySelector('#pdfRegInfo');
-  const regNameInput = container.querySelector('#pdfRegName');
+  const regSubdirSel = container.querySelector('#pdfRegSubdir');
+  const regSubdirNew = container.querySelector('#pdfRegSubdirNew');
   const regScoreInput = container.querySelector('#pdfRegScore');
+  const regAddTestsetBtn = container.querySelector('#pdfRegAddTestset');
   const regCaptureBtn = container.querySelector('#pdfRegCaptureBtn');
   const regCaptureStatusEl = container.querySelector('#pdfRegCaptureStatus');
   const stageEl = container.querySelector('.translation-requests-stage');
@@ -349,6 +417,8 @@ export function createPdfTranslationView() {
         startPolling();
       } else {
         renderOutputPreview(result);
+        syncCallsSection(result);
+        syncTimingsSection(result);
         isRerendering = false;
       }
     } catch (err) {
@@ -381,6 +451,8 @@ export function createPdfTranslationView() {
         startPolling();
       } else {
         renderOutputPreview(result);
+        syncCallsSection(result);
+        syncTimingsSection(result);
       }
     } catch (err) {
       hidePending();
@@ -398,6 +470,8 @@ export function createPdfTranslationView() {
       if (isTerminalState(result?.state)) {
         stopPolling();
         renderOutputPreview(result);
+        syncCallsSection(result);
+        syncTimingsSection(result);
         if (isRerendering) {
           isRerendering = false;
           setStatus(String(result?.state) === 'completed'
@@ -433,6 +507,8 @@ export function createPdfTranslationView() {
       if (isTerminalState(result?.state)) {
         stopPolling();
         renderOutputPreview(result);
+        syncCallsSection(result);
+        syncTimingsSection(result);
       }
     } catch (err) {
       setStatus(formatApiError(err), 'error');
@@ -550,6 +626,213 @@ export function createPdfTranslationView() {
     showOriginalFrame();
   }
 
+  // Stage timings, document total or one page. The scope choice survives a re-run, like the page
+  // picker below it. A re-render only re-runs the render stage, so its per-page metrics carry only
+  // replacement_wall_ms — the other stages read "—" then, which is honest: they did not run.
+  let timingsScopeValue = 'total';
+  let lastTimingsResult = null;
+
+  function syncTimingsSection(result) {
+    lastTimingsResult = result;
+    const pages = result?.response?.document?.pages || [];
+    const total = result?.response?.metrics?.translate_pdf_total_wall_ms;
+    // No run yet: hide the scope picker and show the placeholder card, matching the image view.
+    if (!pages.length && typeof total !== 'number') {
+      timingsScope.innerHTML = '';
+      timingsScopeField.hidden = true;
+      timingsEl.innerHTML = '<div class="trt-row trt-placeholder"><span>Run a request to see stage timings.</span></div>';
+      return;
+    }
+    timingsScopeField.hidden = false;
+    const options = ['<option value="total">Document total</option>']
+      .concat(pages.map((p) => `<option value="${p.page}">Page ${p.page}</option>`));
+    if (timingsScope.options.length !== options.length) timingsScope.innerHTML = options.join('');
+    if (!Array.from(timingsScope.options).some((o) => o.value === timingsScopeValue)) timingsScopeValue = 'total';
+    timingsScope.value = timingsScopeValue;
+    renderTimings();
+  }
+
+  function renderTimings() {
+    const result = lastTimingsResult;
+    if (!result) return;
+    const ms = (v) => (typeof v === 'number' ? `${Math.round(v)} ms` : '—');
+    const row = (label, value, cls = '') => `<div class="trt-row ${cls}"><span>${label}</span><strong>${value}</strong></div>`;
+
+    if (timingsScopeValue === 'total') {
+      const m = result?.response?.metrics || {};
+      const timings = result?.timings || {};
+      const pages = result?.response?.document?.pages || [];
+      const total = m.translate_pdf_total_wall_ms;
+      // Only render and assemble are summed on the document response; the earlier stages are
+      // per page, so sum them here across pages for the whole-document breakdown.
+      const sum = (key) => {
+        const vals = pages.map((p) => p?.metrics?.[key]).filter((v) => typeof v === 'number');
+        return vals.length ? vals.reduce((a, b) => a + b, 0) : undefined;
+      };
+      const secMs = (s) => (typeof s === 'number' ? `${Math.round(s * 1000)} ms` : '—');
+      const stage = (label, v) => {
+        if (typeof v !== 'number') return row(label, '—', 'trt-l1');
+        const pct = typeof total === 'number' && total > 0 ? ` · ${Math.round((v / total) * 100)}%` : '';
+        return row(label, `${Math.round(v)} ms${pct}`, 'trt-l1');
+      };
+      timingsEl.innerHTML = [
+        row('Queue wait', secMs(timings.pool_queue_wait_s)),
+        row('Document total', ms(total), 'trt-total'),
+        stage('OCR', sum('ocr_wall_ms')),
+        stage('Grouping (VLM)', sum('grouping_wall_ms')),
+        stage('Layout', sum('layout_wall_ms')),
+        stage('Align', sum('align_wall_ms')),
+        stage('Translation', sum('translation_wall_ms')),
+        stage('Render', typeof m.replacement_wall_ms_total === 'number' ? m.replacement_wall_ms_total : sum('replacement_wall_ms')),
+        stage('Assemble PDF', m.assemble_wall_ms),
+        row('Pages', typeof m.page_count === 'number' ? String(m.page_count) : '—', 'trt-l1'),
+      ].join('');
+      return;
+    }
+
+    const page = (result?.response?.document?.pages || []).find((p) => String(p.page) === String(timingsScopeValue));
+    const m = page?.metrics || {};
+    const total = m.translate_image_total_wall_ms;
+    // Stage row with its share of the page total — the same breakdown the image view shows.
+    const stage = (label, v) => {
+      if (typeof v !== 'number') return row(label, '—', 'trt-l1');
+      const pct = typeof total === 'number' && total > 0 ? ` · ${Math.round((v / total) * 100)}%` : '';
+      return row(label, `${Math.round(v)} ms${pct}`, 'trt-l1');
+    };
+    timingsEl.innerHTML = [
+      row('Page total', ms(total), 'trt-total'),
+      stage('OCR', m.ocr_wall_ms),
+      stage('Grouping (VLM)', m.grouping_wall_ms),
+      stage('Layout', m.layout_wall_ms),
+      stage('Align', m.align_wall_ms),
+      stage('Translation', m.translation_wall_ms),
+      stage('Render', m.replacement_wall_ms),
+    ].join('');
+  }
+
+  timingsScope.addEventListener('change', () => {
+    timingsScopeValue = String(timingsScope.value || 'total');
+    renderTimings();
+  });
+
+  // Prompts & responses, one page at a time. The page choice survives a re-run: you are usually
+  // studying one page across renders, and being thrown back to page 1 each time defeats that.
+  let callsPage = 0;
+  let callsLoadedFor = '';
+
+  function pagesWithCalls(result) {
+    const artifacts = result?.response?.artifacts || {};
+    return Object.keys(artifacts)
+      .map((name) => /^page-(\d+)-llm-calls$/.exec(name))
+      .filter(Boolean)
+      .map((m) => parseInt(m[1], 10))
+      .sort((a, b) => a - b);
+  }
+
+  function syncCallsSection(result) {
+    const pages = pagesWithCalls(result);
+    if (!pages.length) {
+      callsPageSelect.innerHTML = '';
+      clearCallFields();
+      callsStatusEl.textContent = 'No call log on this run.';
+      callsLoadedFor = '';
+      return;
+    }
+    const wanted = pages.includes(callsPage) ? callsPage : pages[0];
+    const changed = callsPageSelect.options.length !== pages.length
+      || String(callsPageSelect.value) !== String(wanted);
+    if (callsPageSelect.options.length !== pages.length) {
+      callsPageSelect.innerHTML = pages.map((p) => `<option value="${p}">Page ${p}</option>`).join('');
+    }
+    callsPageSelect.value = String(wanted);
+    callsPage = wanted;
+    if (changed) callsLoadedFor = '';
+    if (callsDetails.open) loadCallsForPage();
+  }
+
+  function clearCallFields() {
+    for (const el of Object.values(callEls)) el.value = '';
+  }
+
+  async function loadCallsForPage() {
+    const requestId = String(currentRequestId || '');
+    const page = parseInt(callsPageSelect.value || '0', 10);
+    if (!requestId || !page) return;
+    const key = `${requestId}|${page}`;
+    if (callsLoadedFor === key) return;
+    callsStatusEl.textContent = 'Loading…';
+    try {
+      const name = `page-${String(page).padStart(3, '0')}-llm-calls`;
+      const url = `/api/pdf-translation/requests/${encodeURIComponent(requestId)}/artifacts/${encodeURIComponent(name)}`;
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      fillCallFields(await response.json());
+      callsLoadedFor = key;
+      callsStatusEl.textContent = '';
+    } catch (err) {
+      clearCallFields();
+      callsLoadedFor = '';
+      callsStatusEl.textContent = `Could not load page ${page}: ${err.message || err}`;
+    }
+  }
+
+  // Same split as the image view, on this page's calls: the grouping call, the page's structured
+  // translation call, and everything else in order — the island batch, hint-line and per-unit
+  // calls, each labelled with the role that says why it exists.
+  function fillCallFields(calls) {
+    if (!Array.isArray(calls)) { clearCallFields(); return; }
+    const grouping = calls.find((c) => String(c?.role) === 'grouping_vlm');
+    const main = calls.find((c) => {
+      const role = String(c?.role || '');
+      return role === 'translation_main' || role === 'translation_main_numbered';
+    });
+    const others = calls.filter((c) => c !== grouping && c !== main);
+    callEls.vlmInput.value = grouping ? callInputText(grouping) : '';
+    callEls.vlmResponse.value = grouping ? callResponseText(grouping) : '';
+    callEls.xlateSystem.value = main ? String(main?.payload?.instructions || '') : '';
+    callEls.xlateInput.value = main ? callInputText(main) : '';
+    callEls.xlateResponse.value = main ? callResponseText(main) : '';
+    callEls.other.value = others.length
+      ? others.map(formatCall).join('\n\n──────────\n\n')
+      : '(none — the page needed no calls beyond the two above)';
+  }
+
+  function callInputText(call) {
+    const input = call?.payload?.input;
+    if (Array.isArray(input)) {
+      return input.filter((p) => p && p.type === 'text').map((p) => String(p.text || '')).join('\n');
+    }
+    return String(input || '');
+  }
+
+  function callResponseText(call) {
+    const response = call?.response;
+    if (response && typeof response === 'object') {
+      return String(response.output_text || JSON.stringify(response, null, 2));
+    }
+    return String(response || call?.error || '');
+  }
+
+  function formatCall(call) {
+    const system = String(call?.payload?.instructions || '');
+    const ms = call?.wall_ms;
+    return [
+      `# ${String(call?.role || 'call')}${typeof ms === 'number' ? `   (${(ms / 1000).toFixed(2)}s)` : ''}`,
+      system ? `[system]\n${system}` : '',
+      `[input]\n${callInputText(call)}`,
+      `[response]\n${callResponseText(call)}`,
+    ].filter(Boolean).join('\n');
+  }
+
+  callsPageSelect.addEventListener('change', () => {
+    callsPage = parseInt(callsPageSelect.value || '0', 10);
+    callsLoadedFor = '';
+    loadCallsForPage();
+  });
+  callsDetails.addEventListener('toggle', () => {
+    if (callsDetails.open) loadCallsForPage();
+  });
+
   function clearOutputPreview() {
     outputPreview.hidden = true;
     outputPreview.removeAttribute('src');
@@ -569,32 +852,66 @@ export function createPdfTranslationView() {
     regCaptureStatusEl.classList.toggle('is-error', kind === 'error');
   }
 
-  // The capture badge + button state, mirroring the image "Regression fixture" panel: it shows
-  // the fixture name this run maps to (a testset document matched by content hash), the fixtures
-  // that already exist for it, and enables Capture accordingly.
+  // Destination-subdir picker for Add-to-testset — mirrors the image panel. The fixture mirrors
+  // the source's subdir, so this chooses where a fresh PDF is filed; '' = flat testset/pdf root.
+  const NEW_SUBDIR = ' new';
+  async function populateSubdirs() {
+    let dirs = [];
+    try { dirs = (await api.listPdfRegressionSubdirs()).subdirs || []; } catch { /* root-only picker */ }
+    regSubdirSel.innerHTML = ['<option value="">(root)</option>']
+      .concat(dirs.map((d) => `<option value="${escapeAttr(d)}">${escapeHtml(d)}</option>`))
+      .concat([`<option value="${NEW_SUBDIR}">+ new subdir…</option>`])
+      .join('');
+    syncSubdirNew();
+  }
+  function syncSubdirNew() {
+    regSubdirNew.style.display = regSubdirSel.value === NEW_SUBDIR ? '' : 'none';
+  }
+  function subdirValue() {
+    const raw = regSubdirSel.value === NEW_SUBDIR ? regSubdirNew.value : regSubdirSel.value;
+    return String(raw || '').trim().replace(/^\/+|\/+$/g, '');
+  }
+  // The name to file under: the run's own PDF filename (stem). A source already matched to a
+  // testset document by content hash uses that name instead — no add needed.
+  function uploadStem() {
+    return String(selectedFile()?.name || '').replace(/\.[^.]+$/, '').trim();
+  }
+
+  // Two-step, exactly like the image panel: Add-to-testset files the PDF under a subdir, then
+  // Capture freezes the fixture there. The content-hash match is the shortcut — a PDF that is
+  // already in the testset skips straight to Capture.
   function renderRegInfo() {
     const completed = currentState() === 'completed';
-    const typedName = String(regNameInput.value || '').trim();
     const lang = String(lastTargetLang || '').toLowerCase() || '?';
-    if (!completed || !regStatus) {
-      regInfoEl.textContent = completed ? '' : 'Translate a PDF to capture it as a fixture.';
+    const inTestset = Boolean(regStatus && regStatus.in_testset);
+    const name = inTestset ? regStatus.name : uploadStem();
+    if (!completed) {
+      regInfoEl.textContent = 'Translate a PDF to capture it as a fixture.';
+      regAddTestsetBtn.disabled = true;
       regCaptureBtn.disabled = true;
       regCaptureBtn.textContent = 'Capture fixture';
       return;
     }
-    const langs = regStatus.langs || {};
+    const langs = (regStatus && regStatus.langs) || {};
     const hasForLang = Array.isArray(langs[lang]) && langs[lang].length > 0;
-    if (regStatus.name) {
+    if (!name) {
+      regInfoEl.textContent = 'Re-pick the PDF to name a fixture for it.';
+    } else if (inTestset) {
+      const at = regStatus.reldir ? `${regStatus.reldir}/` : '';
       const fixtures = Object.keys(langs).length
         ? Object.keys(langs).sort().map((l) => `${l}: ${langs[l].join(', ')}`).join(' · ')
         : 'no fixture yet';
-      regInfoEl.textContent = `${regStatus.name} · testset document · ${fixtures}`;
+      regInfoEl.textContent = `${at}${name} · in testset · ${fixtures}`;
     } else {
-      regInfoEl.textContent = typedName
-        ? `${typedName} · not a testset document (capturing under this name)`
-        : 'Not a testset document — type a name to capture.';
+      regInfoEl.textContent = `${name} · not in testset`;
     }
-    regCaptureBtn.disabled = !(regStatus.name || typedName);
+    // Add is for a PDF not yet in the testset; the subdir picker only matters then.
+    regAddTestsetBtn.disabled = isBusy || !completed || !name || inTestset;
+    const canAdd = !regAddTestsetBtn.disabled;
+    regSubdirSel.disabled = !canAdd;
+    regSubdirNew.disabled = !canAdd;
+    // Capture mirrors the source's subdir, so the source must be in the testset first (or matched).
+    regCaptureBtn.disabled = isBusy || !completed || !inTestset;
     regCaptureBtn.textContent = `${hasForLang ? 'Capture variant' : 'Capture fixture'} (${lang})`;
   }
 
@@ -607,7 +924,22 @@ export function createPdfTranslationView() {
     try {
       regStatus = await api.getPdfRegressionStatus(currentRequestId);
     } catch {
-      regStatus = null;  // status is a nicety; capture still works with a typed name
+      regStatus = null;
+    }
+    renderRegInfo();
+  }
+
+  async function addToTestset() {
+    const name = uploadStem();
+    if (!currentRequestId || !name) return;
+    regAddTestsetBtn.disabled = true;
+    setCaptureStatus('Adding to testset…');
+    try {
+      regStatus = await api.addPdfRegressionTestset({ request_id: currentRequestId, name, subdir: subdirValue() });
+      setCaptureStatus('Added to testset.');
+      await populateSubdirs();  // a freshly-typed subdir now exists — offer it next time
+    } catch (err) {
+      setCaptureStatus(formatApiError(err), 'error');
     }
     renderRegInfo();
   }
@@ -664,9 +996,9 @@ export function createPdfTranslationView() {
     regCaptureBtn.disabled = true;
     setCaptureStatus('Capturing… (per-page verification replay, then the accepted-score measurement)');
     try {
+      // No name: the source is in the testset now (added, or hash-matched), so capture takes the
+      // matched name and mirrors its subdir — exactly what the image capture does.
       const body = { request_id: currentRequestId, freeze_score: Boolean(regScoreInput.checked) };
-      const name = String(regNameInput.value || '').trim();
-      if (name) body.name = name;
       const out = await api.capturePdfRegression(body);
       const scoreNote = out.accepted_scores?.axes
         ? ` · L ${out.accepted_scores.axes.layout} · A ${out.accepted_scores.axes.anchors} · T ${out.accepted_scores.axes.typography}`
@@ -715,6 +1047,15 @@ export function createPdfTranslationView() {
     fileInput.value = '';
     currentRequestId = '';
     clearOutputPreview();
+    // A new document: drop the loaded log, but keep the page number — the next document
+    // falls back to its first page when it does not go that far.
+    callsPageSelect.innerHTML = '';
+    callsStatusEl.textContent = '';
+    callsLoadedFor = '';
+    clearCallFields();
+    timingsScope.innerHTML = '';
+    timingsEl.innerHTML = '';
+    lastTimingsResult = null;
     updateInputPreview();
     setStatus('');
     updateStageVisibility();
@@ -724,8 +1065,11 @@ export function createPdfTranslationView() {
   if (resetBtn) resetBtn.addEventListener('click', resetView);
   benchmarkBtn.addEventListener('click', benchmarkRun);
   regCaptureBtn.addEventListener('click', captureFixture);
-  // Typing a name for a non-testset document enables Capture and updates the badge live.
-  regNameInput.addEventListener('input', renderRegInfo);
+  regAddTestsetBtn.addEventListener('click', addToTestset);
+  regSubdirSel.addEventListener('change', () => { syncSubdirNew(); renderRegInfo(); });
+  regSubdirNew.addEventListener('input', renderRegInfo);
+  populateSubdirs();
+  syncTimingsSection(null);  // placeholder card before the first run, matching the image view
   if (cancelBtn) cancelBtn.addEventListener('click', cancelRequest);
   if (showOriginalToggle) showOriginalToggle.addEventListener('change', applyViewMode);
   modelSelect.addEventListener('change', updateModelSelectColor);

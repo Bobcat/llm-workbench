@@ -405,6 +405,14 @@
   display: grid;
   gap: 4px;
   font-size: 0.84rem;
+  /* A card that matches the Request stats block, width-constrained so label and value sit a
+     comfortable distance apart rather than pinned to the edges of a full-width row. Shared by the
+     image and PDF views so the two timings panels look identical. */
+  max-width: 30rem;
+  padding: 12px 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  background: var(--surface-soft);
 }
 
 .translation-requests-view .trt-row {

@@ -411,6 +411,12 @@ export const api = {
     return fetchJson(`/api/pdf-benchmark/runs/${encodeURIComponent(docId)}/${encodeURIComponent(system)}/${encodeURIComponent(runId)}/anchors`);
   },
 
+  async deletePdfBenchmarkCell(docId, system) {
+    return fetchJson(`/api/pdf-benchmark/runs/${encodeURIComponent(docId)}/${encodeURIComponent(system)}`, {
+      method: 'DELETE',
+    });
+  },
+
   async listPdfRegressionFixtures() {
     return fetchJson('/api/pdf-regression/fixtures');
   },
@@ -448,6 +454,18 @@ export const api = {
       `/api/pdf-regression/fixtures/${encodeURIComponent(name)}/${encodeURIComponent(lang)}/${encodeURIComponent(variant)}`,
       { method: 'DELETE' },
     );
+  },
+
+  async listPdfRegressionSubdirs() {
+    return fetchJson('/api/pdf-regression/subdirs');
+  },
+
+  async addPdfRegressionTestset(body) {
+    return fetchJson('/api/pdf-regression/add-testset', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body || {}),
+    });
   },
 
   async getRegressionStatus(name) {
