@@ -259,7 +259,7 @@ export function createPdfTestingView() {
       const cells = systems.map((system) => {
         const entries = doc.systems.get(system);
         if (!entries) return '<td><span class="pdf-testing-none">—</span></td>';
-        return `<td class="pdf-testing-clickable" data-doc="${escapeAttr(doc.docId)}" data-system="${escapeAttr(system)}" title="Click for per-page region overlays">${cellMarkup(entries)}</td>`;
+        return `<td class="pdf-testing-clickable" data-doc="${escapeAttr(doc.docId)}" data-system="${escapeAttr(system)}" title="Click for per-page region overlays">${cellMarkup(entries)}<button type="button" class="pdf-testing-cell-delete" data-doc="${escapeAttr(doc.docId)}" data-system="${escapeAttr(system)}" title="Delete this score" aria-label="Delete this score">×</button></td>`;
       }).join('');
       const delta = oursDelta(doc);
       const deltaText = delta
@@ -403,7 +403,26 @@ export function createPdfTestingView() {
     detailEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
+  async function deleteCell(button) {
+    const { doc, system } = button.dataset;
+    if (!window.confirm(`Delete the ${system} score for this document?`)) return;
+    button.disabled = true;
+    try {
+      await api.deletePdfBenchmarkCell(doc, system);
+      await refreshMatrix();
+    } catch (err) {
+      button.disabled = false;
+      window.alert(`Could not delete the score: ${formatApiError(err)}`);
+    }
+  }
+
   matrixEl.addEventListener('click', (event) => {
+    const deleteBtn = event.target.closest('.pdf-testing-cell-delete');
+    if (deleteBtn) {
+      event.stopPropagation();
+      deleteCell(deleteBtn);
+      return;
+    }
     const cell = event.target.closest('.pdf-testing-clickable');
     if (!cell) return;
     openDetail(cell.dataset.doc, cell.dataset.system);

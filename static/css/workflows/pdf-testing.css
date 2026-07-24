@@ -184,10 +184,45 @@
 
 .pdf-testing-view .pdf-testing-clickable {
   cursor: pointer;
+  position: relative;
 }
 
 .pdf-testing-view .pdf-testing-clickable:hover {
   background: var(--surface-muted);
+}
+
+/* Red cross in the cell's top-right, revealed on hover. Clicking deletes the
+   (doc, system) score; the column drops itself once its last cell is gone. */
+.pdf-testing-view .pdf-testing-cell-delete {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  display: none;
+  padding: 0;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--border-soft);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--danger);
+  font-size: 1.35rem;
+  font-weight: 700;
+  line-height: 24px;
+  text-align: center;
+  cursor: pointer;
+}
+
+.pdf-testing-view .pdf-testing-clickable:hover .pdf-testing-cell-delete {
+  display: inline-block;
+}
+
+.pdf-testing-view .pdf-testing-cell-delete:hover {
+  opacity: 0.7;
+}
+
+.pdf-testing-view .pdf-testing-cell-delete:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 /* Detail: per-page source/translated overlays with the region colours. */
