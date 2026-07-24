@@ -11,6 +11,8 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 
 _MAX_IMAGES_PER_TURN = 4
 _MAX_IMAGE_DATA_URL_CHARS = 12 * 1024 * 1024  # ~9 MiB binary after base64
+_MAX_FILES_PER_TURN = 4
+_MAX_TOTAL_FILE_DATA_URL_CHARS = 140 * 1024 * 1024  # ~100 MiB binary after base64
 
 # llm-pool caps decoding.max_tokens at 4096 (see DecodingParams in llm-pool).
 _MAX_OUTPUT_TOKENS = 4096
@@ -22,10 +24,16 @@ class ChatImageInput(BaseModel):
     data_url: str
 
 
+class ChatFileInput(BaseModel):
+    name: str = Field(min_length=1)
+    data_url: str
+
+
 class ChatTurnInput(BaseModel):
     role: Literal["user", "assistant"]
     text: str = ""
     images: list[ChatImageInput] = Field(default_factory=list)
+    files: list[ChatFileInput] = Field(default_factory=list)
 
 
 class ChatRunRequest(BaseModel):
@@ -36,6 +44,7 @@ class ChatRunRequest(BaseModel):
     # the conversation is flattened into a single prompt (Route A).
     multi_turn: bool = True
     allow_remote: bool = False
+    prompt_cache_key: str | None = Field(default=None, min_length=1)
     thinking: Literal["default", "enabled", "disabled"] = "default"
     max_tokens: int = Field(default=_DEFAULT_OUTPUT_TOKENS, ge=1, le=_MAX_OUTPUT_TOKENS)
     temperature: float | None = Field(default=None, ge=0.0, le=2.0)
@@ -56,6 +65,7 @@ def _validate_turns(turns: list[ChatTurnInput]) -> list[ChatTurnInput]:
         raise HTTPException(status_code=400, detail="At least one turn is required.")
     if turns[-1].role != "user":
         raise HTTPException(status_code=400, detail="The last turn must be from the user.")
+    total_file_data_url_chars = 0
     for turn in turns:
         for image in turn.images:
             url = str(image.data_url or "").strip()
@@ -75,6 +85,24 @@ def _validate_turns(turns: list[ChatTurnInput]) -> list[ChatTurnInput]:
                 status_code=400,
                 detail=f"At most {_MAX_IMAGES_PER_TURN} images per turn are allowed.",
             )
+        if len(turn.files) > _MAX_FILES_PER_TURN:
+            raise HTTPException(
+                status_code=400,
+                detail=f"At most {_MAX_FILES_PER_TURN} files per turn are allowed.",
+            )
+        for file in turn.files:
+            url = str(file.data_url or "").strip()
+            if not url.startswith("data:") or ";base64," not in url:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Each file must be a base64 data URL.",
+                )
+            total_file_data_url_chars += len(url)
+    if total_file_data_url_chars > _MAX_TOTAL_FILE_DATA_URL_CHARS:
+        raise HTTPException(
+            status_code=400,
+            detail="Attached files exceed the 100 MiB request limit.",
+        )
     return turns
 
 
@@ -85,15 +113,29 @@ def _image_content_items(images: list[ChatImageInput]) -> list[dict[str, Any]]:
     ]
 
 
+def _file_content_items(files: list[ChatFileInput]) -> list[dict[str, Any]]:
+    return [
+        {
+            "type": "file",
+            "file": {
+                "filename": str(file.name).strip(),
+                "file_data": str(file.data_url).strip(),
+            },
+        }
+        for file in files
+    ]
+
+
 def _turn_content(turn: ChatTurnInput) -> str | list[dict[str, Any]]:
-    """Build the pool content for one turn: plain text, or text + images."""
+    """Build the pool content for one turn: text plus native attachments."""
     text = str(turn.text or "")
-    if not turn.images:
+    if not turn.images and not turn.files:
         return text
     content: list[dict[str, Any]] = []
     if text.strip():
         content.append({"type": "text", "text": text})
     content.extend(_image_content_items(turn.images))
+    content.extend(_file_content_items(turn.files))
     return content
 
 
@@ -111,13 +153,15 @@ def _flattened_transcript(turns: list[ChatTurnInput]) -> str:
 
 
 def _flattened_input(turns: list[ChatTurnInput]) -> str | list[dict[str, Any]]:
-    """Route A input: flattened transcript, with the last turn's images attached."""
+    """Route A input: flattened transcript, with the last turn's attachments."""
     transcript = _flattened_transcript(turns)
     last_images = turns[-1].images if turns else []
-    if not last_images:
+    last_files = turns[-1].files if turns else []
+    if not last_images and not last_files:
         return transcript
     content: list[dict[str, Any]] = [{"type": "text", "text": transcript}]
     content.extend(_image_content_items(last_images))
+    content.extend(_file_content_items(last_files))
     return content
 
 
@@ -154,6 +198,8 @@ def run_chat(request: ChatRunRequest) -> ChatRunResponse:
         "thinking": request.thinking,
         "decoding": _decoding(request),
     }
+    if request.prompt_cache_key is not None:
+        payload["prompt_cache_key"] = request.prompt_cache_key
     if request.multi_turn:
         payload["messages"] = _multi_turn_messages(turns)
     else:
@@ -179,6 +225,7 @@ def run_chat(request: ChatRunRequest) -> ChatRunResponse:
             "gpu_generate_total_ms": metrics.get("gpu_generate_total_ms"),
             "gpu_decode_after_first_token_ms": metrics.get("gpu_decode_after_first_token_ms"),
             "engine_prompt_tokens": metrics.get("engine_prompt_tokens"),
+            "engine_cached_prompt_tokens": metrics.get("engine_cached_prompt_tokens"),
             "engine_output_tokens": metrics.get("engine_output_tokens"),
             "engine_tokens_per_second": metrics.get("engine_tokens_per_second"),
         },

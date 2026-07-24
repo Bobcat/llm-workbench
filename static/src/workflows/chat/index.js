@@ -2,6 +2,8 @@ import { api } from '../../api-client.js';
 import { escapeAttr, escapeHtml, formatApiError } from '../../shared/ui-helpers.js';
 
 const MAX_IMAGES_PER_TURN = 4;
+const MAX_NATIVE_FILES_PER_TURN = 4;
+const MAX_NATIVE_FILE_BYTES = 100 * 1024 * 1024;
 const THINKING_MODES = new Set(['default', 'enabled', 'disabled']);
 
 // System prompt + decode params persist across refreshes/boots (not the model
@@ -14,6 +16,12 @@ const DEFAULT_SETTINGS = {
   topP: '',
   topK: '',
 };
+
+function createPromptCacheKey() {
+  const bytes = new Uint8Array(16);
+  window.crypto.getRandomValues(bytes);
+  return Array.from(bytes, (value) => value.toString(16).padStart(2, '0')).join('');
+}
 
 function loadChatSettings() {
   try {
@@ -46,8 +54,8 @@ function saveStoredModel(id) {
   }
 }
 
-// Text-like files are flattened into the message text; images become image
-// content; everything else is rejected (e.g. audio, until a model advertises it).
+// Models with native file input receive the original bytes. For models without
+// it, text-like files retain the existing prompt-flattening behavior.
 const TEXT_MIME_ALLOWLIST = new Set([
   'application/json',
   'application/xml',
@@ -188,11 +196,13 @@ export function createChatView() {
 
   let adminModels = [];
   // Committed conversation.
-  // user: {role, text, images:[{name,dataUrl}], imagePlaceholders:[{name}]}.
+  // user: {role, text, images, files, imagePlaceholders}.
   // assistant: {role, text}. A failed send is rolled back, never stored.
   let turns = [];
+  let promptCacheKey = createPromptCacheKey();
   // Pending attachments for the next user turn.
   let pendingImages = [];
+  let pendingNativeFiles = [];
   let pendingTextFiles = [];
   let isBusy = false;
   let lastThinkingEnabled = false;
@@ -250,6 +260,7 @@ export function createChatView() {
           backend,
           isRemote: backend === 'openai_remote',
           supportsImage: modalities.includes('image'),
+          supportsFiles: capabilities.file_inputs === true,
           multiTurn: capabilities.multi_turn === true,
           thinkingModes: normalizeThinkingModes(capabilities.thinking_modes),
           imageLimit: parseImageLimit(model?.definition),
@@ -291,11 +302,32 @@ export function createChatView() {
     const noModels = loadedModels().length === 0;
     sendBtn.disabled = nextBusy || noModels;
     addFilesBtn.disabled = nextBusy || noModels;
-    clearBtn.disabled = nextBusy || (turns.length === 0 && !inputEl.value && pendingImages.length === 0 && pendingTextFiles.length === 0);
+    clearBtn.disabled = nextBusy || (
+      turns.length === 0
+      && !inputEl.value
+      && pendingImages.length === 0
+      && pendingNativeFiles.length === 0
+      && pendingTextFiles.length === 0
+    );
   }
 
   function committedImageCount() {
     return turns.reduce((sum, turn) => sum + ((turn.images || []).length), 0);
+  }
+
+  function nativeFileBytes() {
+    const committed = turns.reduce(
+      (sum, turn) => sum + (turn.files || []).reduce(
+        (fileSum, file) => fileSum + (Number(file.size) || 0),
+        0,
+      ),
+      0,
+    );
+    const pending = pendingNativeFiles.reduce(
+      (sum, file) => sum + (Number(file.size) || 0),
+      0,
+    );
+    return committed + pending;
   }
 
   function archiveCommittedImages(requiredSlots = 1) {
@@ -362,6 +394,7 @@ export function createChatView() {
         if (model.isRemote) tags.push('remote');
         if (!model.multiTurn) tags.push('single-turn');
         if (model.supportsImage) tags.push('vision');
+        if (model.supportsFiles) tags.push('files');
         const label = tags.length ? `${model.name} · ${tags.join(', ')}` : model.name;
         return `<option value="${escapeAttr(model.id)}">${escapeHtml(label)}</option>`;
       }).join('')
@@ -390,6 +423,14 @@ export function createChatView() {
           </span>
         `).join('')}</div>`
       : '';
+    const filesMarkup = (turn.files || []).length
+      ? `<div class="chat-bubble-image-placeholders">${turn.files.map((file) => `
+          <span class="chat-bubble-image-placeholder" title="${escapeAttr(file.name || 'file')}">
+            <span class="material-symbols-outlined" aria-hidden="true">description</span>
+            <span>${escapeHtml(file.name || 'file')}</span>
+          </span>
+        `).join('')}</div>`
+      : '';
     const text = String(turn.text || '');
     const textMarkup = text ? `<div class="chat-bubble-text">${escapeHtml(text)}</div>` : '';
     const copyText = copyableTurnText(turn);
@@ -406,6 +447,7 @@ export function createChatView() {
         <div class="chat-bubble ${roleClass}">
           ${imagesMarkup}
           ${placeholdersMarkup}
+          ${filesMarkup}
           ${textMarkup}
         </div>
         ${copyMarkup}
@@ -435,6 +477,18 @@ export function createChatView() {
         </figure>
       `);
     });
+    pendingNativeFiles.forEach((file, index) => {
+      items.push(`
+        <span class="chat-attachment chat-attachment-file">
+          <span class="material-symbols-outlined" aria-hidden="true">description</span>
+          <span class="chat-attachment-name">${escapeHtml(file.name)}</span>
+          <button type="button" class="chat-attachment-remove" data-kind="native-file" data-index="${index}"
+            aria-label="Remove ${escapeAttr(file.name)}" title="Remove ${escapeAttr(file.name)}">
+            <span class="material-symbols-outlined" aria-hidden="true">close</span>
+          </button>
+        </span>
+      `);
+    });
     pendingTextFiles.forEach((file, index) => {
       items.push(`
         <span class="chat-attachment chat-attachment-file">
@@ -456,11 +510,11 @@ export function createChatView() {
     attachmentsEl.innerHTML = items.join('');
   }
 
-  function readImageAsDataUrl(file) {
+  function readFileAsDataUrl(file) {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = () => resolve(String(reader.result || ''));
-      reader.onerror = () => reject(reader.error || new Error('Failed to read image'));
+      reader.onerror = () => reject(reader.error || new Error('Failed to read file'));
       reader.readAsDataURL(file);
     });
   }
@@ -484,9 +538,30 @@ export function createChatView() {
           rejected.push(`${file.name} (${reason})`);
           continue;
         }
-        const dataUrl = await readImageAsDataUrl(file);
+        const dataUrl = await readFileAsDataUrl(file);
         if (dataUrl.startsWith('data:image/')) {
           pendingImages.push({ name: String(file.name || 'image'), dataUrl });
+        }
+      } else if (kind !== 'audio' && kind !== 'video' && model?.supportsFiles) {
+        if (pendingNativeFiles.length >= MAX_NATIVE_FILES_PER_TURN) {
+          rejected.push(`${file.name} (at most ${MAX_NATIVE_FILES_PER_TURN} files per message)`);
+          continue;
+        }
+        if (file.size > MAX_NATIVE_FILE_BYTES) {
+          rejected.push(`${file.name} (larger than 100 MiB)`);
+          continue;
+        }
+        if (nativeFileBytes() + file.size > MAX_NATIVE_FILE_BYTES) {
+          rejected.push(`${file.name} (attachments exceed the 100 MiB conversation limit)`);
+          continue;
+        }
+        const dataUrl = await readFileAsDataUrl(file);
+        if (dataUrl.startsWith('data:') && dataUrl.includes(';base64,')) {
+          pendingNativeFiles.push({
+            name: String(file.name || 'attachment'),
+            dataUrl,
+            size: Number(file.size) || 0,
+          });
         }
       } else if (kind === 'text') {
         const content = await file.text();
@@ -524,6 +599,10 @@ export function createChatView() {
       role: turn.role,
       text: apiTurnText(turn),
       images: (turn.images || []).map((img) => ({ name: img.name, data_url: img.dataUrl })),
+      files: (turn.files || []).map((file) => ({
+        name: file.name,
+        data_url: file.dataUrl,
+      })),
     }));
   }
 
@@ -575,6 +654,12 @@ export function createChatView() {
 
   function formatResultStats(metrics) {
     const parts = [];
+    const promptTokens = metrics.engine_prompt_tokens;
+    if (promptTokens != null) parts.push(`${Number(promptTokens).toLocaleString()} input tok`);
+    const cachedPromptTokens = metrics.engine_cached_prompt_tokens;
+    if (cachedPromptTokens != null) {
+      parts.push(`${Number(cachedPromptTokens).toLocaleString()} cached`);
+    }
     const gpuMs = metrics.gpu_generate_total_ms;
     if (gpuMs != null) parts.push(`${Number(gpuMs).toFixed(0)} ms GPU`);
     const tps = metrics.engine_tokens_per_second;
@@ -606,9 +691,14 @@ export function createChatView() {
     }
     const draft = inputEl.value;
     const sentImages = pendingImages;
+    const sentNativeFiles = pendingNativeFiles;
     const sentTextFiles = pendingTextFiles;
     const text = buildUserTurnText();
-    if (text.trim() === '' && sentImages.length === 0) {
+    if (
+      text.trim() === ''
+      && sentImages.length === 0
+      && sentNativeFiles.length === 0
+    ) {
       setStatus('Type a message or add a file.');
       return;
     }
@@ -618,9 +708,15 @@ export function createChatView() {
     }
     historyIndex = null;
 
-    const userTurn = { role: 'user', text, images: sentImages };
+    const userTurn = {
+      role: 'user',
+      text,
+      images: sentImages,
+      files: sentNativeFiles,
+    };
     turns.push(userTurn);
     pendingImages = [];
+    pendingNativeFiles = [];
     pendingTextFiles = [];
     inputEl.value = '';
     renderAttachments();
@@ -636,6 +732,7 @@ export function createChatView() {
         system_prompt: String(systemPromptInput.value || ''),
         multi_turn: model.multiTurn,
         allow_remote: allowRemote,
+        prompt_cache_key: promptCacheKey,
         thinking: thinkingMode,
         max_tokens: decode.max_tokens,
         temperature: decode.temperature,
@@ -652,6 +749,7 @@ export function createChatView() {
       if (idx !== -1) turns.splice(idx, 1);
       inputEl.value = draft;
       pendingImages = sentImages;
+      pendingNativeFiles = sentNativeFiles;
       pendingTextFiles = sentTextFiles;
       renderAttachments();
       setStatus(formatApiError(err));
@@ -664,7 +762,9 @@ export function createChatView() {
 
   function clearConversation() {
     turns = [];
+    promptCacheKey = createPromptCacheKey();
     pendingImages = [];
+    pendingNativeFiles = [];
     pendingTextFiles = [];
     inputEl.value = '';
     historyIndex = null;
@@ -808,6 +908,8 @@ export function createChatView() {
     if (!Number.isInteger(index)) return;
     if (button.dataset.kind === 'image') {
       if (index >= 0 && index < pendingImages.length) pendingImages.splice(index, 1);
+    } else if (button.dataset.kind === 'native-file') {
+      if (index >= 0 && index < pendingNativeFiles.length) pendingNativeFiles.splice(index, 1);
     } else if (index >= 0 && index < pendingTextFiles.length) {
       pendingTextFiles.splice(index, 1);
     }
