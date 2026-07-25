@@ -213,10 +213,18 @@ export function createPdfTestingView() {
     const unchanged = Number(latest.indicators?.unchanged_share);
     const volumeRatio = Number(latest.indicators?.volume_ratio);
     const noise = Number(latest.indicators?.layout_noise_share);
+    // I: mean IoU over the MATCHED region pairs, micro-averaged over the document (every
+    // matched region counts once, so a dense page outweighs a sparse one). It answers a
+    // different question than L — L folds in what was lost and invented, I says how exactly
+    // the survivors still sit. Two systems can land on the same L with opposite error shapes.
+    const iou = Number(latest.indicators?.mean_matched_iou);
+    const matched = Number(latest.indicators?.regions_matched);
+    const lost = Number(latest.indicators?.regions_lost);
+    const invented = Number(latest.indicators?.regions_invented);
     const flags = latest.flags || {};
     const flagsBad = ['page_count_equal', 'image_regions_equal', 'table_regions_equal']
       .some((key) => flags[key] === false);
-    return { axes, unchanged, volumeRatio, noise, flagsBad };
+    return { axes, unchanged, volumeRatio, noise, iou, matched, lost, invented, flagsBad };
   }
 
   // Our own progression per doc: the latest ours run against the best earlier
@@ -244,19 +252,23 @@ export function createPdfTestingView() {
   const NOISE_DIM_THRESHOLD = 0.2;
 
   function cellMarkup(entries) {
-    const { axes, unchanged, volumeRatio, noise, flagsBad } = summarize(entries);
+    const { axes, unchanged, volumeRatio, noise, iou, matched, lost, invented, flagsBad } = summarize(entries);
     const fmt = (key) => (Number.isFinite(axes[key]) ? axes[key].toFixed(1) : '—');
     const hardParts = [`A ${fmt('anchors')}`];
     if (Number.isFinite(unchanged)) hardParts.push(`U ${unchanged.toFixed(1)}%`);
     if (Number.isFinite(volumeRatio)) hardParts.push(`×${volumeRatio.toFixed(2)}`);
     const noisy = Number.isFinite(noise) && noise > NOISE_DIM_THRESHOLD;
-    const modelTitle = noisy
+    const counts = [matched, lost, invented].every(Number.isFinite)
+      ? ` — I is the mean IoU over the ${matched} MATCHED regions only, so the ${lost} lost and ${invented} invented ones do not weigh on it; dropping awkward regions is the cheapest way to a high I`
+      : '';
+    const modelTitle = (noisy
       ? `layout-detector based; ${Math.round(noise * 100)}% of the detected regions (by size) has no counterpart on the other side — matching noise may dominate`
-      : 'layout-detector based';
+      : 'layout-detector based') + counts;
     const flagBadge = flagsBad ? '<span class="pdf-testing-flag" title="structure flag raised (page/image/table count changed)">⚑</span>' : '';
+    const iouText = Number.isFinite(iou) ? `I ${(iou * 100).toFixed(1)} · ` : '';
     return `<div class="pdf-testing-cell pdf-testing-cell-tiered">
       <span class="pdf-testing-cell-hard">${escapeHtml(hardParts.join(' · '))}${flagBadge}</span>
-      <span class="pdf-testing-cell-model${noisy ? ' is-noisy' : ''}" title="${escapeAttr(modelTitle)}">L ${escapeHtml(fmt('layout'))} · T ${escapeHtml(fmt('typography'))}${noisy ? ' ≈' : ''}</span>
+      <span class="pdf-testing-cell-model${noisy ? ' is-noisy' : ''}" title="${escapeAttr(modelTitle)}">L ${escapeHtml(fmt('layout'))} · ${escapeHtml(iouText)}T ${escapeHtml(fmt('typography'))}${noisy ? ' ≈' : ''}</span>
     </div>`;
   }
 
