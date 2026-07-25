@@ -1,6 +1,7 @@
 import { api } from '../../api-client.js';
 import { escapeAttr, escapeHtml, formatApiError } from '../../shared/ui-helpers.js';
 import { TRANSLATION_LANGUAGES } from '../../shared/translation-languages.js';
+import { publishWorkflowBusy } from '../../shared/workflow-activity.js';
 
 // PDF testing — the comparison surface of the benchmark & regression design
 // (translation-services docs/pdf-benchmark-regression-design.md). This first
@@ -179,7 +180,7 @@ export function createPdfTestingView() {
     const rows = new Map();
     for (const run of runs) {
       const lang = String(run.target_lang || '');
-      const key = `${run.doc_id} ${lang}`;
+      const key = `${run.doc_id}\u0000${lang}`;
       const row = rows.get(key) || { key, docId: run.doc_id, lang, systems: new Map() };
       const entries = row.systems.get(run.system) || [];
       entries.push(run);
@@ -342,6 +343,7 @@ export function createPdfTestingView() {
     formData.append('request_json', JSON.stringify(body));
     formData.append('translated_file', translated);
     importBusy = true;
+    publishWorkflowBusy('pdf-testing', true);  // a measurement runs for minutes, well past a view switch
     importBtn.disabled = true;
     setImportStatus('Measuring… (render + layout + OCR on both documents)');
     try {
@@ -353,6 +355,7 @@ export function createPdfTestingView() {
       setImportStatus(formatApiError(err), 'error');
     } finally {
       importBusy = false;
+      publishWorkflowBusy('pdf-testing', false);
       importBtn.disabled = false;
     }
   }

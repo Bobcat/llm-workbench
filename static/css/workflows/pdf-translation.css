@@ -83,6 +83,15 @@
   white-space: nowrap; flex: 0 0 auto;
 }
 .pdf-translation-view .pdf-translation-capture-check input { margin: 0; }
+/* Static footnote for the freeze-score checkbox: the capture has a second effect (a benchmark
+   row) that the control itself cannot show. */
+.pdf-translation-view .pdf-translation-capture-hint {
+  margin: 0;
+  max-width: 46rem;
+  color: var(--text-quiet);
+  font-size: 0.76rem;
+  line-height: 1.5;
+}
 
 /* The timings scope picker matches the timings card width (both constrained below). */
 .pdf-translation-view .pdf-timings-scope { max-width: 30rem; }

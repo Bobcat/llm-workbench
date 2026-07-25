@@ -449,6 +449,17 @@
   font-style: italic;
 }
 
+/* Footnote under the stage rows: explains the concurrency factor that makes the stage times
+   exceed the elapsed total. Full width, no value column, so it is not a .trt-row. */
+.translation-requests-view .trt-note {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-soft, rgba(127, 127, 127, 0.25));
+  color: var(--text-quiet);
+  font-size: 0.76rem;
+  line-height: 1.5;
+}
+
 /* Zoom slider + percentage (the "Size" label was dropped): two columns, no label cell. */
 .translation-requests-view .translation-preview-zoom {
   display: grid;

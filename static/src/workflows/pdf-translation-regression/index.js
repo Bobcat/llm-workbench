@@ -1,5 +1,6 @@
 import { api } from '../../api-client.js';
 import { escapeAttr, escapeHtml, formatApiError } from '../../shared/ui-helpers.js';
+import { publishWorkflowBusy } from '../../shared/workflow-activity.js';
 
 // PDF translation regression — the document counterpart of the image regression view
 // (translation-services docs/pdf-benchmark-regression-design.md, slice 2b/2c). One page, no
@@ -247,10 +248,17 @@ export function createPdfTranslationRegressionView() {
     renderDetail();
   }
 
+  // One sidebar indicator for the view: either flag counts, and a run-all keeps runningAll set
+  // across its sequential replays so the icon does not blink between fixtures.
+  function syncBusy() {
+    publishWorkflowBusy('pdf-translation-regression', busy || runningAll);
+  }
+
   async function runOne(n, l, v, { withScore = false } = {}) {
     const fx = findFixture(n, l, v);
     if (!fx || busy) return;
     busy = true;
+    syncBusy();
     renderDetail();
     setStatus(`Running ${key(n, l, v)}…${withScore ? ' (replay + benchmark measurement)' : ''}`);
     try {
@@ -263,6 +271,7 @@ export function createPdfTranslationRegressionView() {
       setStatus(formatApiError(err), 'error');
     } finally {
       busy = false;
+      syncBusy();
       imgVer += 1;  // a run rewrites actual.png / snapshot_diff.png
     }
     renderTree();
@@ -272,6 +281,7 @@ export function createPdfTranslationRegressionView() {
   async function runAll() {
     if (runningAll || busy) return;
     runningAll = true;
+    syncBusy();
     runAllBtn.disabled = true;
     results.clear();
     renderTree();
@@ -286,6 +296,7 @@ export function createPdfTranslationRegressionView() {
     const failed = fixtures.filter((fx) => !(results.get(key(fx.name, fx.target_lang, fx.variant))?.passed)).length;
     setStatus(`Done — ${fixtures.length - failed}/${fixtures.length} passed.`);
     runningAll = false;
+    syncBusy();
     runAllBtn.disabled = false;
   }
 
@@ -294,6 +305,7 @@ export function createPdfTranslationRegressionView() {
     if (!fx || busy) return;
     if (!window.confirm(`Re-baseline ${key(n, l, v)} from the current replay?\nSnapshots, accepted.pdf and the accepted score will be overwritten.`)) return;
     busy = true;
+    syncBusy();
     setStatus(`Accepting ${key(n, l, v)}… (replay + re-OCR + score freeze)`);
     try {
       const out = await api.acceptPdfRegression({ name: n, lang: l, variant: v });
@@ -308,6 +320,7 @@ export function createPdfTranslationRegressionView() {
       return;
     } finally {
       busy = false;
+      syncBusy();
       imgVer += 1;
     }
     await refresh();               // accepted score changed

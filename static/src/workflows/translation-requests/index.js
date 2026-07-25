@@ -1,6 +1,7 @@
 import { api } from '../../api-client.js';
 import { escapeAttr, escapeHtml, formatApiError } from '../../shared/ui-helpers.js';
 import { TRANSLATION_LANGUAGES } from '../../shared/translation-languages.js';
+import { publishWorkflowBusy } from '../../shared/workflow-activity.js';
 
 const TRANSLATE_PROMPT_FORMAT = 'translategemma_template';
 
@@ -496,9 +497,12 @@ export function createTranslationRequestsView() {
     }
   }
 
+  // The poll timer is exactly "a request of this view is in flight", so it also drives the
+  // sidebar indicator — two call sites instead of one flag to keep in sync at every exit path.
   function startPolling() {
     stopPolling();
     pollTimer = window.setInterval(pollOnce, POLL_INTERVAL_MS);
+    publishWorkflowBusy('image-translation', true);
     pollOnce();
   }
 
@@ -506,6 +510,7 @@ export function createTranslationRequestsView() {
     if (pollTimer === null) return;
     window.clearInterval(pollTimer);
     pollTimer = null;
+    publishWorkflowBusy('image-translation', false);
   }
 
   async function cancelRequest() {
@@ -1165,8 +1170,17 @@ export function createTranslationRequestsView() {
   sizeMetricModeSelect.addEventListener('change', rerenderRequest);
   sizeCohortModeSelect.addEventListener('change', rerenderRequest);
 
+  // Leaving the view stops the poll, but the run keeps going server-side. Resume it on return
+  // for a request that was still in flight, so the spinner stops hanging on the state the view
+  // was left in; startPolling polls once immediately, so a run that finished while away renders
+  // its result right away.
+  container.__onActivate = () => {
+    if (currentRequestId && !isTerminalState(currentState())) startPolling();
+  };
   container.__onDeactivate = () => {
-    stopPolling();
+    // Keep polling a run that is still going: the sidebar indicator and the result have to be
+    // right while you are elsewhere, and one small GET per interval beats being wrong.
+    if (!currentRequestId || isTerminalState(currentState())) stopPolling();
   };
   container.__destroy = () => {
     stopPolling();

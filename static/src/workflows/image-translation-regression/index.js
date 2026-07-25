@@ -1,5 +1,6 @@
 import { api } from '../../api-client.js';
 import { escapeAttr, escapeHtml, formatApiError } from '../../shared/ui-helpers.js';
+import { publishWorkflowBusy } from '../../shared/workflow-activity.js';
 
 const REG_BASE = '/api/translation/regression';
 
@@ -272,8 +273,17 @@ export function createImageTranslationRegressionView() {
     renderDetail();
   }
 
+  // One sidebar indicator for the view. Counted, not a boolean: a run-all drives runOne in a
+  // loop, and a boolean would flicker the icon off between images.
+  let activeRuns = 0;
+  function markBusy(delta) {
+    activeRuns = Math.max(0, activeRuns + delta);
+    publishWorkflowBusy('image-translation-regression', activeRuns > 0);
+  }
+
   async function runOne(name, lang, variant) {
     setStatus(`Running ${name}/${lang}/${variant}…`);
+    markBusy(1);
     try {
       const result = await api.runRegressionVariant({ name, lang, variant });
       results.set(key(name, lang, variant), {
@@ -284,6 +294,8 @@ export function createImageTranslationRegressionView() {
       });
     } catch (err) {
       results.set(key(name, lang, variant), { passed: false, diffs: [formatApiError(err)], has_actual: false });
+    } finally {
+      markBusy(-1);
     }
     const ran = results.get(key(name, lang, variant));
     setStatus(`${name}/${lang}/${variant} — ${ran && ran.passed ? 'passed' : 'failed'}.`);
@@ -302,6 +314,7 @@ export function createImageTranslationRegressionView() {
   async function runAll() {
     if (runningAll) return;
     runningAll = true;
+    markBusy(1);  // spans the whole loop, so the icon does not blink between images
     runAllBtn.disabled = true;
     results.clear();  // reset every ✓/✗ back to the — dashes before re-running, so progress is visible
     renderTree();
@@ -316,6 +329,7 @@ export function createImageTranslationRegressionView() {
     const failed = all.filter(([n, l, v]) => { const r = results.get(key(n, l, v)); return r && !r.passed; }).length;
     setStatus(`Done — ${all.length - failed}/${all.length} passed.`);
     runningAll = false;
+    markBusy(-1);
     runAllBtn.disabled = false;
   }
 

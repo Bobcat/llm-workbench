@@ -4,6 +4,7 @@ import {
   createShellPersistence,
   bindMobileSidebarDismiss,
 } from './foundation/spa-foundation/index.js';
+import { WORKFLOW_BUSY_EVENT } from './src/shared/workflow-activity.js';
 import { createReplayView } from './src/workflows/replay/index.js';
 import { createReplaySpeakView } from './src/workflows/replay-speak/index.js';
 import { createLlmPoolView } from './src/workflows/llm-pool/index.js';
@@ -300,6 +301,19 @@ function updateReplaySidebarState() {
   replayItem.classList.toggle('is-running', replayIsRunning);
 }
 
+// Sidebar entries whose view reported work in flight. Held here rather than in the views: the
+// indicator has to stay correct while you are looking at another view, and renderWorkflows()
+// rebuilds the list markup, so the classes are re-applied from this set afterwards.
+const busyWorkflows = new Set();
+
+function updateWorkflowRunningState() {
+  workflowList.querySelectorAll('[data-route]').forEach((item) => {
+    const route = String(item.dataset.route || '');
+    if (route === 'replay-translate') return;  // owns its own signal, below
+    item.classList.toggle('is-running', busyWorkflows.has(route));
+  });
+}
+
 function createWorkflowView(workflowId) {
   if (workflowId === 'replay-translate') {
     return createReplayView();
@@ -478,6 +492,14 @@ window.addEventListener('llm-workbench:replay-status', (event) => {
   updateReplaySidebarState();
 });
 
+window.addEventListener(WORKFLOW_BUSY_EVENT, (event) => {
+  const workflow = String(event?.detail?.workflow || '');
+  if (!workflow) return;
+  if (event.detail.busy) busyWorkflows.add(workflow);
+  else busyWorkflows.delete(workflow);
+  updateWorkflowRunningState();
+});
+
 // === Bootstrap ===
 function init() {
   // Initialize sidebar UI to match state
@@ -487,6 +509,7 @@ function init() {
   bindMobileSidebarDismiss(shellState, sidebar, 600);
   renderWorkflows();
   updateReplaySidebarState();
+  updateWorkflowRunningState();  // renderWorkflows() rebuilt the markup: re-apply from the set
 
   router.bindPopState({
     parseHash: ({ hash }) => {

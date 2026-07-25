@@ -1,6 +1,7 @@
 import { api } from '../../api-client.js';
 import { escapeAttr, escapeHtml, formatApiError } from '../../shared/ui-helpers.js';
 import { TRANSLATION_LANGUAGES } from '../../shared/translation-languages.js';
+import { publishWorkflowBusy } from '../../shared/workflow-activity.js';
 
 // Mirrors the image-translation view (../translation-requests/), but the input and both
 // preview frames are PDFs shown in <iframe>s, and the workflow proxies to the translation-
@@ -138,6 +139,10 @@ export function createPdfTranslationView() {
                     <span>Translation model</span>
                     <select id="pdfTranslatorModel"><option value="">Same as grouping model</option></select>
                   </label>
+                  <label class="translation-prompts-field">
+                    <span>Page concurrency</span>
+                    <input type="number" id="pdfPageConcurrency" min="1" step="1" placeholder="host default">
+                  </label>
                 </div>
               </div>
             </details>
@@ -216,6 +221,10 @@ export function createPdfTranslationView() {
                   </label>
                   <button type="button" id="pdfRegCaptureBtn" disabled title="Freeze this completed result as a document regression fixture (frozen per-page snapshots)">Capture fixture</button>
                 </div>
+                <p class="pdf-translation-capture-hint">Freezing the score also files this run in the
+                  PDF-testing matrix as “ours”, on the row for this document and target language.
+                  Earlier runs are kept: the cell shows the newest one, and Δ ours compares it
+                  against the best earlier one.</p>
                 <div class="translation-prompts-inline-status" id="pdfRegCaptureStatus"></div>
               </div>
             </details>
@@ -271,6 +280,7 @@ export function createPdfTranslationView() {
   const statQueueEl = container.querySelector('#pdfStatQueue');
   const rawEl = container.querySelector('#pdfRaw');
   const modelSelect = container.querySelector('#pdfModel');
+  const pageConcurrencyInput = container.querySelector('#pdfPageConcurrency');
   const translatorSelect = container.querySelector('#pdfTranslatorModel');
   const renderSizeModeSelect = container.querySelector('#pdfRenderSizeMode');
   const eraseFillModeSelect = container.querySelector('#pdfEraseFillMode');
@@ -393,6 +403,11 @@ export function createPdfTranslationView() {
     lastTargetLang = targetLang;
     const model = String(modelSelect.value || '').trim();
     if (model) payload.grouping_model = model;
+    // Empty means "host default": omit the field entirely rather than guessing a number here.
+    const concurrency = Math.round(Number(pageConcurrencyInput.value));
+    if (Number.isFinite(concurrency) && concurrency >= 1) {
+      payload.page_concurrency = pageConcurrencyMax ? Math.min(concurrency, pageConcurrencyMax) : concurrency;
+    }
     Object.assign(payload, translatorFields(model), renderFlags());
     return payload;
   }
@@ -486,9 +501,12 @@ export function createPdfTranslationView() {
     }
   }
 
+  // The poll timer is exactly "a request of this view is in flight", so it also drives the
+  // sidebar indicator — two call sites instead of one flag to keep in sync at every exit path.
   function startPolling() {
     stopPolling();
     pollTimer = window.setInterval(pollOnce, POLL_INTERVAL_MS);
+    publishWorkflowBusy('pdf-translation', true);
     pollOnce();
   }
 
@@ -496,6 +514,7 @@ export function createPdfTranslationView() {
     if (pollTimer === null) return;
     window.clearInterval(pollTimer);
     pollTimer = null;
+    publishWorkflowBusy('pdf-translation', false);
   }
 
   async function cancelRequest() {
@@ -548,9 +567,32 @@ export function createPdfTranslationView() {
 
   // Only the currently-loaded pool models (green), plus the service's configured default (added
   // in red if not loaded). One pick drives grouping + translation, like the image view.
+  // The host's configured page concurrency is the default and translate_pdf clamps a request to
+  // twice it, so mirror both here: the control cannot ask for something the service will refuse,
+  // and this box's numbers stay out of the frontend.
+  let pageConcurrencyDefault = null;
+  let pageConcurrencyMax = null;
+
+  function applyConcurrencyCaps(caps) {
+    const dflt = Math.round(Number(caps?.page_concurrency));
+    const max = Math.round(Number(caps?.page_concurrency_max));
+    if (Number.isFinite(dflt) && dflt >= 1) {
+      pageConcurrencyDefault = dflt;
+      pageConcurrencyInput.placeholder = `host default (${dflt})`;
+    }
+    if (Number.isFinite(max) && max >= 1) {
+      pageConcurrencyMax = max;
+      pageConcurrencyInput.max = String(max);
+    }
+    pageConcurrencyInput.title = pageConcurrencyDefault
+      ? `Pages of this document translated at once. Empty uses the host default (${pageConcurrencyDefault}); the service clamps to ${pageConcurrencyMax ?? pageConcurrencyDefault * 2} and never runs more workers than pages.`
+      : 'Pages of this document translated at once. Empty uses the host default.';
+  }
+
   async function loadModelChoices() {
     let models = [];
     let defaultModel = '';
+    let pdfCaps = null;
     try {
       const [adminPayload, statusPayload] = await Promise.all([
         api.getAdminModels(),
@@ -558,9 +600,11 @@ export function createPdfTranslationView() {
       ]);
       models = Array.isArray(adminPayload?.models) ? adminPayload.models : [];
       defaultModel = String(statusPayload?.llm_pool?.translator_model || '');
+      pdfCaps = statusPayload?.pdf || null;
     } catch {
       models = [];
     }
+    applyConcurrencyCaps(pdfCaps);
     modelFormats = Object.fromEntries(
       models.map((m) => [String(m?.name || ''), String(m?.definition?.prompt_format || '').trim().toLowerCase()]),
     );
@@ -652,11 +696,27 @@ export function createPdfTranslationView() {
     renderTimings();
   }
 
+  // Integer shares that add to exactly 100: largest-remainder, so the rounding drift lands on the
+  // stages with the biggest fractional part instead of leaving the column reading 99 or 101.
+  function integerShares(values) {
+    const total = values.reduce((a, b) => a + b, 0);
+    if (!(total > 0)) return values.map(() => 0);
+    const exact = values.map((v) => (v / total) * 100);
+    const shares = exact.map(Math.floor);
+    let rest = 100 - shares.reduce((a, b) => a + b, 0);
+    const byRemainder = exact
+      .map((v, i) => ({ frac: v - Math.floor(v), i }))
+      .sort((a, b) => b.frac - a.frac);
+    for (let k = 0; k < byRemainder.length && rest > 0; k += 1, rest -= 1) shares[byRemainder[k].i] += 1;
+    return shares;
+  }
+
   function renderTimings() {
     const result = lastTimingsResult;
     if (!result) return;
     const ms = (v) => (typeof v === 'number' ? `${Math.round(v)} ms` : '—');
-    const row = (label, value, cls = '') => `<div class="trt-row ${cls}"><span>${label}</span><strong>${value}</strong></div>`;
+    const row = (label, value, cls = '', title = '') => `<div class="trt-row ${cls}"${title ? ` title="${escapeAttr(title)}"` : ''}><span>${label}</span><strong>${value}</strong></div>`;
+    const note = (text) => `<div class="trt-note">${text}</div>`;
 
     if (timingsScopeValue === 'total') {
       const m = result?.response?.metrics || {};
@@ -670,22 +730,63 @@ export function createPdfTranslationView() {
         return vals.length ? vals.reduce((a, b) => a + b, 0) : undefined;
       };
       const secMs = (s) => (typeof s === 'number' ? `${Math.round(s * 1000)} ms` : '—');
-      const stage = (label, v) => {
+      // Pages run concurrently, so these stage times add up to well over the elapsed document
+      // total. Sharing each stage against the elapsed total would print percentages over 100 that
+      // are only that sum in disguise (they are the work shares scaled by one constant factor), so
+      // share against the stage sum instead and state the factor once, on its own row.
+      const stages = [
+        ['OCR', sum('ocr_wall_ms')],
+        ['Grouping (VLM)', sum('grouping_wall_ms')],
+        ['Layout', sum('layout_wall_ms')],
+        ['Align', sum('align_wall_ms')],
+        ['Translation', sum('translation_wall_ms')],
+        ['Render', typeof m.replacement_wall_ms_total === 'number' ? m.replacement_wall_ms_total : sum('replacement_wall_ms')],
+        ['Assemble PDF', m.assemble_wall_ms],
+      ];
+      const measured = stages.filter(([, v]) => typeof v === 'number');
+      const stageTotal = measured.reduce((a, [, v]) => a + v, 0);
+      const shares = integerShares(measured.map(([, v]) => v));
+      const shareByLabel = new Map(measured.map(([label], i) => [label, shares[i]]));
+      const factor = typeof total === 'number' && total > 0 ? stageTotal / total : null;
+      const waited = typeof m.wait_ms_total === 'number' ? m.wait_ms_total : null;
+      // Queue time is not work, so the multiplier that means something is the one left after
+      // taking it out: that is the parallelism the run actually got out of the pool.
+      const effective = factor !== null && waited !== null && total > 0
+        ? Math.max(0, stageTotal - waited) / total
+        : null;
+      const stage = ([label, v]) => {
         if (typeof v !== 'number') return row(label, '—', 'trt-l1');
-        const pct = typeof total === 'number' && total > 0 ? ` · ${Math.round((v / total) * 100)}%` : '';
-        return row(label, `${Math.round(v)} ms${pct}`, 'trt-l1');
+        return row(label, `${Math.round(v)} ms · ${shareByLabel.get(label)}%`, 'trt-l1');
       };
       timingsEl.innerHTML = [
-        row('Queue wait', secMs(timings.pool_queue_wait_s)),
+        // Two different queues meet in this card, so both say which one they mean: this one is the
+        // wait BEFORE the run started (translation-services' own runner slots); the llm-pool row
+        // below is time inside the run. The field behind this is named pool_queue_wait_s, where
+        // "pool" means the service's runner pool — not the model pool.
+        row('Queued (runner slot)', secMs(timings.pool_queue_wait_s), '',
+          'Waited for a free runner slot in translation-services before this request started — not model time.'),
         row('Document total', ms(total), 'trt-total'),
-        stage('OCR', sum('ocr_wall_ms')),
-        stage('Grouping (VLM)', sum('grouping_wall_ms')),
-        stage('Layout', sum('layout_wall_ms')),
-        stage('Align', sum('align_wall_ms')),
-        stage('Translation', sum('translation_wall_ms')),
-        stage('Render', typeof m.replacement_wall_ms_total === 'number' ? m.replacement_wall_ms_total : sum('replacement_wall_ms')),
-        stage('Assemble PDF', m.assemble_wall_ms),
+        // Sum of every row below. Most are per-page totals of overlapping pages, so the sum
+        // exceeds the elapsed time; Assemble PDF is document-level and runs after the pages, which
+        // is why this is not called "summed over pages". It splits into queued + working, and only
+        // working is comparable across page-concurrency settings — so both get their own row.
+        row('All steps summed', factor
+          ? `${Math.round(stageTotal)} ms · ${factor.toFixed(1)}× document total`
+          : ms(stageTotal), 'trt-total'),
+        typeof waited === 'number' && stageTotal > 0
+          ? row('of which queued', `${Math.round(waited)} ms · ${Math.round((waited / stageTotal) * 100)}%`, 'trt-l1',
+            'Part of the rows below, not an addition to them: time spent waiting for a shared resource instead of working — model-pool admission and the pool\'s own queue, and the layout detector lock.')
+          : '',
+        effective !== null
+          ? row('working', `${Math.round(stageTotal - waited)} ms · ${effective.toFixed(1)}× document total`, 'trt-l1',
+            'The queue taken out — the parallelism this run actually achieved. This is the figure to compare against page concurrency, and across runs.')
+          : '',
+        ...stages.map(stage),
         row('Pages', typeof m.page_count === 'number' ? String(m.page_count) : '—', 'trt-l1'),
+        row('Page concurrency', typeof m.page_concurrency === 'number' ? String(m.page_concurrency) : '—', 'trt-l1'),
+        note(`Pages run in parallel, so the rows below add up to more than the elapsed document total. Their percentages are shares of that sum and add up to 100%.${effective !== null
+          ? ' Compare <strong>working</strong> — not the raw multiplier — against page concurrency and across runs: the raw one grows with the queue, so it rises even when nothing gets faster.'
+          : ''}`),
       ].join('');
       return;
     }
@@ -854,7 +955,7 @@ export function createPdfTranslationView() {
 
   // Destination-subdir picker for Add-to-testset — mirrors the image panel. The fixture mirrors
   // the source's subdir, so this chooses where a fresh PDF is filed; '' = flat testset/pdf root.
-  const NEW_SUBDIR = ' new';
+  const NEW_SUBDIR = ' new';
   async function populateSubdirs() {
     let dirs = [];
     try { dirs = (await api.listPdfRegressionSubdirs()).subdirs || []; } catch { /* root-only picker */ }
@@ -1105,8 +1206,17 @@ export function createPdfTranslationView() {
     });
   }
 
+  // Leaving the view stops the poll, but the run keeps going server-side. Resume it on return
+  // for a request that was still in flight, so the page counter moves again instead of the
+  // spinner hanging on the state the view was left in; startPolling polls once immediately, so
+  // a run that finished while away renders its result right away.
+  container.__onActivate = () => {
+    if (currentRequestId && !isTerminalState(currentState())) startPolling();
+  };
   container.__onDeactivate = () => {
-    stopPolling();
+    // Keep polling a run that is still going: both the sidebar indicator and the page counter
+    // have to be right while you are elsewhere, and one small GET per interval beats being wrong.
+    if (!currentRequestId || isTerminalState(currentState())) stopPolling();
   };
   container.__destroy = () => {
     stopPolling();
