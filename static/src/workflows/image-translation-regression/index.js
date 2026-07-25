@@ -73,6 +73,17 @@ export function createImageTranslationRegressionView() {
     if (pre.complete) apply();  // already cached: onload may not fire
   }
 
+  // The service loads its Python once, at start. A replay runs INSIDE it, so a process whose
+  // source has changed since compares the fixture against code that is no longer on disk —
+  // and the CLI, which imports the modules directly, then disagrees with this view for no
+  // visible reason. The run answer carries the stamp; say so loudly.
+  function staleNote(result) {
+    const code = result && result.code;
+    if (!code || !code.stale) return '';
+    const mins = Math.round(Number(code.behind_seconds || 0) / 60);
+    return ` \u26a0 SERVICE RUNS STALE CODE (source is ${mins} min newer) \u2014 restart before trusting this.`;
+  }
+
   function setStatus(message, kind = '') {
     statusEl.textContent = String(message || '');
     statusEl.classList.toggle('is-error', kind === 'error');
@@ -286,6 +297,7 @@ export function createImageTranslationRegressionView() {
     markBusy(1);
     try {
       const result = await api.runRegressionVariant({ name, lang, variant });
+      if (staleNote(result)) setStatus(`${name}/${lang}/${variant}${staleNote(result)}`, 'error');
       results.set(key(name, lang, variant), {
         passed: Boolean(result.passed),
         diffs: result.diffs || [],

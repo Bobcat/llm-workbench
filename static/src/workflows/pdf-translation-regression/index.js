@@ -57,6 +57,17 @@ export function createPdfTranslationRegressionView() {
   const key = (n, l, v) => `${n}/${l}/${v}`;
   const selKey = () => (selected ? key(selected.name, selected.lang, selected.variant) : null);
 
+  // The service loads its Python once, at start. A replay runs INSIDE it, so a process
+  // whose source has changed since compares the fixture against code that is no longer on
+  // disk — and the CLI, which imports the modules directly, then disagrees with this view
+  // for no visible reason. The run answer carries the stamp; say so loudly.
+  function staleNote(result) {
+    const code = result && result.code;
+    if (!code || !code.stale) return '';
+    const mins = Math.round(Number(code.behind_seconds || 0) / 60);
+    return `  \u26a0 SERVICE RUNS STALE CODE (source is ${mins} min newer) \u2014 restart before trusting this.`;
+  }
+
   function setStatus(message, kind = '') {
     statusEl.textContent = String(message || '');
     statusEl.classList.toggle('is-error', kind === 'error');
@@ -265,7 +276,7 @@ export function createPdfTranslationRegressionView() {
       const result = await api.runPdfRegression({ name: n, lang: l, variant: v, score: withScore });
       results.set(key(n, l, v), result);
       const flavour = result.frozen_input_diffs?.length ? 'frozen input changed' : (result.passed ? 'passed' : 'failed');
-      setStatus(`${key(n, l, v)} — ${flavour}.`);
+      setStatus(`${key(n, l, v)} — ${flavour}.${staleNote(result)}`, staleNote(result) ? 'error' : '');
     } catch (err) {
       results.set(key(n, l, v), { passed: false, frozen_input_diffs: [], diffs: [formatApiError(err)], pages: [] });
       setStatus(formatApiError(err), 'error');
