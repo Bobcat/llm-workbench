@@ -403,16 +403,18 @@ export const api = {
     });
   },
 
-  async getPdfBenchmarkRunDetail(docId, system) {
-    return fetchJson(`/api/pdf-benchmark/runs/${encodeURIComponent(docId)}/${encodeURIComponent(system)}`);
+  async getPdfBenchmarkRunDetail(docId, system, runId = '') {
+    const query = runId ? `?run_id=${encodeURIComponent(runId)}` : '';
+    return fetchJson(`/api/pdf-benchmark/runs/${encodeURIComponent(docId)}/${encodeURIComponent(system)}${query}`);
   },
 
   async getPdfBenchmarkRunAnchors(docId, system, runId) {
     return fetchJson(`/api/pdf-benchmark/runs/${encodeURIComponent(docId)}/${encodeURIComponent(system)}/${encodeURIComponent(runId)}/anchors`);
   },
 
-  async deletePdfBenchmarkCell(docId, system) {
-    return fetchJson(`/api/pdf-benchmark/runs/${encodeURIComponent(docId)}/${encodeURIComponent(system)}`, {
+  async deletePdfBenchmarkCell(docId, system, targetLang = null) {
+    const query = targetLang !== null ? `?target_lang=${encodeURIComponent(targetLang)}` : '';
+    return fetchJson(`/api/pdf-benchmark/runs/${encodeURIComponent(docId)}/${encodeURIComponent(system)}${query}`, {
       method: 'DELETE',
     });
   },

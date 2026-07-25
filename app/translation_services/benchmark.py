@@ -15,7 +15,7 @@ from urllib import error, request
 
 from urllib import parse
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import Response
 
 from app.translation_services.proxy import (
@@ -39,16 +39,18 @@ def testset() -> dict:
 
 
 @router.get("/runs/{doc_id}/{system}")
-def run_detail(doc_id: str, system: str) -> dict:
+def run_detail(doc_id: str, system: str, run_id: str = Query(default="")) -> dict:
     seg = lambda value: parse.quote(value, safe="")
-    return _request_json(method="GET", path=f"/v1/benchmark/runs/{seg(doc_id)}/{seg(system)}", timeout=15.0)
+    query = f"?run_id={seg(run_id)}" if run_id else ""
+    return _request_json(method="GET", path=f"/v1/benchmark/runs/{seg(doc_id)}/{seg(system)}{query}", timeout=15.0)
 
 
 @router.delete("/runs/{doc_id}/{system}")
-def delete_cell(doc_id: str, system: str) -> dict:
+def delete_cell(doc_id: str, system: str, target_lang: str | None = Query(default=None)) -> dict:
     seg = lambda value: parse.quote(value, safe="")
+    query = f"?target_lang={seg(target_lang)}" if target_lang is not None else ""
     return _request_json(
-        method="DELETE", path=f"/v1/benchmark/runs/{seg(doc_id)}/{seg(system)}", timeout=15.0
+        method="DELETE", path=f"/v1/benchmark/runs/{seg(doc_id)}/{seg(system)}{query}", timeout=15.0
     )
 
 

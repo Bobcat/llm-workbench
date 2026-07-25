@@ -118,6 +118,12 @@
   font-size: 0.78rem;
 }
 
+.pdf-testing-view .pdf-testing-lang {
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+}
+
 .pdf-testing-view .pdf-testing-cell {
   display: flex;
   align-items: baseline;

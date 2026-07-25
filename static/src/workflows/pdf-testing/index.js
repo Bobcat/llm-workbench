@@ -1,5 +1,6 @@
 import { api } from '../../api-client.js';
 import { escapeAttr, escapeHtml, formatApiError } from '../../shared/ui-helpers.js';
+import { TRANSLATION_LANGUAGES } from '../../shared/translation-languages.js';
 
 // PDF testing — the comparison surface of the benchmark & regression design
 // (translation-services docs/pdf-benchmark-regression-design.md). This first
@@ -119,6 +120,10 @@ export function createPdfTestingView() {
                   <input type="file" id="pdfTestingTranslatedFile" accept="application/pdf">
                 </label>
                 <label class="translation-prompts-field">
+                  <span>Target language</span>
+                  <select id="pdfTestingTargetLang"></select>
+                </label>
+                <label class="translation-prompts-field">
                   <span>System label</span>
                   <input type="text" id="pdfTestingSystem" placeholder="e.g. ref-a" spellcheck="false">
                 </label>
@@ -145,12 +150,19 @@ export function createPdfTestingView() {
   const sourceUploadField = container.querySelector('#pdfTestingSourceUploadField');
   const sourceFileInput = container.querySelector('#pdfTestingSourceFile');
   const translatedFileInput = container.querySelector('#pdfTestingTranslatedFile');
+  const targetLangSelect = container.querySelector('#pdfTestingTargetLang');
   const systemInput = container.querySelector('#pdfTestingSystem');
   const importBtn = container.querySelector('#pdfTestingImportBtn');
   const importStatusEl = container.querySelector('#pdfTestingImportStatus');
 
   const UPLOAD_SOURCE = ' upload';
   let importBusy = false;
+
+  // Picks the OCR model that reads the rendered pages at measure time; must match the run's
+  // target language or the OCR-fed axes (A/T/U) drift. Code values so the backend can map them.
+  targetLangSelect.innerHTML = TRANSLATION_LANGUAGES
+    .map((lang) => `<option value="${escapeAttr(lang.code)}"${lang.code === 'nl' ? ' selected' : ''}>${escapeHtml(lang.name)}</option>`)
+    .join('');
 
   function setImportStatus(message, kind = '') {
     importStatusEl.textContent = String(message || '');
@@ -159,22 +171,33 @@ export function createPdfTestingView() {
 
   // --- matrix ---------------------------------------------------------------
 
-  // Latest run per (doc, system); "ours" keeps every run for the spread.
+  // One row per (document × target language): the OCR-fed axes (A/T/U) are read in the run's
+  // target language, so a doc translated to nl and to de are different measurements and get their
+  // own row. Runs stored before the language sidecar have no language and fall in an "—" row.
+  // Within a row it's the latest run per system; "ours" keeps every run for the Δ-ours spread.
   function organizeRuns(runs) {
-    const docs = new Map();
+    const rows = new Map();
     for (const run of runs) {
-      const doc = docs.get(run.doc_id) || { docId: run.doc_id, systems: new Map() };
-      const entries = doc.systems.get(run.system) || [];
+      const lang = String(run.target_lang || '');
+      const key = `${run.doc_id} ${lang}`;
+      const row = rows.get(key) || { key, docId: run.doc_id, lang, systems: new Map() };
+      const entries = row.systems.get(run.system) || [];
       entries.push(run);
-      doc.systems.set(run.system, entries);
-      docs.set(run.doc_id, doc);
+      row.systems.set(run.system, entries);
+      rows.set(key, row);
     }
-    for (const doc of docs.values()) {
-      for (const entries of doc.systems.values()) {
+    for (const row of rows.values()) {
+      for (const entries of row.systems.values()) {
         entries.sort((a, b) => String(a.run_id).localeCompare(String(b.run_id)));
       }
     }
-    return docs;
+    return rows;
+  }
+
+  function langLabel(code) {
+    if (!code) return '<span class="pdf-testing-none" title="no target language recorded (legacy run)">—</span>';
+    const match = TRANSLATION_LANGUAGES.find((lang) => lang.code === code);
+    return escapeHtml(match ? `${match.flag} ${match.code}` : code);
   }
 
   // A cell shows the LATEST run of a system. Stored runs accumulate across code versions,
@@ -241,31 +264,35 @@ export function createPdfTestingView() {
       matrixEl.innerHTML = '<div class="pdf-testing-empty">No benchmark runs stored yet. Run one from a completed PDF translation, or import an external translation below.</div>';
       return;
     }
-    const docs = [...organizeRuns(runs).values()];
+    const docRows = [...organizeRuns(runs).values()];
     const systems = ['identity', 'ours',
-      ...new Set(docs.flatMap((doc) => [...doc.systems.keys()]).filter((s) => s !== 'identity' && s !== 'ours').sort()),
-    ].filter((system) => docs.some((doc) => doc.systems.has(system)));
+      ...new Set(docRows.flatMap((row) => [...row.systems.keys()]).filter((s) => s !== 'identity' && s !== 'ours').sort()),
+    ].filter((system) => docRows.some((row) => row.systems.has(system)));
 
-    docs.sort((a, b) => {
-      const da = oursDelta(a), db = oursDelta(b);
-      if (Boolean(db) !== Boolean(da)) return db ? 1 : -1;
-      if (da && db && da.delta !== db.delta) return da.delta - db.delta; // regressions first
-      return a.docId.localeCompare(b.docId);
-    });
+    // One table, grouped by document then language, so every language shows in the same overview.
+    docRows.sort((a, b) => a.docId.localeCompare(b.docId) || a.lang.localeCompare(b.lang));
 
-    const header = ['<th>document</th>', ...systems.map((s) => `<th>${escapeHtml(s)}</th>`),
-      '<th title="Latest ours run vs the best earlier ours run; the axis that moved most">Δ ours</th>'].join('');
-    const rows = docs.map((doc) => {
+    const header = ['<th>document</th>', '<th>lang</th>', ...systems.map((s) => `<th>${escapeHtml(s)}</th>`),
+      '<th title="Latest ours run vs the best earlier ours run for this document+language; the axis that moved most">Δ ours</th>'].join('');
+    let prevDoc = null;
+    const rows = docRows.map((row) => {
       const cells = systems.map((system) => {
-        const entries = doc.systems.get(system);
+        const entries = row.systems.get(system);
         if (!entries) return '<td><span class="pdf-testing-none">—</span></td>';
-        return `<td class="pdf-testing-clickable" data-doc="${escapeAttr(doc.docId)}" data-system="${escapeAttr(system)}" title="Click for per-page region overlays">${cellMarkup(entries)}<button type="button" class="pdf-testing-cell-delete" data-doc="${escapeAttr(doc.docId)}" data-system="${escapeAttr(system)}" title="Delete this score" aria-label="Delete this score">×</button></td>`;
+        const runId = String(entries[entries.length - 1].run_id || '');
+        const attrs = `data-doc="${escapeAttr(row.docId)}" data-system="${escapeAttr(system)}" data-run="${escapeAttr(runId)}" data-lang="${escapeAttr(row.lang)}"`;
+        return `<td class="pdf-testing-clickable" ${attrs} title="Click for per-page region overlays">${cellMarkup(entries)}<button type="button" class="pdf-testing-cell-delete" ${attrs} title="Delete this score" aria-label="Delete this score">×</button></td>`;
       }).join('');
-      const delta = oursDelta(doc);
+      const delta = oursDelta(row);
       const deltaText = delta
         ? `<span class="${delta.delta < 0 ? 'pdf-testing-delta-down' : 'pdf-testing-delta-up'}">${AXES.find((a) => a.key === delta.axis)?.label} ${delta.delta >= 0 ? '+' : ''}${delta.delta.toFixed(1)}</span>`
         : '<span class="pdf-testing-none">n/a</span>';
-      return `<tr><td class="pdf-testing-doc" title="${escapeAttr(doc.docId)}">${escapeHtml(doc.docId)}</td>${cells}<td class="pdf-testing-gap">${deltaText}</td></tr>`;
+      // Print the document name once per group; blank on its further language rows keeps the overview readable.
+      const docCell = row.docId === prevDoc
+        ? '<td class="pdf-testing-doc"></td>'
+        : `<td class="pdf-testing-doc" title="${escapeAttr(row.docId)}">${escapeHtml(row.docId)}</td>`;
+      prevDoc = row.docId;
+      return `<tr>${docCell}<td class="pdf-testing-lang">${langLabel(row.lang)}</td>${cells}<td class="pdf-testing-gap">${deltaText}</td></tr>`;
     }).join('');
     matrixEl.innerHTML = `<table class="pdf-testing-table"><thead><tr>${header}</tr></thead><tbody>${rows}</tbody></table>`;
   }
@@ -303,7 +330,7 @@ export function createPdfTestingView() {
     const system = String(systemInput.value || '').trim();
     if (!translated) return setImportStatus('Pick a translated PDF first.', 'error');
     if (!system) return setImportStatus('Type a system label.', 'error');
-    const body = { system };
+    const body = { system, target_lang: String(targetLangSelect.value || '').trim() };
     const formData = new FormData();
     if (sourceSelect.value === UPLOAD_SOURCE) {
       const source = sourceFileInput.files && sourceFileInput.files[0];
@@ -361,22 +388,24 @@ export function createPdfTestingView() {
       </div>`;
   }
 
-  async function openDetail(docId, system) {
+  async function openDetail(docId, system, runId = '', lang = '') {
     detailEl.hidden = false;
-    detailTitleEl.textContent = `${docId} / ${system}`;
+    const langTag = lang ? ` (${lang})` : '';
+    detailTitleEl.textContent = `${docId}${langTag} / ${system}`;
     detailAnchorsEl.innerHTML = '';
     detailPagesEl.innerHTML = '<div class="pdf-testing-empty">Loading…</div>';
     let payload;
     try {
-      payload = await api.getPdfBenchmarkRunDetail(docId, system);
+      // Pass the row's run_id so the overlays are the run of THIS language, not the latest across languages.
+      payload = await api.getPdfBenchmarkRunDetail(docId, system, runId);
     } catch (err) {
       detailPagesEl.innerHTML = `<div class="pdf-testing-empty is-error">${escapeHtml(formatApiError(err))}</div>`;
       return;
     }
-    const runId = String(payload?.run_id || '');
+    const resolvedRunId = String(payload?.run_id || '');
     const perPage = (payload?.scores?.per_page) || [];
-    detailTitleEl.textContent = `${docId} / ${system} (${runId})`;
-    api.getPdfBenchmarkRunAnchors(docId, system, runId)
+    detailTitleEl.textContent = `${docId}${langTag} / ${system} (${resolvedRunId})`;
+    api.getPdfBenchmarkRunAnchors(docId, system, resolvedRunId)
       .then(renderAnchorEvidence)
       .catch((err) => {
         // Surface the failure instead of a silent blank: a 404 here usually means the
@@ -386,7 +415,7 @@ export function createPdfTestingView() {
     detailPagesEl.innerHTML = perPage.map((page) => {
       const raw = page.raw || {};
       const overlay = (side) =>
-        `/api/pdf-benchmark/runs/${encodeURIComponent(docId)}/${encodeURIComponent(system)}/${encodeURIComponent(runId)}/overlay/${side}/${page.page}`;
+        `/api/pdf-benchmark/runs/${encodeURIComponent(docId)}/${encodeURIComponent(system)}/${encodeURIComponent(resolvedRunId)}/overlay/${side}/${page.page}`;
       return `
         <div class="pdf-testing-detail-page">
           <div class="pdf-testing-detail-pagehead">
@@ -404,11 +433,13 @@ export function createPdfTestingView() {
   }
 
   async function deleteCell(button) {
-    const { doc, system } = button.dataset;
-    if (!window.confirm(`Delete the ${system} score for this document?`)) return;
+    const { doc, system, lang } = button.dataset;
+    const langTag = lang ? ` (${lang})` : '';
+    if (!window.confirm(`Delete the ${system} score for this document${langTag}?`)) return;
     button.disabled = true;
     try {
-      await api.deletePdfBenchmarkCell(doc, system);
+      // Scope the delete to this row's language so a sibling language of the same cell survives.
+      await api.deletePdfBenchmarkCell(doc, system, String(lang || ''));
       await refreshMatrix();
     } catch (err) {
       button.disabled = false;
@@ -425,7 +456,7 @@ export function createPdfTestingView() {
     }
     const cell = event.target.closest('.pdf-testing-clickable');
     if (!cell) return;
-    openDetail(cell.dataset.doc, cell.dataset.system);
+    openDetail(cell.dataset.doc, cell.dataset.system, cell.dataset.run, cell.dataset.lang);
   });
   detailCloseBtn.addEventListener('click', () => {
     detailEl.hidden = true;

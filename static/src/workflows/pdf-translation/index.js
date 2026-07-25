@@ -1003,7 +1003,10 @@ export function createPdfTranslationView() {
       const scoreNote = out.accepted_scores?.axes
         ? ` · L ${out.accepted_scores.axes.layout} · A ${out.accepted_scores.axes.anchors} · T ${out.accepted_scores.axes.typography}`
         : '';
-      setCaptureStatus(`Captured ${out.name}/${out.target_lang}/${out.variant}: ${out.pages} page(s), ${out.units} unit(s)${scoreNote}. See the PDF translation regression view.`);
+      const benchNote = out.benchmark?.run_id
+        ? ' · added to the PDF-testing matrix as "ours"'
+        : (out.benchmark?.error ? ` · benchmark mirror failed: ${out.benchmark.error}` : '');
+      setCaptureStatus(`Captured ${out.name}/${out.target_lang}/${out.variant}: ${out.pages} page(s), ${out.units} unit(s)${scoreNote}${benchNote}. See the PDF translation regression view.`);
       await refreshRegStatus();  // the new variant now shows in the badge
     } catch (err) {
       setCaptureStatus(formatApiError(err), 'error');
@@ -1021,7 +1024,9 @@ export function createPdfTranslationView() {
     benchmarkBtn.textContent = 'Measuring…';
     try {
       const formData = new FormData();
-      formData.append('request_json', JSON.stringify({ request_id: currentRequestId }));
+      // Send the target language so the measurement's OCR reads the rendered pages with the right
+      // model — otherwise A/T/U default to the en model and diverge from the capture's score.
+      formData.append('request_json', JSON.stringify({ request_id: currentRequestId, target_lang: String(targetInput.value || '').trim() }));
       const result = await api.runPdfBenchmark(formData);
       const axes = result?.axes || {};
       benchmarkBtn.textContent = `L ${axes.layout} · A ${axes.anchors} · T ${axes.typography}`;
