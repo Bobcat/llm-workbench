@@ -90,6 +90,13 @@ export function createPdfTranslationView() {
               <summary>Render</summary>
               <div class="translation-requests-details-body translation-requests-render-grid">
                 <label class="translation-prompts-field">
+                  <span>Output</span>
+                  <select id="pdfOutputMode" title="How the translated PDF is written. raster replaces every page with a bitmap at the analysis dpi — figures, table rules and text all become pixels. vector keeps each source page as it is, removes only the glyphs it replaces, and writes the translation as real text: selectable, searchable and sharp at any zoom, with figures and rules still vector. Switching route needs no new translation, so this re-renders the shown document from its cached translations like the other options here. Born-digital documents only for now; one scanned or hybrid page keeps the whole document on the raster route, and the Timings panel says so.">
+                    <option value="raster" selected>raster — bitmap pages</option>
+                    <option value="vector">vector — text in the source pages</option>
+                  </select>
+                </label>
+                <label class="translation-prompts-field">
                   <span>Render size mode</span>
                   <select id="pdfRenderSizeMode" title="How a render group's one font size is chosen from its lines: median resists one under-measured (lowercase) line dragging the whole block down; min never overflows the smallest line's band. Changing this re-renders every page of the shown document from its cached translations (no new translation).">
                     <option value="median" selected>median — default</option>
@@ -287,6 +294,7 @@ export function createPdfTranslationView() {
   const sizeMetricModeSelect = container.querySelector('#pdfSizeMetricMode');
   const sizeCohortModeSelect = container.querySelector('#pdfSizeCohortMode');
   const widthFitModeSelect = container.querySelector('#pdfWidthFitMode');
+  const outputModeSelect = container.querySelector('#pdfOutputMode');
   const inputPreview = container.querySelector('#pdfInputPreview');
   const inputEmpty = container.querySelector('#pdfInputEmpty');
   const outputPreview = container.querySelector('#pdfOutputPreview');
@@ -350,6 +358,7 @@ export function createPdfTranslationView() {
     sizeMetricModeSelect.disabled = isBusy;
     sizeCohortModeSelect.disabled = isBusy;
     widthFitModeSelect.disabled = isBusy;
+    outputModeSelect.disabled = isBusy;
   }
 
   // The render flags as the API takes them — one reader for both the initial submit and the
@@ -361,7 +370,32 @@ export function createPdfTranslationView() {
       size_metric_mode: String(sizeMetricModeSelect.value || 'extent'),
       size_cohort_mode: String(sizeCohortModeSelect.value || 'vlm'),
       width_fit_mode: String(widthFitModeSelect.value || 'footprint'),
+      pdf_output_mode: String(outputModeSelect.value || 'raster'),
     };
+  }
+
+  // Which output route actually ran, and — when the vector route was asked for but declined —
+  // why. Reading it back matters: the select picks a route, the service decides whether the
+  // document can take it, and a silent fall back to raster would look like the flag doing
+  // nothing. The per-page vector report says how much of each page became real text.
+  function outputRouteRow(result, row) {
+    const doc = result?.response?.document || {};
+    const mode = String(doc.pdf_output_mode || '');
+    if (!mode) return '';
+    const declined = String(doc.vector_declined || '');
+    const pages = Array.isArray(doc.pages) ? doc.pages : [];
+    const reports = pages.map((p) => p.vector).filter(Boolean);
+    let detail = mode;
+    if (declined) {
+      detail = `raster — vector declined: ${declined}`;
+    } else if (mode === 'vector' && reports.length) {
+      const drawn = reports.reduce((n, v) => n + (Number(v.groups_drawn) || 0), 0);
+      const fell = reports.reduce((n, v) => n + (Number(v.groups_fallback) || 0), 0);
+      const native = reports.filter((v) => v.fully_native).length;
+      detail = `vector — ${drawn}/${drawn + fell} groups as text, ${native}/${pages.length} pages fully native`;
+    }
+    return row('Output', detail, 'trt-l1',
+      'The route this run took. vector keeps the source pages and writes the translation as real text; raster replaces every page with a bitmap. A group that cannot be set as text keeps its source text, so it stays untranslated rather than being redrawn wrong.');
   }
 
   function canReenter() {
@@ -784,6 +818,7 @@ export function createPdfTranslationView() {
         ...stages.map(stage),
         row('Pages', typeof m.page_count === 'number' ? String(m.page_count) : '—', 'trt-l1'),
         row('Page concurrency', typeof m.page_concurrency === 'number' ? String(m.page_concurrency) : '—', 'trt-l1'),
+        outputRouteRow(result, row),
         note(`Pages run in parallel, so the rows below add up to more than the elapsed document total. Their percentages are shares of that sum and add up to 100%.${effective !== null
           ? ' Compare <strong>working</strong> — not the raw multiplier — against page concurrency and across runs: the raw one grows with the queue, so it rises even when nothing gets faster.'
           : ''}`),
@@ -1182,7 +1217,7 @@ export function createPdfTranslationView() {
   // A render flag changing on a completed document re-renders it; with nothing loaded the new
   // value simply rides along on the next translation.
   [renderSizeModeSelect, eraseFillModeSelect, sizeMetricModeSelect, sizeCohortModeSelect,
-    widthFitModeSelect].forEach((select) => select.addEventListener('change', rerenderRequest));
+    widthFitModeSelect, outputModeSelect].forEach((select) => select.addEventListener('change', rerenderRequest));
 
   if (dropzone) {
     const stop = (event) => { event.preventDefault(); event.stopPropagation(); };
