@@ -1,0 +1,298 @@
+.pdf-anatomy-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  color: var(--text);
+}
+
+.pdf-anatomy-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.pdf-anatomy-toolbar button,
+.pdf-anatomy-view button {
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.pdf-anatomy-toolbar button { padding: 6px 10px; }
+.pdf-anatomy-view button:hover { border-color: var(--focus); }
+.pdf-anatomy-view button:disabled { opacity: 0.5; cursor: default; }
+
+.pdf-anatomy-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.pdf-anatomy-tree-pane {
+  width: 260px;
+  min-width: 220px;
+  overflow: auto;
+  padding: 10px 8px 20px;
+  border-right: 1px solid var(--border);
+}
+
+.pdf-anatomy-tree-title {
+  padding: 4px 7px 9px;
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.pdf-anatomy-tree,
+.pdf-anatomy-tree ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pdf-anatomy-document { margin-bottom: 12px; }
+
+.pdf-anatomy-document-name {
+  overflow: hidden;
+  padding: 4px 7px;
+  color: var(--text-strong);
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pdf-anatomy-language {
+  padding: 2px 7px 2px 15px;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+}
+
+.pdf-anatomy-fixture {
+  display: flex;
+  justify-content: space-between;
+  width: calc(100% - 16px);
+  margin: 2px 0 2px 16px;
+  padding: 6px 8px;
+  text-align: left;
+}
+
+.pdf-anatomy-fixture.is-selected {
+  border-color: var(--focus);
+  background: color-mix(in srgb, var(--focus) 13%, var(--surface));
+}
+
+.pdf-anatomy-fixture small { color: var(--text-muted); }
+.pdf-anatomy-tree-empty { padding: 8px; color: var(--text-muted); }
+
+.pdf-anatomy-detail {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+  padding: 14px 18px 30px;
+}
+
+.pdf-anatomy-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.pdf-anatomy-heading h2 { margin: 0; font-size: 1.05rem; }
+.pdf-anatomy-heading p { margin: 4px 0 0; color: var(--text-muted); font-size: 0.78rem; }
+
+.pdf-anatomy-cache {
+  padding: 3px 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-muted);
+  font-size: 0.7rem;
+}
+
+.pdf-anatomy-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.pdf-anatomy-metric {
+  display: grid;
+  gap: 3px;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.pdf-anatomy-metric span,
+.pdf-anatomy-metric small { color: var(--text-muted); font-size: 0.7rem; }
+.pdf-anatomy-metric strong { font-size: 0.85rem; }
+.pdf-anatomy-metric small.is-up { color: var(--warning, #d97706); }
+.pdf-anatomy-metric small.is-down { color: var(--success, #16a34a); }
+
+.pdf-anatomy-retention,
+.pdf-anatomy-page-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px 14px;
+  margin-top: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 0.75rem;
+}
+
+.pdf-anatomy-findings h3,
+.pdf-anatomy-pages h3,
+.pdf-anatomy-page-toolbar h3 {
+  margin: 16px 0 8px;
+  font-size: 0.88rem;
+}
+
+.pdf-anatomy-finding-list { display: grid; gap: 6px; }
+
+.pdf-anatomy-finding {
+  display: grid;
+  grid-template-columns: 64px minmax(180px, 0.7fr) 1.5fr;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  text-align: left;
+}
+
+.pdf-anatomy-finding.is-error { border-left: 4px solid var(--danger); }
+.pdf-anatomy-finding.is-warning { border-left: 4px solid var(--warning, #d97706); }
+.pdf-anatomy-finding.is-info { border-left: 4px solid var(--focus); }
+.pdf-anatomy-finding-severity { color: var(--text-muted); font-size: 0.68rem; text-transform: uppercase; }
+.pdf-anatomy-finding small { color: var(--text-muted); }
+
+.pdf-anatomy-page-list {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.pdf-anatomy-page-button {
+  display: grid;
+  flex: 0 0 132px;
+  gap: 2px;
+  padding: 7px 9px;
+  text-align: left;
+}
+
+.pdf-anatomy-page-button.is-selected {
+  border-color: var(--focus);
+  background: color-mix(in srgb, var(--focus) 12%, var(--surface));
+}
+
+.pdf-anatomy-page-button span,
+.pdf-anatomy-page-button small { overflow: hidden; color: var(--text-muted); font-size: 0.68rem; text-overflow: ellipsis; white-space: nowrap; }
+
+.pdf-anatomy-page-detail { margin-top: 15px; border-top: 1px solid var(--border); }
+
+.pdf-anatomy-page-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.pdf-anatomy-page-toolbar > span { color: var(--text-muted); font-size: 0.74rem; }
+.pdf-anatomy-layer-controls { display: flex; flex-wrap: wrap; gap: 8px; margin-left: auto; }
+.pdf-anatomy-layer-controls label { display: flex; align-items: center; gap: 4px; font-size: 0.72rem; cursor: pointer; }
+
+.pdf-anatomy-layer-swatch { width: 9px; height: 9px; border: 2px solid; }
+.pdf-anatomy-layer-swatch.is-added { border-color: #dc2626; }
+.pdf-anatomy-layer-swatch.is-visible-text { border-color: #2563eb; }
+.pdf-anatomy-layer-swatch.is-invisible-text { border-color: #9333ea; }
+.pdf-anatomy-layer-swatch.is-images { border-color: #ea580c; }
+.pdf-anatomy-layer-swatch.is-vectors { border-color: #0891b2; }
+.pdf-anatomy-layer-swatch.is-forms { border-color: #ca8a04; }
+
+.pdf-anatomy-previews {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.pdf-anatomy-previews figure { min-width: 0; margin: 0; }
+.pdf-anatomy-previews figcaption { margin-bottom: 5px; color: var(--text-muted); font-size: 0.76rem; }
+
+.pdf-anatomy-preview {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: #444;
+}
+
+.pdf-anatomy-preview img,
+.pdf-anatomy-preview svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.pdf-anatomy-preview svg { pointer-events: auto; }
+
+.pdf-anatomy-overlay {
+  fill: transparent;
+  vector-effect: non-scaling-stroke;
+  stroke-width: 1;
+  pointer-events: all;
+  cursor: pointer;
+}
+
+.pdf-anatomy-overlay:hover { fill: rgb(255 255 255 / 18%); stroke-width: 2; }
+.pdf-anatomy-overlay.is-added { stroke: #dc2626; stroke-width: 2; }
+.pdf-anatomy-overlay.is-visible-text { stroke: #2563eb; }
+.pdf-anatomy-overlay.is-invisible-text { stroke: #9333ea; stroke-dasharray: 3 2; }
+.pdf-anatomy-overlay.is-images { stroke: #ea580c; }
+.pdf-anatomy-overlay.is-vectors { stroke: #0891b2; }
+.pdf-anatomy-overlay.is-forms { stroke: #ca8a04; }
+
+.pdf-anatomy-object-detail {
+  max-height: 260px;
+  overflow: auto;
+  margin-top: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+}
+
+.pdf-anatomy-object-detail pre { margin: 7px 0 0; color: var(--text); white-space: pre-wrap; }
+
+.pdf-anatomy-page-tables {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.pdf-anatomy-page-tables details { min-width: 0; overflow-x: auto; }
+.pdf-anatomy-page-tables summary { cursor: pointer; font-size: 0.78rem; }
+.pdf-anatomy-page-tables table { width: 100%; margin-top: 6px; border-collapse: collapse; font-size: 0.68rem; }
+.pdf-anatomy-page-tables th,
+.pdf-anatomy-page-tables td { padding: 4px 5px; border-bottom: 1px solid var(--border); text-align: left; }
+
+@media (max-width: 900px) {
+  .pdf-anatomy-tree-pane { width: 210px; min-width: 190px; }
+  .pdf-anatomy-previews,
+  .pdf-anatomy-page-tables { grid-template-columns: 1fr; }
+  .pdf-anatomy-finding { grid-template-columns: 55px 1fr; }
+  .pdf-anatomy-finding small { grid-column: 1 / -1; }
+}

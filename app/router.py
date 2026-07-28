@@ -6,6 +6,7 @@ from app.image_pool.loras import router as image_pool_loras_router
 from app.translation_services.proxy import router as translation_router
 from app.translation_services.pdf import router as pdf_translation_router
 from app.translation_services.benchmark import router as pdf_benchmark_router
+from app.translation_services.pdf_anatomy import router as pdf_anatomy_router
 from app.translation_services.pdf_regression import router as pdf_regression_router
 from app.image_pool.models import router as image_pool_router
 from app.image_pool.training import router as image_pool_training_router
@@ -30,6 +31,7 @@ api_router.include_router(translation_router)
 api_router.include_router(pdf_translation_router)
 api_router.include_router(pdf_benchmark_router)
 api_router.include_router(pdf_regression_router)
+api_router.include_router(pdf_anatomy_router)
 api_router.include_router(realtime_tts_router)
 api_router.include_router(chat_router)
 api_router.include_router(text_generation_router)

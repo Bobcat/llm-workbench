@@ -470,6 +470,24 @@ export const api = {
     });
   },
 
+  async listPdfAnatomyFixtures() {
+    return fetchJson('/api/pdf-anatomy/fixtures');
+  },
+
+  async analyzePdfAnatomyFixture(body) {
+    return fetchJson('/api/pdf-anatomy/analyses', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body || {}),
+    });
+  },
+
+  async getPdfAnatomyPage(analysisId, page) {
+    return fetchJson(
+      `/api/pdf-anatomy/analyses/${encodeURIComponent(analysisId)}/pages/${Number(page)}`,
+    );
+  },
+
   async getRegressionStatus(name) {
     return fetchJson(`/api/translation/regression/status?name=${encodeURIComponent(name || '')}`);
   },
