@@ -16,6 +16,7 @@ const ICON_GROUPS = [
       { id: 'file-text', label: 'PDF translation', source: 'Lucide' },
       { id: 'clipboard-check', label: 'Regression testing', source: 'Lucide' },
       { id: 'gauge', label: 'PDF benchmark', source: 'Lucide' },
+      { id: 'venetian-mask', label: 'PDF anatomy', source: 'Lucide' },
       { id: 'book-open-text', label: 'Prompt Library', source: 'Lucide' },
       { id: 'shapes', label: 'Icons', source: 'Lucide' },
     ],

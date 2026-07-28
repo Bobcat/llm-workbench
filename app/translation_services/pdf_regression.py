@@ -74,6 +74,17 @@ def delete_fixture(name: str, lang: str, variant: str) -> dict:
     )
 
 
+@router.get("/fixtures/{name}/{lang}/{variant}/anatomy")
+def anatomy(name: str, lang: str, variant: str) -> dict:
+    """What the frozen source is made of against the accepted output. Counting only — no
+    model and no GPU upstream — so it keeps a short timeout unlike its neighbours."""
+    return _request_json(
+        method="GET",
+        path=f"/v1/pdf-regression/fixtures/{_seg(name)}/{_seg(lang)}/{_seg(variant)}/anatomy",
+        timeout=60.0,
+    )
+
+
 @router.get("/fixtures/{name}/{lang}/{variant}/artifact/{artifact}")
 def document_artifact(name: str, lang: str, variant: str, artifact: str) -> Response:
     payload, media_type = _request_binary(

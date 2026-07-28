@@ -423,6 +423,11 @@ export const api = {
     return fetchJson('/api/pdf-regression/fixtures');
   },
 
+  async getPdfAnatomy(name, lang, variant) {
+    const seg = encodeURIComponent;
+    return fetchJson(`/api/pdf-regression/fixtures/${seg(name)}/${seg(lang)}/${seg(variant)}/anatomy`);
+  },
+
   async getPdfRegressionStatus(requestId) {
     return fetchJson(`/api/pdf-regression/status?request_id=${encodeURIComponent(requestId)}`);
   },

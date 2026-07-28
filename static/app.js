@@ -17,6 +17,7 @@ import { createTranslationRequestsView } from './src/workflows/translation-reque
 import { createPdfTranslationView } from './src/workflows/pdf-translation/index.js';
 import { createPdfTranslationRegressionView } from './src/workflows/pdf-translation-regression/index.js';
 import { createPdfTestingView } from './src/workflows/pdf-testing/index.js';
+import { createPdfAnatomyView } from './src/workflows/pdf-anatomy/index.js';
 import { createTranslationPromptsView } from './src/workflows/translation-prompts/index.js';
 import { createImageTranslationRegressionView } from './src/workflows/image-translation-regression/index.js';
 import { createTextGenerationView } from './src/workflows/text-generation/index.js';
@@ -65,6 +66,7 @@ const PERSISTENT_WORKFLOW_IDS = new Set([
   'pdf-translation',
   'pdf-translation-regression',
   'pdf-testing',
+  'pdf-anatomy',
 ]);
 
 const ROUTE_ALIASES = new Map([
@@ -247,6 +249,12 @@ const WORKFLOW_GROUPS = [
         icon: 'gauge',
       },
       {
+        id: 'pdf-anatomy',
+        route: 'pdf-anatomy',
+        name: 'PDF anatomy',
+        icon: 'venetian-mask',
+      },
+      {
         id: 'prompt-library',
         route: 'prompt-library',
         name: 'Prompt Library',
@@ -341,6 +349,9 @@ function createWorkflowView(workflowId) {
   }
   if (workflowId === 'pdf-translation-regression') {
     return createPdfTranslationRegressionView();
+  }
+  if (workflowId === 'pdf-anatomy') {
+    return createPdfAnatomyView();
   }
   if (workflowId === 'pdf-testing') {
     return createPdfTestingView();

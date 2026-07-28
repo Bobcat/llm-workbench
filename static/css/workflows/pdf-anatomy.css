@@ -1,0 +1,72 @@
+/* PDF anatomy — a fixture tree beside a table of what each side of the pair is made of.
+   The tree reuses the regression view's .reg-* classes; only the tables are new here. */
+
+.pdf-anatomy-view { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+
+.pdf-anatomy-toolbar {
+  display: flex; align-items: center; gap: 12px;
+  padding: 8px 12px; border-bottom: 1px solid var(--border-subtle);
+}
+.pdf-anatomy-filter { display: flex; align-items: center; gap: 6px; font-size: 0.85rem; }
+
+.pdf-anatomy-body { display: flex; flex: 1; min-height: 0; }
+/* Resizable: document stems run long and a fixed column truncates every one of them. */
+.pdf-anatomy-tree-pane {
+  width: 340px; min-width: 200px; max-width: 60%; flex: none; overflow: auto;
+  resize: horizontal; padding: 8px; border-right: 1px solid var(--border-subtle);
+}
+.pdf-anatomy-tree .reg-label { overflow-wrap: anywhere; }
+.pdf-anatomy-tree { list-style: none; margin: 0; padding: 0; }
+.pdf-anatomy-tree ul { list-style: none; margin: 0 0 4px 16px; padding: 0; }
+.pdf-anatomy-detail-pane { flex: 1; min-width: 0; overflow: auto; padding: 12px 16px; }
+
+.anatomy-header { display: flex; align-items: baseline; gap: 10px; margin-bottom: 12px; }
+.anatomy-header h3 { margin: 0; font-size: 1rem; }
+.anatomy-header span { color: var(--text-muted); font-size: 0.85rem; }
+
+.anatomy-table { width: 100%; border-collapse: collapse; margin-bottom: 18px; font-size: 0.85rem; }
+.anatomy-table caption {
+  text-align: left; font-weight: 600; padding-bottom: 6px; color: var(--text-muted);
+}
+.anatomy-table th {
+  text-align: right; font-weight: 500; color: var(--text-muted);
+  border-bottom: 1px solid var(--border-subtle); padding: 4px 8px;
+}
+.anatomy-table th:first-child, .anatomy-faces th { text-align: left; }
+.anatomy-table td { padding: 5px 8px; border-bottom: 1px solid var(--border-subtle); vertical-align: top; }
+.anatomy-num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+.anatomy-label { width: 45%; }
+.anatomy-note { color: var(--text-muted); font-size: 0.78rem; margin-top: 2px; }
+.anatomy-delta { color: var(--text-muted); font-variant-numeric: tabular-nums; }
+
+/* The kind decides how a difference READS. Only a row whose own kind says the two sides should
+   have matched — or a zero row that is not zero — is worth colouring. */
+.anatomy-row.is-off { background: var(--surface-warning, rgba(220, 120, 0, 0.10)); }
+.anatomy-row.is-off .anatomy-num { font-weight: 600; }
+.anatomy-zero.is-off { background: var(--surface-danger, rgba(200, 60, 60, 0.12)); }
+
+/* A caveat is a legitimate exception the reader needs BEFORE the number, not after. */
+.anatomy-caveat {
+  display: inline-block; width: 1.1em; height: 1.1em; line-height: 1.1em; text-align: center;
+  border-radius: 50%; background: var(--surface-hover); color: var(--text-muted);
+  font-size: 0.72rem; cursor: help;
+}
+
+.anatomy-pages summary { cursor: pointer; margin-bottom: 10px; color: var(--text-muted); }
+.anatomy-faces td:first-child { font-family: var(--font-mono, monospace); font-size: 0.8rem; }
+
+/* The legend: a mark and a word per class, so the colour is never the only carrier. */
+.anatomy-legend {
+  display: flex; flex-wrap: wrap; gap: 14px; align-items: center;
+  margin-bottom: 14px; font-size: 0.78rem; color: var(--text-muted);
+}
+.anatomy-key {
+  display: inline-block; width: 0.85em; height: 0.85em; border-radius: 2px;
+  border: 1px solid var(--border-subtle); vertical-align: -1px; margin-right: 4px;
+}
+.anatomy-key-identical { background: var(--surface-warning, rgba(220, 120, 0, 0.10)); }
+.anatomy-key-differs { background: transparent; }
+.anatomy-key-zero { background: var(--surface-danger, rgba(200, 60, 60, 0.12)); }
+.anatomy-legend .anatomy-caveat { margin-right: 4px; font-style: normal; }
+.anatomy-route { margin-left: auto; }
