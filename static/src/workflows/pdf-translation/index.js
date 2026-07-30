@@ -91,9 +91,9 @@ export function createPdfTranslationView() {
               <div class="translation-requests-details-body translation-requests-render-grid">
                 <label class="translation-prompts-field">
                   <span>Output</span>
-                  <select id="pdfOutputMode" title="How the translated PDF is written. raster replaces every page with a bitmap at the analysis dpi — figures, table rules and text all become pixels. vector keeps each source page as it is, removes only the glyphs it replaces, and writes the translation as real text: selectable, searchable and sharp at any zoom, with figures and rules still vector. Switching route needs no new translation, so this re-renders the shown document from its cached translations like the other options here. Born-digital documents only for now; one scanned or hybrid page keeps the whole document on the raster route, and the Timings panel says so.">
-                    <option value="raster" selected>raster — bitmap pages</option>
-                    <option value="vector">vector — text in the source pages</option>
+                  <select id="pdfOutputMode" title="How the translated PDF is written. raster replaces every page with a bitmap at the analysis dpi — figures, table rules and text all become pixels. vector keeps each source page as it is, removes only the glyphs it replaces, and writes the translation as real text: selectable, searchable and sharp at any zoom, with figures and rules still vector. A scanned or hybrid page has no glyphs to remove, so it keeps its own image untouched and gains small patches over the text areas instead; a hybrid page also loses the invisible OCR layer wherever a translation is placed. Switching route needs no new translation, so this re-renders the shown document from its cached translations like the other options here.">
+                    <option value="raster">raster — bitmap pages</option>
+                    <option value="vector" selected>vector — text in the source pages</option>
                   </select>
                 </label>
                 <label class="translation-prompts-field">
@@ -370,7 +370,7 @@ export function createPdfTranslationView() {
       size_metric_mode: String(sizeMetricModeSelect.value || 'extent'),
       size_cohort_mode: String(sizeCohortModeSelect.value || 'vlm'),
       width_fit_mode: String(widthFitModeSelect.value || 'footprint'),
-      pdf_output_mode: String(outputModeSelect.value || 'raster'),
+      pdf_output_mode: String(outputModeSelect.value || 'vector'),
     };
   }
 
