@@ -97,6 +97,13 @@ export function createPdfTranslationView() {
                   </select>
                 </label>
                 <label class="translation-prompts-field">
+                  <span>Structure tree</span>
+                  <select id="pdfStructureMode" title="Whether the output carries a structure tree — the tags a screen reader follows, and the only place the reading order is stated rather than guessed at. source-only writes one where the source already had one, which keeps the output as close to the original as the rest of this route does. always writes one on every document, including scans: there the tags are built from OCR and the model's grouping, so a wrong grouping produces a confidently wrong tree for exactly the reader who cannot see the page to check it — which is why it is asked for rather than assumed. Whatever tree the source had is replaced, never repaired: it would otherwise keep pointing at text we took out. Vector route only; the raster route has no text to tag.">
+                    <option value="source_only" selected>source-only — only where the source had one</option>
+                    <option value="always">always — also where the source had none</option>
+                  </select>
+                </label>
+                <label class="translation-prompts-field">
                   <span>Render size mode</span>
                   <select id="pdfRenderSizeMode" title="How a render group's one font size is chosen from its lines: median resists one under-measured (lowercase) line dragging the whole block down; min never overflows the smallest line's band. Changing this re-renders every page of the shown document from its cached translations (no new translation).">
                     <option value="median" selected>median — default</option>
@@ -295,6 +302,7 @@ export function createPdfTranslationView() {
   const sizeCohortModeSelect = container.querySelector('#pdfSizeCohortMode');
   const widthFitModeSelect = container.querySelector('#pdfWidthFitMode');
   const outputModeSelect = container.querySelector('#pdfOutputMode');
+  const structureModeSelect = container.querySelector('#pdfStructureMode');
   const inputPreview = container.querySelector('#pdfInputPreview');
   const inputEmpty = container.querySelector('#pdfInputEmpty');
   const outputPreview = container.querySelector('#pdfOutputPreview');
@@ -359,6 +367,7 @@ export function createPdfTranslationView() {
     sizeCohortModeSelect.disabled = isBusy;
     widthFitModeSelect.disabled = isBusy;
     outputModeSelect.disabled = isBusy;
+    structureModeSelect.disabled = isBusy;
   }
 
   // The render flags as the API takes them — one reader for both the initial submit and the
@@ -371,6 +380,7 @@ export function createPdfTranslationView() {
       size_cohort_mode: String(sizeCohortModeSelect.value || 'vlm'),
       width_fit_mode: String(widthFitModeSelect.value || 'footprint'),
       pdf_output_mode: String(outputModeSelect.value || 'vector'),
+      pdf_structure_mode: String(structureModeSelect.value || 'source_only'),
     };
   }
 
@@ -1217,7 +1227,7 @@ export function createPdfTranslationView() {
   // A render flag changing on a completed document re-renders it; with nothing loaded the new
   // value simply rides along on the next translation.
   [renderSizeModeSelect, eraseFillModeSelect, sizeMetricModeSelect, sizeCohortModeSelect,
-    widthFitModeSelect, outputModeSelect].forEach((select) => select.addEventListener('change', rerenderRequest));
+    widthFitModeSelect, outputModeSelect, structureModeSelect].forEach((select) => select.addEventListener('change', rerenderRequest));
 
   if (dropzone) {
     const stop = (event) => { event.preventDefault(); event.stopPropagation(); };
