@@ -104,6 +104,23 @@ export function createPdfTranslationView() {
                   </select>
                 </label>
                 <label class="translation-prompts-field">
+                  <span>Page layout</span>
+                  <select id="pdfPageLayoutMode" title="How a DOCUMENT page is laid out. fit puts each translated block back into the box its source occupied and negotiates the width per block with horizontal condensation — the right answer for a picture, where the box IS the design, and what every output so far has used. typeset re-sets the page from its layout instead: one type scale for the page, the source's own column, leading and indents, and no condensation anywhere. A picture page never takes it whatever this says — the gate decides per page, so a paper's appendix of figures stays on fit while its body pages are typeset. Under construction: a formula-dense two-column page still comes out with its set text and its retained source overlapping.">
+                    <option value="fit" selected>fit — each block back in its own box</option>
+                    <option value="typeset">typeset — re-set the page from its layout</option>
+                  </select>
+                </label>
+                <label class="translation-prompts-field">
+                  <span>Page scale</span>
+                  <select id="pdfPageScale" title="typeset only: the type size as a fraction of the source's own. Dutch runs longer than English, so a re-set page takes lines its source did not have; smaller type in the SAME column buys them back. The design solves one scale per document from what its pages have room for; until that solve is wired in, this picks it by hand. The reference system sets the transformer paper at 0.90 of the source size.">
+                    <option value="1.0" selected>1.00 — the source's own size</option>
+                    <option value="0.97">0.97</option>
+                    <option value="0.94">0.94</option>
+                    <option value="0.90">0.90 — what the reference system uses</option>
+                    <option value="0.85">0.85</option>
+                  </select>
+                </label>
+                <label class="translation-prompts-field">
                   <span>Render size mode</span>
                   <select id="pdfRenderSizeMode" title="How a render group's one font size is chosen from its lines: median resists one under-measured (lowercase) line dragging the whole block down; min never overflows the smallest line's band. Changing this re-renders every page of the shown document from its cached translations (no new translation).">
                     <option value="median" selected>median — default</option>
@@ -303,6 +320,8 @@ export function createPdfTranslationView() {
   const widthFitModeSelect = container.querySelector('#pdfWidthFitMode');
   const outputModeSelect = container.querySelector('#pdfOutputMode');
   const structureModeSelect = container.querySelector('#pdfStructureMode');
+  const pageLayoutModeSelect = container.querySelector('#pdfPageLayoutMode');
+  const pageScaleSelect = container.querySelector('#pdfPageScale');
   const inputPreview = container.querySelector('#pdfInputPreview');
   const inputEmpty = container.querySelector('#pdfInputEmpty');
   const outputPreview = container.querySelector('#pdfOutputPreview');
@@ -368,6 +387,9 @@ export function createPdfTranslationView() {
     widthFitModeSelect.disabled = isBusy;
     outputModeSelect.disabled = isBusy;
     structureModeSelect.disabled = isBusy;
+    pageLayoutModeSelect.disabled = isBusy;
+    // The scale only means anything to the compositor.
+    pageScaleSelect.disabled = isBusy || pageLayoutModeSelect.value !== 'typeset';
   }
 
   // The render flags as the API takes them — one reader for both the initial submit and the
@@ -381,6 +403,8 @@ export function createPdfTranslationView() {
       width_fit_mode: String(widthFitModeSelect.value || 'footprint'),
       pdf_output_mode: String(outputModeSelect.value || 'vector'),
       pdf_structure_mode: String(structureModeSelect.value || 'source_only'),
+      page_layout_mode: String(pageLayoutModeSelect.value || 'fit'),
+      page_scale: Number(pageScaleSelect.value || 1),
     };
   }
 
@@ -1227,7 +1251,8 @@ export function createPdfTranslationView() {
   // A render flag changing on a completed document re-renders it; with nothing loaded the new
   // value simply rides along on the next translation.
   [renderSizeModeSelect, eraseFillModeSelect, sizeMetricModeSelect, sizeCohortModeSelect,
-    widthFitModeSelect, outputModeSelect, structureModeSelect].forEach((select) => select.addEventListener('change', rerenderRequest));
+    widthFitModeSelect, outputModeSelect, structureModeSelect, pageLayoutModeSelect,
+   pageScaleSelect].forEach((select) => select.addEventListener('change', rerenderRequest));
 
   if (dropzone) {
     const stop = (event) => { event.preventDefault(); event.stopPropagation(); };
