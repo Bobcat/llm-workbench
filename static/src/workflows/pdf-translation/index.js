@@ -35,6 +35,14 @@ export function createPdfTranslationView() {
                 </label>
               </div>
               <div class="translation-requests-bar-right translation-requests-loaded-only">
+                <!-- Which finished document the right-hand frame shows. Only ever holds
+                     artifacts this run produced, so the doclayout entry is absent unless
+                     the run was asked for it. Sits with the output-side controls because it
+                     is about what the right frame shows, not about what gets translated. -->
+                <label class="translation-requests-barfield">
+                  <span>Artifact</span>
+                  <select id="pdfArtifact"></select>
+                </label>
                 <button type="button" id="pdfBenchmarkBtn" class="pdf-translation-benchmark" hidden
                   title="Measure &amp; score this result against its source (layout / anchors / typography); the run lands in the PDF-testing comparison as 'ours'">Benchmark this run</button>
                 <a id="pdfDownload" class="pdf-translation-download" download hidden>Download PDF</a>
@@ -118,6 +126,13 @@ export function createPdfTranslationView() {
                     <option value="0.94">0.94</option>
                     <option value="0.90">0.90 — what the reference system uses</option>
                     <option value="0.85">0.85</option>
+                  </select>
+                </label>
+                <label class="translation-prompts-field">
+                  <span>Doclayout overlay</span>
+                  <select id="pdfDoclayoutOverlay" title="Also produce a second PDF showing what the layout detector (PP-DocLayout_plus-L) returned for each page: one box per region with its label and confidence, drawn on the source page. It is what the pipeline reads the page's structure from, so it is the place to look when a column, a table or a figure came out wrong. Off by default because it renders and encodes every page a second time and assembles a second document; its cost is reported separately and changes none of the other timings. Pick it in the Artifact selector above once the run finishes.">
+                    <option value="off" selected>off</option>
+                    <option value="on">on — also return the detector's regions</option>
                   </select>
                 </label>
                 <label class="translation-prompts-field">
@@ -321,6 +336,8 @@ export function createPdfTranslationView() {
   const outputModeSelect = container.querySelector('#pdfOutputMode');
   const structureModeSelect = container.querySelector('#pdfStructureMode');
   const pageLayoutModeSelect = container.querySelector('#pdfPageLayoutMode');
+  const doclayoutOverlaySelect = container.querySelector('#pdfDoclayoutOverlay');
+  const artifactSelect = container.querySelector('#pdfArtifact');
   const pageScaleSelect = container.querySelector('#pdfPageScale');
   const inputPreview = container.querySelector('#pdfInputPreview');
   const inputEmpty = container.querySelector('#pdfInputEmpty');
@@ -367,6 +384,9 @@ export function createPdfTranslationView() {
   let lastTargetLang = '';
   let regStatus = null;   // {name, in_testset, langs} for the current completed run (capture badge)
   let isRerendering = false;  // a render-flag re-entry is in flight: report it as a re-render, not a translation
+  // The last completed result, so switching the artifact selector can re-point the frame
+  // without re-fetching the request.
+  let lastResultForArtifact = null;
 
   function setStatus(message, kind = '') {
     statusEl.textContent = kind === 'error' ? String(message || '') : '';
@@ -388,8 +408,13 @@ export function createPdfTranslationView() {
     outputModeSelect.disabled = isBusy;
     structureModeSelect.disabled = isBusy;
     pageLayoutModeSelect.disabled = isBusy;
-    // The scale only means anything to the compositor.
-    pageScaleSelect.disabled = isBusy || pageLayoutModeSelect.value !== 'typeset';
+    // Always settable, even while the layout mode is still `fit` — the fit path ignores the
+    // flag, so the only thing disabling it bought was an ordering trap: this state is
+    // recomputed after a render, so picking `typeset` left the scale locked until a render
+    // had already run at 1.00, and only the run after that could carry 0.90.
+    pageScaleSelect.disabled = isBusy;
+    doclayoutOverlaySelect.disabled = isBusy;
+    artifactSelect.disabled = isBusy;
   }
 
   // The render flags as the API takes them — one reader for both the initial submit and the
@@ -405,6 +430,7 @@ export function createPdfTranslationView() {
       pdf_structure_mode: String(structureModeSelect.value || 'source_only'),
       page_layout_mode: String(pageLayoutModeSelect.value || 'fit'),
       page_scale: Number(pageScaleSelect.value || 1),
+      doclayout_overlay: String(doclayoutOverlaySelect.value || 'off') === 'on',
     };
   }
 
@@ -850,6 +876,14 @@ export function createPdfTranslationView() {
             'The queue taken out — the parallelism this run actually achieved. This is the figure to compare against page concurrency, and across runs.')
           : '',
         ...stages.map(stage),
+        // Deliberately outside `stages`: the debug overlay is not a step of producing the
+        // translation, and folding it in would move every share and the multiplier above,
+        // so the same run would read differently for having been inspected. Present only
+        // when it was asked for.
+        typeof m.doclayout_assemble_wall_ms === 'number'
+          ? row('Doclayout overlay (debug)', `${Math.round(m.doclayout_assemble_wall_ms)} ms`, 'trt-l1',
+            'Drawing the detector\'s regions on every page and assembling them as a second PDF. Asked for by the Doclayout overlay option; it lengthens the request but is no part of the rows above, whose figures mean the same with or without it.')
+          : '',
         row('Pages', typeof m.page_count === 'number' ? String(m.page_count) : '—', 'trt-l1'),
         row('Page concurrency', typeof m.page_concurrency === 'number' ? String(m.page_concurrency) : '—', 'trt-l1'),
         outputRouteRow(result, row),
@@ -1125,18 +1159,48 @@ export function createPdfTranslationView() {
     outputEmpty.hidden = !outputPreview.hidden;
   }
 
-  // The translated document is whichever completed artifact carries a PDF mime type (the pipeline
-  // names it, e.g. rendered.pdf); pick the first non-input PDF so the view survives the exact name.
-  function pdfArtifactName(result) {
+  // Every finished document this run produced, in the order the selector offers them: the
+  // translation first, because that is what the view is for.
+  const ARTIFACT_LABELS = {
+    rendered: 'Translated PDF',
+    doclayout: 'PP-DocLayout_plus-L',
+  };
+
+  function pdfArtifactNames(result) {
     const artifacts = result?.response?.artifacts || {};
-    return Object.keys(artifacts).find((name) => {
+    const names = Object.keys(artifacts).filter((name) => {
       const artifact = artifacts[name] || {};
       return name !== 'input' && String(artifact.mime_type || '').toLowerCase().includes('pdf');
-    }) || '';
+    });
+    const rank = (name) => (name === 'rendered' ? 0 : name === 'doclayout' ? 1 : 2);
+    return names.sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
+  }
+
+  // The document the right-hand frame shows: whatever the selector holds, falling back to the
+  // first available (the translation) when a run does not carry the previous choice — switching
+  // the overlay off must not leave the frame pointing at an artifact that is gone.
+  function pdfArtifactName(result) {
+    const names = pdfArtifactNames(result);
+    if (!names.length) return '';
+    return names.includes(artifactSelect.value) ? artifactSelect.value : names[0];
+  }
+
+  function syncArtifactSelect(result) {
+    const names = pdfArtifactNames(result);
+    const wanted = names.includes(artifactSelect.value) ? artifactSelect.value : (names[0] || '');
+    artifactSelect.innerHTML = names.length
+      ? names.map((name) => {
+        const label = ARTIFACT_LABELS[name] || name;
+        return `<option value="${name}"${name === wanted ? ' selected' : ''}>${label}</option>`;
+      }).join('')
+      : '<option value="">No document</option>';
+    artifactSelect.value = wanted;
   }
 
   function renderOutputPreview(result) {
     const requestId = String(result?.request_id || currentRequestId || '');
+    syncArtifactSelect(result);
+    lastResultForArtifact = result;
     const artifactName = pdfArtifactName(result);
     if (!requestId || !artifactName) {
       clearOutputPreview();
@@ -1252,7 +1316,13 @@ export function createPdfTranslationView() {
   // value simply rides along on the next translation.
   [renderSizeModeSelect, eraseFillModeSelect, sizeMetricModeSelect, sizeCohortModeSelect,
     widthFitModeSelect, outputModeSelect, structureModeSelect, pageLayoutModeSelect,
-   pageScaleSelect].forEach((select) => select.addEventListener('change', rerenderRequest));
+   pageScaleSelect, doclayoutOverlaySelect].forEach(
+    (select) => select.addEventListener('change', rerenderRequest));
+
+  // Choosing another finished document only re-points the frame — nothing is re-run.
+  artifactSelect.addEventListener('change', () => {
+    if (lastResultForArtifact) renderOutputPreview(lastResultForArtifact);
+  });
 
   if (dropzone) {
     const stop = (event) => { event.preventDefault(); event.stopPropagation(); };
