@@ -48,7 +48,10 @@ async def submit_request(
 @router.get("/requests/{request_id}")
 def get_request(request_id: str) -> dict:
     safe_request_id = parse.quote(request_id, safe="")
-    return _request_json(method="GET", path=f"/v1/requests/{safe_request_id}", timeout=5.0)
+    # 15s, not 5: the poll must survive the service's own worst event-loop stall (a cold
+    # document run starved the loop past 5s once — the job itself was fine). The JS side
+    # additionally tolerates consecutive failures, so this budget is per attempt, not total.
+    return _request_json(method="GET", path=f"/v1/requests/{safe_request_id}", timeout=15.0)
 
 
 @router.post("/requests/{request_id}/cancel")

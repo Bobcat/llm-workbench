@@ -571,10 +571,23 @@ export function createPdfTranslationView() {
     }
   }
 
+  // A poll is a read of someone else's progress, and one missed read proves nothing: the
+  // service's event loop measurably stalls under a document run (assemble pressed polls to
+  // ~650ms warm, and one cold run starved a poll past the proxy's 5s budget). Giving up on
+  // the first error abandoned a job that COMPLETED server-side moments later — whose record
+  // the 30-minute TTL then erased, so the run read as "never a result". Only a run of
+  // consecutive failures (~30s of unreachable service) ends the watch.
+  const POLL_MAX_CONSECUTIVE_FAILURES = 5;
+  let pollFailures = 0;
+  let pollInFlight = false;
+
   async function pollOnce() {
     if (!currentRequestId) return;
+    if (pollInFlight) return; // a stalled poll must not stack timeouts behind itself
+    pollInFlight = true;
     try {
       const result = await api.getPdfRequest(currentRequestId);
+      pollFailures = 0;
       applyLifecycle(result);
       if (isTerminalState(result?.state)) {
         stopPolling();
@@ -589,9 +602,16 @@ export function createPdfTranslationView() {
         }
       }
     } catch (err) {
-      stopPolling();
-      hidePending();
-      setStatus(formatApiError(err), 'error');
+      pollFailures += 1;
+      if (pollFailures >= POLL_MAX_CONSECUTIVE_FAILURES) {
+        stopPolling();
+        hidePending();
+        setStatus(formatApiError(err), 'error');
+      } else {
+        setStatus(`Poll failed (${pollFailures}/${POLL_MAX_CONSECUTIVE_FAILURES}), retrying — the run continues server-side.`);
+      }
+    } finally {
+      pollInFlight = false;
     }
   }
 
