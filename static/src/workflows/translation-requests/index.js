@@ -210,6 +210,10 @@ export function createTranslationRequestsView() {
               <summary>Prompts &amp; responses</summary>
               <div class="translation-requests-details-body">
                 <label class="translation-prompts-field translation-prompts-field-response">
+                  <span>VLM grouping — system / instructions</span>
+                  <textarea id="trtVlmSystem" rows="6" spellcheck="false"></textarea>
+                </label>
+                <label class="translation-prompts-field translation-prompts-field-response">
                   <span>VLM grouping — input</span>
                   <textarea id="trtVlmInput" rows="6" spellcheck="false" placeholder="The user prompt sent to the grouping VLM."></textarea>
                 </label>
@@ -298,6 +302,7 @@ export function createTranslationRequestsView() {
   const sizeMetricModeSelect = container.querySelector('#translationSizeMetricMode');
   const sizeCohortModeSelect = container.querySelector('#translationSizeCohortMode');
   const detailEls = {
+    vlmSystem: container.querySelector('#trtVlmSystem'),
     vlmInput: container.querySelector('#trtVlmInput'),
     vlmResponse: container.querySelector('#trtVlmResponse'),
     geometryColumns: container.querySelector('#trtGeometryColumns'),
@@ -667,6 +672,7 @@ export function createTranslationRequestsView() {
       return role === 'translation_main' || role === 'translation_main_numbered';
     });
     const fallbacks = calls.filter((c) => c !== grouping && c !== main);
+    detailEls.vlmSystem.value = grouping ? String(grouping?.payload?.instructions || '') : '';
     detailEls.vlmInput.value = grouping ? callInputText(grouping) : '';
     detailEls.vlmResponse.value = grouping ? callResponseText(grouping) : '';
     detailEls.xlateSystem.value = main ? String(main?.payload?.instructions || '') : '';
