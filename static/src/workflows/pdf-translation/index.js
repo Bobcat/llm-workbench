@@ -882,8 +882,8 @@ export function createPdfTranslationView() {
         row('Document total', ms(total), 'trt-total'),
         // Sum of every row below. Most are per-page totals of overlapping pages, so the sum
         // exceeds the elapsed time; Assemble PDF is document-level and runs after the pages, which
-        // is why this is not called "summed over pages". It splits into queued + working, and only
-        // working is comparable across page-concurrency settings — so both get their own row.
+        // is why this is not called "summed over pages". It splits into queued + working, and both
+        // get their own row — but neither multiplier is a speed-up, see the note below.
         row('All steps summed', factor
           ? `${Math.round(stageTotal)} ms · ${factor.toFixed(1)}× document total`
           : ms(stageTotal), 'trt-total'),
@@ -893,7 +893,7 @@ export function createPdfTranslationView() {
           : '',
         effective !== null
           ? row('working', `${Math.round(stageTotal - waited)} ms · ${effective.toFixed(1)}× document total`, 'trt-l1',
-            'The queue taken out — the parallelism this run actually achieved. This is the figure to compare against page concurrency, and across runs.')
+            'The queue taken out. Still not a speed-up: a page costs measurably more work under contention than it does alone, so this multiplier rises as the GPU gets busier — the opposite of what it looks like.')
           : '',
         ...stages.map(stage),
         // Deliberately outside `stages`: the debug overlay is not a step of producing the
@@ -908,7 +908,7 @@ export function createPdfTranslationView() {
         row('Page concurrency', typeof m.page_concurrency === 'number' ? String(m.page_concurrency) : '—', 'trt-l1'),
         outputRouteRow(result, row),
         note(`Pages run in parallel, so the rows below add up to more than the elapsed document total. Their percentages are shares of that sum and add up to 100%.${effective !== null
-          ? ' Compare <strong>working</strong> — not the raw multiplier — against page concurrency and across runs: the raw one grows with the queue, so it rises even when nothing gets faster.'
+          ? ' Neither multiplier is a speed-up: the raw one grows with the queue, and <strong>working</strong> grows with per-page slowdown under contention — both rise as the GPU gets more congested. To know what page concurrency actually buys, compare the document total against a run at page concurrency 1.'
           : ''}`),
       ].join('');
       return;
