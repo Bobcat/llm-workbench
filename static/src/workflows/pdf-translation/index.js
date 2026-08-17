@@ -718,6 +718,14 @@ export function createPdfTranslationView() {
       pageConcurrencyDefault = dflt;
       pageConcurrencyInput.placeholder = `host default (${dflt})`;
     }
+    // Name what "leave it to the service" resolves to: an option reading only "host default"
+    // says nothing about which behaviour it selects.
+    const label = (select, value, fallback) => {
+      const option = select?.querySelector('option[value=""]');
+      if (option) option.textContent = `host default (${String(value || fallback)})`;
+    };
+    label(pageCategoryModeSelect, caps?.page_category_mode, 'per_page');
+    label(translationPromptSelect, caps?.translation_prompt_id, 'translate_image_default');
     if (Number.isFinite(max) && max >= 1) {
       pageConcurrencyMax = max;
       pageConcurrencyInput.max = String(max);
