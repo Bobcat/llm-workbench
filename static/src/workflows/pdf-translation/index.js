@@ -189,6 +189,26 @@ export function createPdfTranslationView() {
                     <span>Page concurrency</span>
                     <input type="number" id="pdfPageConcurrency" min="1" step="1" placeholder="host default">
                   </label>
+                  <label class="translation-prompts-field">
+                    <span>Translation prompt</span>
+                    <select id="pdfTranslationPrompt">
+                      <option value="">host default</option>
+                      <option value="translate_image_default">image — every word, keep only proper names, category given</option>
+                      <option value="translate_pdf_default">document — descriptive labels translated, no category</option>
+                    </select>
+                  </label>
+                  <!-- The document prompt no longer prints the category above the units, so this
+                       choice only reaches it through the category-keyed instruction line. It still
+                       decides in full what the image prompt is told, and how many classify calls a
+                       document costs. -->
+                  <label class="translation-prompts-field">
+                    <span>Page category</span>
+                    <select id="pdfPageCategoryMode">
+                      <option value="">host default</option>
+                      <option value="per_page">per page — each page classifies itself</option>
+                      <option value="document">document — classified once on page 1</option>
+                    </select>
+                  </label>
                 </div>
               </div>
             </details>
@@ -328,6 +348,8 @@ export function createPdfTranslationView() {
   const modelSelect = container.querySelector('#pdfModel');
   const pageConcurrencyInput = container.querySelector('#pdfPageConcurrency');
   const translatorSelect = container.querySelector('#pdfTranslatorModel');
+  const translationPromptSelect = container.querySelector('#pdfTranslationPrompt');
+  const pageCategoryModeSelect = container.querySelector('#pdfPageCategoryMode');
   const renderSizeModeSelect = container.querySelector('#pdfRenderSizeMode');
   const eraseFillModeSelect = container.querySelector('#pdfEraseFillMode');
   const sizeMetricModeSelect = container.querySelector('#pdfSizeMetricMode');
@@ -502,6 +524,12 @@ export function createPdfTranslationView() {
     if (Number.isFinite(concurrency) && concurrency >= 1) {
       payload.page_concurrency = pageConcurrencyMax ? Math.min(concurrency, pageConcurrencyMax) : concurrency;
     }
+    // Empty means "host default" for these two as well: the service decides, and omitting
+    // the field is the only way to say so — a value here always wins over settings.json.
+    const promptId = String(translationPromptSelect.value || '').trim();
+    if (promptId) payload.translation_prompt_id = promptId;
+    const categoryMode = String(pageCategoryModeSelect.value || '').trim();
+    if (categoryMode) payload.page_category_mode = categoryMode;
     Object.assign(payload, translatorFields(model), renderFlags());
     return payload;
   }
@@ -694,6 +722,14 @@ export function createPdfTranslationView() {
       pageConcurrencyDefault = dflt;
       pageConcurrencyInput.placeholder = `host default (${dflt})`;
     }
+    // Name what "leave it to the service" resolves to: an option reading only "host default"
+    // says nothing about which behaviour it selects.
+    const label = (select, value, fallback) => {
+      const option = select?.querySelector('option[value=""]');
+      if (option) option.textContent = `host default (${String(value || fallback)})`;
+    };
+    label(pageCategoryModeSelect, caps?.page_category_mode, 'per_page');
+    label(translationPromptSelect, caps?.translation_prompt_id, 'translate_image_default');
     if (Number.isFinite(max) && max >= 1) {
       pageConcurrencyMax = max;
       pageConcurrencyInput.max = String(max);
@@ -882,8 +918,8 @@ export function createPdfTranslationView() {
         row('Document total', ms(total), 'trt-total'),
         // Sum of every row below. Most are per-page totals of overlapping pages, so the sum
         // exceeds the elapsed time; Assemble PDF is document-level and runs after the pages, which
-        // is why this is not called "summed over pages". It splits into queued + working, and only
-        // working is comparable across page-concurrency settings — so both get their own row.
+        // is why this is not called "summed over pages". It splits into queued + working, and both
+        // get their own row — but neither multiplier is a speed-up, see the note below.
         row('All steps summed', factor
           ? `${Math.round(stageTotal)} ms · ${factor.toFixed(1)}× document total`
           : ms(stageTotal), 'trt-total'),
@@ -893,7 +929,7 @@ export function createPdfTranslationView() {
           : '',
         effective !== null
           ? row('working', `${Math.round(stageTotal - waited)} ms · ${effective.toFixed(1)}× document total`, 'trt-l1',
-            'The queue taken out — the parallelism this run actually achieved. This is the figure to compare against page concurrency, and across runs.')
+            'The queue taken out. Still not a speed-up: a page costs measurably more work under contention than it does alone, so this multiplier rises as the GPU gets busier — the opposite of what it looks like.')
           : '',
         ...stages.map(stage),
         // Deliberately outside `stages`: the debug overlay is not a step of producing the
@@ -908,7 +944,7 @@ export function createPdfTranslationView() {
         row('Page concurrency', typeof m.page_concurrency === 'number' ? String(m.page_concurrency) : '—', 'trt-l1'),
         outputRouteRow(result, row),
         note(`Pages run in parallel, so the rows below add up to more than the elapsed document total. Their percentages are shares of that sum and add up to 100%.${effective !== null
-          ? ' Compare <strong>working</strong> — not the raw multiplier — against page concurrency and across runs: the raw one grows with the queue, so it rises even when nothing gets faster.'
+          ? ' Neither multiplier is a speed-up: the raw one grows with the queue, and <strong>working</strong> grows with per-page slowdown under contention — both rise as the GPU gets more congested. To know what page concurrency actually buys, compare the document total against a run at page concurrency 1.'
           : ''}`),
       ].join('');
       return;
