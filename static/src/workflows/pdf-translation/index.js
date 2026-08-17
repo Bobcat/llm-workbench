@@ -189,6 +189,22 @@ export function createPdfTranslationView() {
                     <span>Page concurrency</span>
                     <input type="number" id="pdfPageConcurrency" min="1" step="1" placeholder="host default">
                   </label>
+                  <label class="translation-prompts-field">
+                    <span>Translation prompt</span>
+                    <select id="pdfTranslationPrompt">
+                      <option value="">host default</option>
+                      <option value="translate_image_default">image — every word, keep only proper names</option>
+                      <option value="translate_pdf_default">document — no summarising, no deduplicating</option>
+                    </select>
+                  </label>
+                  <label class="translation-prompts-field">
+                    <span>Page category</span>
+                    <select id="pdfPageCategoryMode">
+                      <option value="">host default</option>
+                      <option value="per_page">per page — each page classifies itself</option>
+                      <option value="document">document — classified once on page 1</option>
+                    </select>
+                  </label>
                 </div>
               </div>
             </details>
@@ -328,6 +344,8 @@ export function createPdfTranslationView() {
   const modelSelect = container.querySelector('#pdfModel');
   const pageConcurrencyInput = container.querySelector('#pdfPageConcurrency');
   const translatorSelect = container.querySelector('#pdfTranslatorModel');
+  const translationPromptSelect = container.querySelector('#pdfTranslationPrompt');
+  const pageCategoryModeSelect = container.querySelector('#pdfPageCategoryMode');
   const renderSizeModeSelect = container.querySelector('#pdfRenderSizeMode');
   const eraseFillModeSelect = container.querySelector('#pdfEraseFillMode');
   const sizeMetricModeSelect = container.querySelector('#pdfSizeMetricMode');
@@ -502,6 +520,12 @@ export function createPdfTranslationView() {
     if (Number.isFinite(concurrency) && concurrency >= 1) {
       payload.page_concurrency = pageConcurrencyMax ? Math.min(concurrency, pageConcurrencyMax) : concurrency;
     }
+    // Empty means "host default" for these two as well: the service decides, and omitting
+    // the field is the only way to say so — a value here always wins over settings.json.
+    const promptId = String(translationPromptSelect.value || '').trim();
+    if (promptId) payload.translation_prompt_id = promptId;
+    const categoryMode = String(pageCategoryModeSelect.value || '').trim();
+    if (categoryMode) payload.page_category_mode = categoryMode;
     Object.assign(payload, translatorFields(model), renderFlags());
     return payload;
   }
