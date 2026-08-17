@@ -193,10 +193,14 @@ export function createPdfTranslationView() {
                     <span>Translation prompt</span>
                     <select id="pdfTranslationPrompt">
                       <option value="">host default</option>
-                      <option value="translate_image_default">image — every word, keep only proper names</option>
-                      <option value="translate_pdf_default">document — no summarising, no deduplicating</option>
+                      <option value="translate_image_default">image — every word, keep only proper names, category given</option>
+                      <option value="translate_pdf_default">document — descriptive labels translated, no category</option>
                     </select>
                   </label>
+                  <!-- The document prompt no longer prints the category above the units, so this
+                       choice only reaches it through the category-keyed instruction line. It still
+                       decides in full what the image prompt is told, and how many classify calls a
+                       document costs. -->
                   <label class="translation-prompts-field">
                     <span>Page category</span>
                     <select id="pdfPageCategoryMode">
