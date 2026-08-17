@@ -238,6 +238,10 @@ export function createPdfTranslationView() {
                 </label>
                 <div class="translation-prompts-inline-status" id="pdfCallsStatus"></div>
                 <label class="translation-prompts-field translation-prompts-field-response">
+                  <span>VLM grouping — system / instructions</span>
+                  <textarea id="pdfVlmSystem" rows="6" spellcheck="false"></textarea>
+                </label>
+                <label class="translation-prompts-field translation-prompts-field-response">
                   <span>VLM grouping — input</span>
                   <textarea id="pdfVlmInput" rows="6" spellcheck="false" placeholder="The user prompt sent to the grouping VLM for this page."></textarea>
                 </label>
@@ -377,6 +381,7 @@ export function createPdfTranslationView() {
   const callsPageSelect = container.querySelector('#pdfCallsPage');
   const callsStatusEl = container.querySelector('#pdfCallsStatus');
   const callEls = {
+    vlmSystem: container.querySelector('#pdfVlmSystem'),
     vlmInput: container.querySelector('#pdfVlmInput'),
     vlmResponse: container.querySelector('#pdfVlmResponse'),
     xlateSystem: container.querySelector('#pdfXlateSystem'),
@@ -1047,6 +1052,7 @@ export function createPdfTranslationView() {
       return role === 'translation_main' || role === 'translation_main_numbered';
     });
     const others = calls.filter((c) => c !== grouping && c !== main);
+    callEls.vlmSystem.value = grouping ? String(grouping?.payload?.instructions || '') : '';
     callEls.vlmInput.value = grouping ? callInputText(grouping) : '';
     callEls.vlmResponse.value = grouping ? callResponseText(grouping) : '';
     callEls.xlateSystem.value = main ? String(main?.payload?.instructions || '') : '';
