@@ -28,6 +28,12 @@ export function createPdfTranslationView() {
                   <span>Target</span>
                   <select id="pdfTarget"></select>
                 </label>
+                <label class="translation-requests-barfield pdf-translation-history-field" id="pdfHistoryField" hidden>
+                  <span>Recent request</span>
+                  <select id="pdfHistory" aria-label="Recent PDF request">
+                    <option value="new">New request</option>
+                  </select>
+                </label>
                 <label class="translation-requests-showtoggle translation-requests-loaded-only">
                   <span>Show original</span>
                   <input type="checkbox" id="pdfShowOriginal">
@@ -342,6 +348,8 @@ export function createPdfTranslationView() {
 
   const fileInput = container.querySelector('#pdfFile');
   const targetInput = container.querySelector('#pdfTarget');
+  const historyField = container.querySelector('#pdfHistoryField');
+  const historySelect = container.querySelector('#pdfHistory');
   const statusEl = container.querySelector('#pdfStatus');
   const statIdEl = container.querySelector('#pdfStatId');
   const statStateEl = container.querySelector('#pdfStatState');
@@ -409,6 +417,14 @@ export function createPdfTranslationView() {
   let pollTimer = null;
   let inputObjectUrl = '';
   let lastTargetLang = '';
+  let recentRequests = [];
+  let transientRequest = null;
+  let isInspectingHistory = false;
+  let historyOptionsAvailable = true;
+  let historicalInputRequestId = '';
+  let historicalFilename = '';
+  let newRequestDraft = null;
+  let activeHistoricalOptions = null;
   let regStatus = null;   // {name, in_testset, langs} for the current completed run (capture badge)
   let isRerendering = false;  // a render-flag re-entry is in flight: report it as a re-render, not a translation
   // The last completed result, so switching the artifact selector can re-point the frame
@@ -422,26 +438,32 @@ export function createPdfTranslationView() {
 
   function setBusy(nextBusy) {
     isBusy = Boolean(nextBusy);
+    const settingsLocked = isBusy || isInspectingHistory;
+    const renderLocked = isBusy || (isInspectingHistory && !historyOptionsAvailable);
     fileInput.disabled = isBusy;
     if (browseBtn) browseBtn.disabled = isBusy;
-    targetInput.disabled = isBusy;
-    modelSelect.disabled = isBusy;
-    translatorSelect.disabled = isBusy;
-    renderSizeModeSelect.disabled = isBusy;
-    eraseFillModeSelect.disabled = isBusy;
-    sizeMetricModeSelect.disabled = isBusy;
-    sizeCohortModeSelect.disabled = isBusy;
-    widthFitModeSelect.disabled = isBusy;
-    outputModeSelect.disabled = isBusy;
-    structureModeSelect.disabled = isBusy;
-    pageLayoutModeSelect.disabled = isBusy;
+    targetInput.disabled = settingsLocked;
+    modelSelect.disabled = settingsLocked;
+    translatorSelect.disabled = settingsLocked;
+    pageConcurrencyInput.disabled = settingsLocked;
+    translationPromptSelect.disabled = settingsLocked;
+    pageCategoryModeSelect.disabled = settingsLocked;
+    renderSizeModeSelect.disabled = renderLocked;
+    eraseFillModeSelect.disabled = renderLocked;
+    sizeMetricModeSelect.disabled = renderLocked;
+    sizeCohortModeSelect.disabled = renderLocked;
+    widthFitModeSelect.disabled = renderLocked;
+    outputModeSelect.disabled = renderLocked;
+    structureModeSelect.disabled = renderLocked;
+    pageLayoutModeSelect.disabled = renderLocked;
     // Always settable, even while the layout mode is still `fit` — the fit path ignores the
     // flag, so the only thing disabling it bought was an ordering trap: this state is
     // recomputed after a render, so picking `typeset` left the scale locked until a render
     // had already run at 1.00, and only the run after that could carry 0.90.
-    pageScaleSelect.disabled = isBusy;
-    doclayoutOverlaySelect.disabled = isBusy;
+    pageScaleSelect.disabled = renderLocked;
+    doclayoutOverlaySelect.disabled = renderLocked;
     artifactSelect.disabled = isBusy;
+    historySelect.disabled = isBusy || Boolean(currentRequestId && !isTerminalState(currentState()));
   }
 
   // The render flags as the API takes them — one reader for both the initial submit and the
@@ -459,6 +481,61 @@ export function createPdfTranslationView() {
       page_scale: Number(pageScaleSelect.value || 1),
       doclayout_overlay: String(doclayoutOverlaySelect.value || 'off') === 'on',
     };
+  }
+
+  function captureControlState() {
+    return {
+      target_lang_code: String(targetInput.value || ''),
+      grouping_model: String(modelSelect.value || ''),
+      translator_model: String(translatorSelect.value || ''),
+      page_concurrency: String(pageConcurrencyInput.value || ''),
+      translation_prompt_id: String(translationPromptSelect.value || ''),
+      page_category_mode: String(pageCategoryModeSelect.value || ''),
+      ...renderFlags(),
+    };
+  }
+
+  function setSelectValue(select, value, historyLabel = '') {
+    const wanted = String(value ?? '');
+    for (const option of Array.from(select.options)) {
+      if (option.dataset.historyValue === 'true') option.remove();
+    }
+    if (wanted && !Array.from(select.options).some((option) => option.value === wanted)) {
+      const option = document.createElement('option');
+      option.value = wanted;
+      option.textContent = historyLabel || `${wanted} — from request`;
+      option.dataset.historyValue = 'true';
+      select.append(option);
+    }
+    select.value = wanted;
+  }
+
+  function applyControlState(options) {
+    setSelectValue(targetInput, options?.target_lang_code);
+    setSelectValue(modelSelect, options?.grouping_model);
+    setSelectValue(translatorSelect, options?.translator_model);
+    pageConcurrencyInput.value = options?.page_concurrency == null
+      ? ''
+      : String(options.page_concurrency);
+    setSelectValue(translationPromptSelect, options?.translation_prompt_id);
+    setSelectValue(pageCategoryModeSelect, options?.page_category_mode);
+    setSelectValue(renderSizeModeSelect, options?.render_size_mode || 'median');
+    setSelectValue(eraseFillModeSelect, options?.erase_fill_mode || 'inpaint');
+    setSelectValue(sizeMetricModeSelect, options?.size_metric_mode || 'extent');
+    setSelectValue(sizeCohortModeSelect, options?.size_cohort_mode || 'vlm');
+    setSelectValue(widthFitModeSelect, options?.width_fit_mode || 'footprint');
+    setSelectValue(outputModeSelect, options?.pdf_output_mode || 'vector');
+    setSelectValue(structureModeSelect, options?.pdf_structure_mode || 'source_only');
+    setSelectValue(pageLayoutModeSelect, options?.page_layout_mode || 'fit');
+    const pageScale = Number(options?.page_scale ?? 1);
+    setSelectValue(
+      pageScaleSelect,
+      Number.isFinite(pageScale) ? String(pageScale) : '1',
+      `${Number.isFinite(pageScale) ? pageScale.toFixed(2) : '1.00'} — from request`,
+    );
+    setSelectValue(doclayoutOverlaySelect, options?.doclayout_overlay ? 'on' : 'off');
+    lastTargetLang = String(options?.target_lang_code || '');
+    updateModelSelectColor();
   }
 
   // Which output route actually ran, and — when the vector route was asked for but declined —
@@ -486,7 +563,10 @@ export function createPdfTranslationView() {
   }
 
   function canReenter() {
-    return !isBusy && Boolean(currentRequestId) && currentState() === 'completed';
+    return !isBusy
+      && (!isInspectingHistory || historyOptionsAvailable)
+      && Boolean(currentRequestId)
+      && currentState() === 'completed';
   }
 
   function selectedFile() {
@@ -555,12 +635,20 @@ export function createPdfTranslationView() {
       const result = await api.rerenderPdfRequest(sourceRequestId, renderFlags());
       applyLifecycle(result);
       currentRequestId = String(result?.request_id || '');
+      if (currentRequestId) {
+        transientRequest = {
+          request_id: currentRequestId,
+          label: `Current rerender — ${historicalFilename || selectedFile()?.name || currentRequestId}`,
+        };
+        renderHistorySelect(`current:${currentRequestId}`);
+      }
       if (currentRequestId && !isTerminalState(result?.state)) {
         startPolling();
       } else {
         renderOutputPreview(result);
         syncCallsSection(result);
-        syncTimingsSection(result);
+        if (isInspectingHistory) syncHistoricalTimings();
+        else syncTimingsSection(result);
         isRerendering = false;
       }
     } catch (err) {
@@ -589,12 +677,20 @@ export function createPdfTranslationView() {
       const result = await api.submitPdfRequest(formData);
       applyLifecycle(result);
       currentRequestId = String(result?.request_id || '');
+      if (currentRequestId) {
+        transientRequest = {
+          request_id: currentRequestId,
+          label: `Current request — ${file.name}`,
+        };
+        renderHistorySelect(`current:${currentRequestId}`);
+      }
       if (currentRequestId && !isTerminalState(result?.state)) {
         startPolling();
       } else {
         renderOutputPreview(result);
         syncCallsSection(result);
         syncTimingsSection(result);
+        loadRecentRequests(`current:${currentRequestId}`);
       }
     } catch (err) {
       hidePending();
@@ -626,12 +722,15 @@ export function createPdfTranslationView() {
         stopPolling();
         renderOutputPreview(result);
         syncCallsSection(result);
-        syncTimingsSection(result);
+        if (isInspectingHistory) syncHistoricalTimings();
+        else syncTimingsSection(result);
         if (isRerendering) {
           isRerendering = false;
           setStatus(String(result?.state) === 'completed'
             ? `Re-rendered (${String(renderSizeModeSelect.value)}, ${String(eraseFillModeSelect.value)}, ${String(widthFitModeSelect.value)}).`
             : `Re-render ${String(result?.state || 'ended')}.`);
+        } else {
+          loadRecentRequests(`current:${currentRequestId}`);
         }
       }
     } catch (err) {
@@ -674,7 +773,8 @@ export function createPdfTranslationView() {
         stopPolling();
         renderOutputPreview(result);
         syncCallsSection(result);
-        syncTimingsSection(result);
+        if (isInspectingHistory) syncHistoricalTimings();
+        else syncTimingsSection(result);
       }
     } catch (err) {
       setStatus(formatApiError(err), 'error');
@@ -693,6 +793,7 @@ export function createPdfTranslationView() {
     statQueueEl.textContent = result?.queue_position == null ? '-' : String(result.queue_position);
     statPagesEl.textContent = formatPages(result);
     rawEl.value = JSON.stringify(result || {}, null, 2);
+    setBusy(isBusy);
   }
 
   // Per-page progress if the pipeline reports it: a done/total pair carried on the lifecycle
@@ -710,6 +811,100 @@ export function createPdfTranslationView() {
       .map((l) => `<option value="${escapeAttr(l.code)}">${escapeHtml(`${l.flag} ${l.name}`)}</option>`)
       .join('');
     targetInput.value = 'nl';
+  }
+
+  function historyLabel(item) {
+    const name = String(item?.source_filename || item?.request_id || 'request');
+    const target = String(item?.target_lang_code || '?');
+    const date = item?.submitted_at_utc ? new Date(item.submitted_at_utc) : null;
+    const when = date && !Number.isNaN(date.getTime()) ? date.toLocaleString() : '';
+    return `${name} → ${target}${when ? ` · ${when}` : ''}`;
+  }
+
+  function renderHistorySelect(selected = historySelect.value || 'new') {
+    const options = [{ value: 'new', label: 'New request' }];
+    if (transientRequest) {
+      options.push({
+        value: `current:${transientRequest.request_id}`,
+        label: transientRequest.label,
+      });
+    }
+    for (const item of recentRequests) {
+      options.push({ value: `history:${item.request_id}`, label: historyLabel(item) });
+    }
+    historySelect.innerHTML = '';
+    for (const item of options) {
+      const option = document.createElement('option');
+      option.value = item.value;
+      option.textContent = item.label;
+      historySelect.append(option);
+    }
+    historySelect.value = options.some((item) => item.value === selected) ? selected : 'new';
+  }
+
+  async function loadRecentRequests(selected = historySelect.value || 'new') {
+    try {
+      const payload = await api.listPdfRequests();
+      recentRequests = Array.isArray(payload?.requests) ? payload.requests : [];
+      historyField.hidden = Number(payload?.limit || 0) <= 0;
+      renderHistorySelect(selected);
+    } catch {
+      recentRequests = [];
+      historyField.hidden = true;
+      renderHistorySelect('new');
+    }
+  }
+
+  async function inspectHistoricalRequest(requestId) {
+    const item = recentRequests.find((request) => request.request_id === requestId) || {};
+    if (!isInspectingHistory) newRequestDraft = captureControlState();
+    stopPolling();
+    fileInput.value = '';
+    clearOutputPreview();
+    clearCallFields();
+    callsLoadedFor = '';
+    callsStatusEl.textContent = '';
+    isInspectingHistory = true;
+    historyOptionsAvailable = false;
+    activeHistoricalOptions = null;
+    historicalInputRequestId = requestId;
+    historicalFilename = String(item.source_filename || '');
+    currentRequestId = requestId;
+    updateInputPreview();
+    setBusy(true);
+    setStatus('');
+    try {
+      const optionsUrl = `/api/pdf-translation/requests/${encodeURIComponent(requestId)}/artifacts/request_options`;
+      const [result, options] = await Promise.all([
+        api.getPdfRequest(requestId),
+        fetch(optionsUrl).then((response) => {
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          return response.json();
+        }).catch(() => null),
+      ]);
+      applyLifecycle(result);
+      if (options) {
+        historicalFilename = String(options.source_filename || historicalFilename);
+        activeHistoricalOptions = options;
+        applyControlState(options);
+        historyOptionsAvailable = true;
+      } else {
+        setStatus(
+          'This older request has no settings snapshot. Its artifacts are available, but it cannot be safely re-rendered after a service restart.',
+          'error',
+        );
+      }
+      lastTargetLang = String(options?.target_lang_code || item.target_lang_code || '');
+      updateInputPreview();
+      renderOutputPreview(result);
+      syncCallsSection(result);
+      syncHistoricalTimings();
+      updateStageVisibility();
+    } catch (err) {
+      setStatus(formatApiError(err), 'error');
+    } finally {
+      setBusy(false);
+    }
   }
 
   // Only the currently-loaded pool models (green), plus the service's configured default (added
@@ -782,6 +977,7 @@ export function createPdfTranslationView() {
     };
     pick(modelSelect, true);
     pick(translatorSelect, true);
+    if (isInspectingHistory && activeHistoricalOptions) applyControlState(activeHistoricalOptions);
     updateModelSelectColor();
     setBusy(isBusy);
   }
@@ -816,8 +1012,10 @@ export function createPdfTranslationView() {
       URL.revokeObjectURL(inputObjectUrl);
       inputObjectUrl = '';
     }
-    if (!file) {
+    if (!file && !historicalInputRequestId) {
       inputPreview.removeAttribute('src');
+    } else if (!file) {
+      inputPreview.src = `/api/pdf-translation/requests/${encodeURIComponent(historicalInputRequestId)}/artifacts/input`;
     } else {
       inputObjectUrl = URL.createObjectURL(file);
       inputPreview.src = inputObjectUrl;
@@ -830,6 +1028,13 @@ export function createPdfTranslationView() {
   // replacement_wall_ms — the other stages read "—" then, which is honest: they did not run.
   let timingsScopeValue = 'total';
   let lastTimingsResult = null;
+
+  function syncHistoricalTimings() {
+    lastTimingsResult = null;
+    timingsScope.innerHTML = '';
+    timingsScopeField.hidden = true;
+    timingsEl.innerHTML = '<div class="trt-row trt-placeholder"><span>Timings are not available for previous requests.</span></div>';
+  }
 
   function syncTimingsSection(result) {
     lastTimingsResult = result;
@@ -1140,7 +1345,7 @@ export function createPdfTranslationView() {
   // The name to file under: the run's own PDF filename (stem). A source already matched to a
   // testset document by content hash uses that name instead — no add needed.
   function uploadStem() {
-    return String(selectedFile()?.name || '').replace(/\.[^.]+$/, '').trim();
+    return String(selectedFile()?.name || historicalFilename || '').replace(/\.[^.]+$/, '').trim();
   }
 
   // Two-step, exactly like the image panel: Add-to-testset files the PDF under a subdir, then
@@ -1273,7 +1478,7 @@ export function createPdfTranslationView() {
     outputPreview.hidden = false;
     outputEmpty.hidden = true;
     outputPending.hidden = true;
-    const base = (selectedFile()?.name || 'document').replace(/\.[^.]+$/, '') || 'document';
+    const base = (selectedFile()?.name || historicalFilename || 'document').replace(/\.[^.]+$/, '') || 'document';
     const lang = String(lastTargetLang || '').toLowerCase() || 'out';
     downloadLink.href = url;
     downloadLink.setAttribute('download', `${base}_${lang}.pdf`);
@@ -1345,6 +1550,14 @@ export function createPdfTranslationView() {
   function resetView() {
     if (currentRequestId && !isTerminalState(currentState())) cancelRequest();
     stopPolling();
+    const draft = isInspectingHistory ? newRequestDraft : null;
+    isInspectingHistory = false;
+    historyOptionsAvailable = true;
+    historicalInputRequestId = '';
+    historicalFilename = '';
+    newRequestDraft = null;
+    activeHistoricalOptions = null;
+    transientRequest = null;
     fileInput.value = '';
     currentRequestId = '';
     clearOutputPreview();
@@ -1357,9 +1570,12 @@ export function createPdfTranslationView() {
     timingsScope.innerHTML = '';
     timingsEl.innerHTML = '';
     lastTimingsResult = null;
+    if (draft) applyControlState(draft);
     updateInputPreview();
     setStatus('');
     updateStageVisibility();
+    renderHistorySelect('new');
+    setBusy(false);
   }
 
   if (browseBtn) browseBtn.addEventListener('click', () => fileInput.click());
@@ -1373,6 +1589,16 @@ export function createPdfTranslationView() {
   syncTimingsSection(null);  // placeholder card before the first run, matching the image view
   if (cancelBtn) cancelBtn.addEventListener('click', cancelRequest);
   if (showOriginalToggle) showOriginalToggle.addEventListener('change', applyViewMode);
+  historySelect.addEventListener('change', () => {
+    const selected = String(historySelect.value || 'new');
+    if (selected === 'new') {
+      resetView();
+      return;
+    }
+    const separator = selected.indexOf(':');
+    const requestId = separator >= 0 ? selected.slice(separator + 1) : '';
+    if (requestId) inspectHistoricalRequest(requestId);
+  });
   modelSelect.addEventListener('change', updateModelSelectColor);
   // A render flag changing on a completed document re-renders it; with nothing loaded the new
   // value simply rides along on the next translation.
@@ -1434,5 +1660,6 @@ export function createPdfTranslationView() {
   populateLanguageSelect();
   setBusy(false);
   loadModelChoices();
+  loadRecentRequests();
   return container;
 }

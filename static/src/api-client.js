@@ -370,6 +370,10 @@ export const api = {
     });
   },
 
+  async listPdfRequests() {
+    return fetchJson('/api/pdf-translation/requests');
+  },
+
   async getPdfRequest(requestId) {
     return fetchJson(`/api/pdf-translation/requests/${encodeURIComponent(requestId)}`);
   },

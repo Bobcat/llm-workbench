@@ -23,6 +23,11 @@
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
+.pdf-translation-view .pdf-translation-history-field select {
+  width: min(420px, 34vw);
+  min-width: 240px;
+}
+
 /* Benchmark button in the top bar: quiet sibling of the download link; after a
    run it carries the axis scores as its label. */
 .pdf-translation-view .pdf-translation-benchmark {
