@@ -920,6 +920,7 @@ export function createPdfTranslationView() {
         );
       } else {
         historicalInputRequestId = '';
+        updateInputPreview();
         setStatus('The artifacts for this request have expired.', 'error');
         syncHistoricalTimings();
         updateStageVisibility();
@@ -932,9 +933,26 @@ export function createPdfTranslationView() {
       syncResultTimings(result);
       updateStageVisibility();
     } catch (err) {
+      const draft = newRequestDraft;
       currentRequestId = '';
       historicalInputRequestId = '';
+      historicalFilename = '';
+      isInspectingHistory = false;
+      historyOptionsAvailable = true;
+      activeHistoricalOptions = null;
+      newRequestDraft = null;
+      if (draft) applyControlState(draft);
+      statIdEl.textContent = '-';
+      statIdEl.title = '';
+      statStateEl.textContent = '-';
+      statStageEl.textContent = '-';
+      statPagesEl.textContent = '-';
+      statQueueEl.textContent = '-';
+      rawEl.value = '';
+      updateInputPreview();
+      syncTimingsSection(null);
       updateStageVisibility();
+      renderHistorySelect('new');
       setStatus(formatApiError(err), 'error');
     } finally {
       setBusy(false);
