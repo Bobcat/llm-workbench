@@ -495,12 +495,20 @@ export function createPdfTranslationView() {
     };
   }
 
-  function setSelectValue(select, value, historyLabel = '') {
+  function setSelectValue(select, value, historyLabel = '', numericMatch = false) {
     const wanted = String(value ?? '');
     for (const option of Array.from(select.options)) {
       if (option.dataset.historyValue === 'true') option.remove();
     }
-    if (wanted && !Array.from(select.options).some((option) => option.value === wanted)) {
+    const existing = Array.from(select.options).find((option) => (
+      option.value === wanted
+      || (numericMatch && wanted && Number(option.value) === Number(wanted))
+    ));
+    if (existing) {
+      select.value = existing.value;
+      return;
+    }
+    if (wanted) {
       const option = document.createElement('option');
       option.value = wanted;
       option.textContent = historyLabel || `${wanted} — from request`;
@@ -532,6 +540,7 @@ export function createPdfTranslationView() {
       pageScaleSelect,
       Number.isFinite(pageScale) ? String(pageScale) : '1',
       `${Number.isFinite(pageScale) ? pageScale.toFixed(2) : '1.00'} — from request`,
+      true,
     );
     setSelectValue(doclayoutOverlaySelect, options?.doclayout_overlay ? 'on' : 'off');
     lastTargetLang = String(options?.target_lang_code || '');
@@ -647,8 +656,7 @@ export function createPdfTranslationView() {
       } else {
         renderOutputPreview(result);
         syncCallsSection(result);
-        if (isInspectingHistory) syncHistoricalTimings();
-        else syncTimingsSection(result);
+        syncResultTimings(result);
         isRerendering = false;
       }
     } catch (err) {
@@ -689,7 +697,7 @@ export function createPdfTranslationView() {
       } else {
         renderOutputPreview(result);
         syncCallsSection(result);
-        syncTimingsSection(result);
+        syncResultTimings(result);
         loadRecentRequests(`current:${currentRequestId}`);
       }
     } catch (err) {
@@ -722,8 +730,7 @@ export function createPdfTranslationView() {
         stopPolling();
         renderOutputPreview(result);
         syncCallsSection(result);
-        if (isInspectingHistory) syncHistoricalTimings();
-        else syncTimingsSection(result);
+        syncResultTimings(result);
         if (isRerendering) {
           isRerendering = false;
           setStatus(String(result?.state) === 'completed'
@@ -770,11 +777,11 @@ export function createPdfTranslationView() {
       const result = await api.cancelPdfRequest(currentRequestId);
       applyLifecycle(result);
       if (isTerminalState(result?.state)) {
+        isRerendering = false;
         stopPolling();
         renderOutputPreview(result);
         syncCallsSection(result);
-        if (isInspectingHistory) syncHistoricalTimings();
-        else syncTimingsSection(result);
+        syncResultTimings(result);
       }
     } catch (err) {
       setStatus(formatApiError(err), 'error');
@@ -823,7 +830,10 @@ export function createPdfTranslationView() {
 
   function renderHistorySelect(selected = historySelect.value || 'new') {
     const options = [{ value: 'new', label: 'New request' }];
-    if (transientRequest) {
+    if (
+      transientRequest
+      && !recentRequests.some((request) => request.request_id === transientRequest.request_id)
+    ) {
       options.push({
         value: `current:${transientRequest.request_id}`,
         label: transientRequest.label,
@@ -847,12 +857,31 @@ export function createPdfTranslationView() {
       const payload = await api.listPdfRequests();
       recentRequests = Array.isArray(payload?.requests) ? payload.requests : [];
       historyField.hidden = Number(payload?.limit || 0) <= 0;
-      renderHistorySelect(selected);
+      let wanted = historySelect.value || selected;
+      if (wanted.startsWith('current:')) {
+        const requestId = wanted.slice('current:'.length);
+        if (recentRequests.some((request) => request.request_id === requestId)) {
+          wanted = `history:${requestId}`;
+        }
+      }
+      renderHistorySelect(wanted);
     } catch {
       recentRequests = [];
       historyField.hidden = true;
       renderHistorySelect('new');
     }
+  }
+
+  async function fetchHistoricalOptions(requestId) {
+    const url = `/api/pdf-translation/requests/${encodeURIComponent(requestId)}/artifacts/request_options`;
+    const response = await fetch(url);
+    if (response.ok) return { state: 'available', options: await response.json() };
+    if (response.status === 404) return { state: 'missing', options: null };
+    if (response.status === 410) return { state: 'expired', options: null };
+    const payload = await response.json().catch(() => null);
+    const error = new Error(`HTTP ${response.status}`);
+    error.detail = payload?.detail || payload;
+    throw error;
   }
 
   async function inspectHistoricalRequest(requestId) {
@@ -870,37 +899,42 @@ export function createPdfTranslationView() {
     historicalInputRequestId = requestId;
     historicalFilename = String(item.source_filename || '');
     currentRequestId = requestId;
-    updateInputPreview();
     setBusy(true);
     setStatus('');
     try {
-      const optionsUrl = `/api/pdf-translation/requests/${encodeURIComponent(requestId)}/artifacts/request_options`;
-      const [result, options] = await Promise.all([
+      const [result, optionsResult] = await Promise.all([
         api.getPdfRequest(requestId),
-        fetch(optionsUrl).then((response) => {
-          if (!response.ok) throw new Error(`HTTP ${response.status}`);
-          return response.json();
-        }).catch(() => null),
+        fetchHistoricalOptions(requestId),
       ]);
       applyLifecycle(result);
-      if (options) {
+      const options = optionsResult.options;
+      if (optionsResult.state === 'available') {
         historicalFilename = String(options.source_filename || historicalFilename);
         activeHistoricalOptions = options;
         applyControlState(options);
         historyOptionsAvailable = true;
-      } else {
+      } else if (optionsResult.state === 'missing') {
         setStatus(
           'This older request has no settings snapshot. Its artifacts are available, but it cannot be safely re-rendered after a service restart.',
           'error',
         );
+      } else {
+        historicalInputRequestId = '';
+        setStatus('The artifacts for this request have expired.', 'error');
+        syncHistoricalTimings();
+        updateStageVisibility();
+        return;
       }
       lastTargetLang = String(options?.target_lang_code || item.target_lang_code || '');
       updateInputPreview();
       renderOutputPreview(result);
       syncCallsSection(result);
-      syncHistoricalTimings();
+      syncResultTimings(result);
       updateStageVisibility();
     } catch (err) {
+      currentRequestId = '';
+      historicalInputRequestId = '';
+      updateStageVisibility();
       setStatus(formatApiError(err), 'error');
     } finally {
       setBusy(false);
@@ -1034,6 +1068,12 @@ export function createPdfTranslationView() {
     timingsScope.innerHTML = '';
     timingsScopeField.hidden = true;
     timingsEl.innerHTML = '<div class="trt-row trt-placeholder"><span>Timings are not available for previous requests.</span></div>';
+  }
+
+  function syncResultTimings(result) {
+    if (result?.response?.metrics) syncTimingsSection(result);
+    else if (isInspectingHistory) syncHistoricalTimings();
+    else syncTimingsSection(result);
   }
 
   function syncTimingsSection(result) {
@@ -1558,6 +1598,7 @@ export function createPdfTranslationView() {
     newRequestDraft = null;
     activeHistoricalOptions = null;
     transientRequest = null;
+    isRerendering = false;
     fileInput.value = '';
     currentRequestId = '';
     clearOutputPreview();
