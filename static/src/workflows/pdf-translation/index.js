@@ -105,6 +105,13 @@ export function createPdfTranslationView() {
                   </select>
                 </label>
                 <label class="translation-prompts-field">
+                  <span>Vector fallback</span>
+                  <select id="pdfVectorFallback" title="What to do when vector output cannot safely handle the complete document. reject reports the page and capability reasons without producing a PDF. raster explicitly permits the whole document to use bitmap pages instead. This setting does nothing when Output is already raster.">
+                    <option value="reject" selected>reject — report unsupported</option>
+                    <option value="raster">raster — use bitmap pages</option>
+                  </select>
+                </label>
+                <label class="translation-prompts-field">
                   <span>Structure tree</span>
                   <select id="pdfStructureMode" title="Whether the output carries a structure tree — the tags a screen reader follows, and the only place the reading order is stated rather than guessed at. source-only writes one where the source already had one, which keeps the output as close to the original as the rest of this route does. always writes one on every document, including scans: there the tags are built from OCR and the model's grouping, so a wrong grouping produces a confidently wrong tree for exactly the reader who cannot see the page to check it — which is why it is asked for rather than assumed. Whatever tree the source had is replaced, never repaired: it would otherwise keep pointing at text we took out. Vector route only; the raster route has no text to tag.">
                     <option value="source_only" selected>source-only — only where the source had one</option>
@@ -360,6 +367,7 @@ export function createPdfTranslationView() {
   const sizeCohortModeSelect = container.querySelector('#pdfSizeCohortMode');
   const widthFitModeSelect = container.querySelector('#pdfWidthFitMode');
   const outputModeSelect = container.querySelector('#pdfOutputMode');
+  const vectorFallbackSelect = container.querySelector('#pdfVectorFallback');
   const structureModeSelect = container.querySelector('#pdfStructureMode');
   const pageLayoutModeSelect = container.querySelector('#pdfPageLayoutMode');
   const doclayoutOverlaySelect = container.querySelector('#pdfDoclayoutOverlay');
@@ -433,6 +441,7 @@ export function createPdfTranslationView() {
     sizeCohortModeSelect.disabled = isBusy;
     widthFitModeSelect.disabled = isBusy;
     outputModeSelect.disabled = isBusy;
+    vectorFallbackSelect.disabled = isBusy;
     structureModeSelect.disabled = isBusy;
     pageLayoutModeSelect.disabled = isBusy;
     // Always settable, even while the layout mode is still `fit` — the fit path ignores the
@@ -454,6 +463,7 @@ export function createPdfTranslationView() {
       size_cohort_mode: String(sizeCohortModeSelect.value || 'vlm'),
       width_fit_mode: String(widthFitModeSelect.value || 'footprint'),
       pdf_output_mode: String(outputModeSelect.value || 'vector'),
+      pdf_vector_fallback: String(vectorFallbackSelect.value || 'reject'),
       pdf_structure_mode: String(structureModeSelect.value || 'source_only'),
       page_layout_mode: String(pageLayoutModeSelect.value || 'fit'),
       page_scale: Number(pageScaleSelect.value || 1),
@@ -469,12 +479,16 @@ export function createPdfTranslationView() {
     const doc = result?.response?.document || {};
     const mode = String(doc.pdf_output_mode || '');
     if (!mode) return '';
+    const requested = String(doc.pdf_output_mode_requested || mode);
     const declined = String(doc.vector_declined || '');
+    const engineDeclined = Array.isArray(doc.pdf_engine_declined)
+      ? doc.pdf_engine_declined.map(String).filter(Boolean)
+      : [];
     const pages = Array.isArray(doc.pages) ? doc.pages : [];
     const reports = pages.map((p) => p.vector).filter(Boolean);
     let detail = mode;
-    if (declined) {
-      detail = `raster — vector declined: ${declined}`;
+    if (mode === 'raster' && requested === 'vector' && (declined || engineDeclined.length)) {
+      detail = `raster — vector declined: ${declined || engineDeclined.join(', ')}`;
     } else if (mode === 'vector' && reports.length) {
       const drawn = reports.reduce((n, v) => n + (Number(v.groups_drawn) || 0), 0);
       const fell = reports.reduce((n, v) => n + (Number(v.groups_fallback) || 0), 0);
@@ -561,6 +575,9 @@ export function createPdfTranslationView() {
         renderOutputPreview(result);
         syncCallsSection(result);
         syncTimingsSection(result);
+        if (String(result?.state) === 'failed') {
+          setStatus(lifecycleErrorMessage(result), 'error');
+        }
         isRerendering = false;
       }
     } catch (err) {
@@ -595,6 +612,9 @@ export function createPdfTranslationView() {
         renderOutputPreview(result);
         syncCallsSection(result);
         syncTimingsSection(result);
+        if (String(result?.state) === 'failed') {
+          setStatus(lifecycleErrorMessage(result), 'error');
+        }
       }
     } catch (err) {
       hidePending();
@@ -627,7 +647,10 @@ export function createPdfTranslationView() {
         renderOutputPreview(result);
         syncCallsSection(result);
         syncTimingsSection(result);
-        if (isRerendering) {
+        if (String(result?.state) === 'failed') {
+          isRerendering = false;
+          setStatus(lifecycleErrorMessage(result), 'error');
+        } else if (isRerendering) {
           isRerendering = false;
           setStatus(String(result?.state) === 'completed'
             ? `Re-rendered (${String(renderSizeModeSelect.value)}, ${String(eraseFillModeSelect.value)}, ${String(widthFitModeSelect.value)}).`
@@ -693,6 +716,20 @@ export function createPdfTranslationView() {
     statQueueEl.textContent = result?.queue_position == null ? '-' : String(result.queue_position);
     statPagesEl.textContent = formatPages(result);
     rawEl.value = JSON.stringify(result || {}, null, 2);
+  }
+
+  function lifecycleErrorMessage(result) {
+    const error = result?.error || {};
+    const code = String(error.code || '').trim();
+    const message = String(error.message || code || 'request failed').trim();
+    const details = error.details || {};
+    const earlyReason = String(details.vector_declined || '').trim();
+    const engineReasons = Array.isArray(details.pdf_engine_declined)
+      ? details.pdf_engine_declined.map(String).filter(Boolean)
+      : [];
+    const reason = earlyReason || engineReasons.join(', ');
+    const labelled = code && code !== message ? `${message} [${code}]` : message;
+    return reason ? `${labelled} — ${reason}` : labelled;
   }
 
   // Per-page progress if the pipeline reports it: a done/total pair carried on the lifecycle
@@ -1377,7 +1414,7 @@ export function createPdfTranslationView() {
   // A render flag changing on a completed document re-renders it; with nothing loaded the new
   // value simply rides along on the next translation.
   [renderSizeModeSelect, eraseFillModeSelect, sizeMetricModeSelect, sizeCohortModeSelect,
-    widthFitModeSelect, outputModeSelect, structureModeSelect, pageLayoutModeSelect,
+    widthFitModeSelect, outputModeSelect, vectorFallbackSelect, structureModeSelect, pageLayoutModeSelect,
    pageScaleSelect, doclayoutOverlaySelect].forEach(
     (select) => select.addEventListener('change', rerenderRequest));
 
