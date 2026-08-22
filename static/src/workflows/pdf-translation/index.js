@@ -99,9 +99,16 @@ export function createPdfTranslationView() {
               <div class="translation-requests-details-body translation-requests-render-grid">
                 <label class="translation-prompts-field">
                   <span>Output</span>
-                  <select id="pdfOutputMode" title="How the translated PDF is written. raster replaces every page with a bitmap at the analysis dpi — figures, table rules and text all become pixels. vector keeps each source page as it is, removes only the glyphs it replaces, and writes the translation as real text: selectable, searchable and sharp at any zoom, with figures and rules still vector. A scanned or hybrid page has no glyphs to remove, so it keeps its own image untouched and gains small patches over the text areas instead; a hybrid page also loses the invisible OCR layer wherever a translation is placed. Switching route needs no new translation, so this re-renders the shown document from its cached translations like the other options here.">
+                  <select id="pdfOutputMode" title="How the translated PDF is written. raster replaces every page with a bitmap at the analysis dpi — figures, table rules and text all become pixels. vector keeps each source page as it is, removes only the glyphs it replaces, and writes the translation as real text: selectable, searchable and sharp at any zoom, with figures and rules still vector. Vector output currently accepts born-digital pages only. For scanned or hybrid pages, Vector fallback either rejects the request or sends the complete document through the raster route. Switching route needs no new translation after a completed run, so this re-renders the shown document from its cached translations like the other options here.">
                     <option value="raster">raster — bitmap pages</option>
                     <option value="vector" selected>vector — text in the source pages</option>
+                  </select>
+                </label>
+                <label class="translation-prompts-field">
+                  <span>Vector fallback</span>
+                  <select id="pdfVectorFallback" title="What to do when vector output cannot safely handle the complete document. reject reports the page and capability reasons without producing a PDF. raster explicitly permits the whole document to use bitmap pages instead. This setting does nothing when Output is already raster.">
+                    <option value="reject" selected>reject — report unsupported</option>
+                    <option value="raster">raster — use bitmap pages</option>
                   </select>
                 </label>
                 <label class="translation-prompts-field">
@@ -360,6 +367,7 @@ export function createPdfTranslationView() {
   const sizeCohortModeSelect = container.querySelector('#pdfSizeCohortMode');
   const widthFitModeSelect = container.querySelector('#pdfWidthFitMode');
   const outputModeSelect = container.querySelector('#pdfOutputMode');
+  const vectorFallbackSelect = container.querySelector('#pdfVectorFallback');
   const structureModeSelect = container.querySelector('#pdfStructureMode');
   const pageLayoutModeSelect = container.querySelector('#pdfPageLayoutMode');
   const doclayoutOverlaySelect = container.querySelector('#pdfDoclayoutOverlay');
@@ -433,6 +441,7 @@ export function createPdfTranslationView() {
     sizeCohortModeSelect.disabled = isBusy;
     widthFitModeSelect.disabled = isBusy;
     outputModeSelect.disabled = isBusy;
+    vectorFallbackSelect.disabled = isBusy;
     structureModeSelect.disabled = isBusy;
     pageLayoutModeSelect.disabled = isBusy;
     // Always settable, even while the layout mode is still `fit` — the fit path ignores the
@@ -454,6 +463,7 @@ export function createPdfTranslationView() {
       size_cohort_mode: String(sizeCohortModeSelect.value || 'vlm'),
       width_fit_mode: String(widthFitModeSelect.value || 'footprint'),
       pdf_output_mode: String(outputModeSelect.value || 'vector'),
+      pdf_vector_fallback: String(vectorFallbackSelect.value || 'reject'),
       pdf_structure_mode: String(structureModeSelect.value || 'source_only'),
       page_layout_mode: String(pageLayoutModeSelect.value || 'fit'),
       page_scale: Number(pageScaleSelect.value || 1),
@@ -470,11 +480,14 @@ export function createPdfTranslationView() {
     const mode = String(doc.pdf_output_mode || '');
     if (!mode) return '';
     const declined = String(doc.vector_declined || '');
+    const engineDeclined = Array.isArray(doc.pdf_engine_declined)
+      ? doc.pdf_engine_declined.map(String).filter(Boolean)
+      : [];
     const pages = Array.isArray(doc.pages) ? doc.pages : [];
     const reports = pages.map((p) => p.vector).filter(Boolean);
     let detail = mode;
-    if (declined) {
-      detail = `raster — vector declined: ${declined}`;
+    if (mode === 'raster' && (declined || engineDeclined.length)) {
+      detail = `raster — vector declined: ${declined || engineDeclined.join(', ')}`;
     } else if (mode === 'vector' && reports.length) {
       const drawn = reports.reduce((n, v) => n + (Number(v.groups_drawn) || 0), 0);
       const fell = reports.reduce((n, v) => n + (Number(v.groups_fallback) || 0), 0);
@@ -543,7 +556,12 @@ export function createPdfTranslationView() {
   // page of the shown result from its cached per-page translations with the new flag — no new
   // translation, so the A/B compares exactly the render.
   async function rerenderRequest() {
-    if (!canReenter()) return;
+    if (!canReenter()) {
+      if (!isBusy && currentState() === 'failed') {
+        setStatus('Choose the PDF again to apply the changed render options.', 'error');
+      }
+      return;
+    }
     const sourceRequestId = currentRequestId;
     stopPolling();
     // Keep the previous render visible until the new one replaces it: a re-render reuses the
@@ -561,6 +579,9 @@ export function createPdfTranslationView() {
         renderOutputPreview(result);
         syncCallsSection(result);
         syncTimingsSection(result);
+        if (String(result?.state) === 'failed') {
+          setStatus(lifecycleErrorMessage(result), 'error');
+        }
         isRerendering = false;
       }
     } catch (err) {
@@ -595,6 +616,9 @@ export function createPdfTranslationView() {
         renderOutputPreview(result);
         syncCallsSection(result);
         syncTimingsSection(result);
+        if (String(result?.state) === 'failed') {
+          setStatus(lifecycleErrorMessage(result), 'error');
+        }
       }
     } catch (err) {
       hidePending();
@@ -627,7 +651,10 @@ export function createPdfTranslationView() {
         renderOutputPreview(result);
         syncCallsSection(result);
         syncTimingsSection(result);
-        if (isRerendering) {
+        if (String(result?.state) === 'failed') {
+          isRerendering = false;
+          setStatus(lifecycleErrorMessage(result), 'error');
+        } else if (isRerendering) {
           isRerendering = false;
           setStatus(String(result?.state) === 'completed'
             ? `Re-rendered (${String(renderSizeModeSelect.value)}, ${String(eraseFillModeSelect.value)}, ${String(widthFitModeSelect.value)}).`
@@ -693,6 +720,20 @@ export function createPdfTranslationView() {
     statQueueEl.textContent = result?.queue_position == null ? '-' : String(result.queue_position);
     statPagesEl.textContent = formatPages(result);
     rawEl.value = JSON.stringify(result || {}, null, 2);
+  }
+
+  function lifecycleErrorMessage(result) {
+    const error = result?.error || {};
+    const code = String(error.code || '').trim();
+    const message = String(error.message || code || 'request failed').trim();
+    const details = error.details || {};
+    const earlyReason = String(details.vector_declined || '').trim();
+    const engineReasons = Array.isArray(details.pdf_engine_declined)
+      ? details.pdf_engine_declined.map(String).filter(Boolean)
+      : [];
+    const reason = earlyReason || engineReasons.join(', ');
+    const labelled = code && code !== message ? `${message} [${code}]` : message;
+    return reason ? `${labelled} — ${reason}` : labelled;
   }
 
   // Per-page progress if the pipeline reports it: a done/total pair carried on the lifecycle
@@ -1377,7 +1418,7 @@ export function createPdfTranslationView() {
   // A render flag changing on a completed document re-renders it; with nothing loaded the new
   // value simply rides along on the next translation.
   [renderSizeModeSelect, eraseFillModeSelect, sizeMetricModeSelect, sizeCohortModeSelect,
-    widthFitModeSelect, outputModeSelect, structureModeSelect, pageLayoutModeSelect,
+    widthFitModeSelect, outputModeSelect, vectorFallbackSelect, structureModeSelect, pageLayoutModeSelect,
    pageScaleSelect, doclayoutOverlaySelect].forEach(
     (select) => select.addEventListener('change', rerenderRequest));
 
