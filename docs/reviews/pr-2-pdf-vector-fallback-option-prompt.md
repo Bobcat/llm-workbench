@@ -73,8 +73,9 @@ Op deze host is geen Node-runtime aanwezig, dus er is geen afzonderlijke
 JavaScript-parser of frontendtestsuite gedraaid. Een tijdelijke lokale server
 en headless Chromium laadden wel de applicatie en de gewijzigde ES-module zonder
 syntax- of modulefout. De Python-suite van de workbench gaf **110 passed, 5
-failed**; alle vijf failures zijn bestaande live replaytests die stranden op de
-ontbrekende serviceprompt `translate_realtime_first`, buiten deze diff.
+failed**. Dezelfde vijf tests falen op `main`, en deze PR wijzigt geen
+Pythonbestand. De failures vallen daarom buiten deze diff; hun oorzaak is hier
+niet vastgesteld.
 
 ## Gewenste reviewuitkomst
 

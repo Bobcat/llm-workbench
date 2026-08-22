@@ -99,7 +99,7 @@ export function createPdfTranslationView() {
               <div class="translation-requests-details-body translation-requests-render-grid">
                 <label class="translation-prompts-field">
                   <span>Output</span>
-                  <select id="pdfOutputMode" title="How the translated PDF is written. raster replaces every page with a bitmap at the analysis dpi — figures, table rules and text all become pixels. vector keeps each source page as it is, removes only the glyphs it replaces, and writes the translation as real text: selectable, searchable and sharp at any zoom, with figures and rules still vector. A scanned or hybrid page has no glyphs to remove, so it keeps its own image untouched and gains small patches over the text areas instead; a hybrid page also loses the invisible OCR layer wherever a translation is placed. Switching route needs no new translation, so this re-renders the shown document from its cached translations like the other options here.">
+                  <select id="pdfOutputMode" title="How the translated PDF is written. raster replaces every page with a bitmap at the analysis dpi — figures, table rules and text all become pixels. vector keeps each source page as it is, removes only the glyphs it replaces, and writes the translation as real text: selectable, searchable and sharp at any zoom, with figures and rules still vector. Vector output currently accepts born-digital pages only. For scanned or hybrid pages, Vector fallback either rejects the request or sends the complete document through the raster route. Switching route needs no new translation after a completed run, so this re-renders the shown document from its cached translations like the other options here.">
                     <option value="raster">raster — bitmap pages</option>
                     <option value="vector" selected>vector — text in the source pages</option>
                   </select>
@@ -479,7 +479,6 @@ export function createPdfTranslationView() {
     const doc = result?.response?.document || {};
     const mode = String(doc.pdf_output_mode || '');
     if (!mode) return '';
-    const requested = String(doc.pdf_output_mode_requested || mode);
     const declined = String(doc.vector_declined || '');
     const engineDeclined = Array.isArray(doc.pdf_engine_declined)
       ? doc.pdf_engine_declined.map(String).filter(Boolean)
@@ -487,7 +486,7 @@ export function createPdfTranslationView() {
     const pages = Array.isArray(doc.pages) ? doc.pages : [];
     const reports = pages.map((p) => p.vector).filter(Boolean);
     let detail = mode;
-    if (mode === 'raster' && requested === 'vector' && (declined || engineDeclined.length)) {
+    if (mode === 'raster' && (declined || engineDeclined.length)) {
       detail = `raster — vector declined: ${declined || engineDeclined.join(', ')}`;
     } else if (mode === 'vector' && reports.length) {
       const drawn = reports.reduce((n, v) => n + (Number(v.groups_drawn) || 0), 0);
@@ -557,7 +556,12 @@ export function createPdfTranslationView() {
   // page of the shown result from its cached per-page translations with the new flag — no new
   // translation, so the A/B compares exactly the render.
   async function rerenderRequest() {
-    if (!canReenter()) return;
+    if (!canReenter()) {
+      if (!isBusy && currentState() === 'failed') {
+        setStatus('Choose the PDF again to apply the changed render options.', 'error');
+      }
+      return;
+    }
     const sourceRequestId = currentRequestId;
     stopPolling();
     // Keep the previous render visible until the new one replaces it: a re-render reuses the
