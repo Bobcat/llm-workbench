@@ -1,9 +1,10 @@
 # Code-review llm-workbench PR #2 — PDF-vectorfallback als renderoptie
 
 - Base: `main` @ `69bcbd7`
-- Head: `feature/pdf-vector-fallback-option` @ `1d34ae1`, één commit
-  `Expose PDF vector fallback option`; 2 bestanden, 126 inserties / 4 deleties, waarvan
-  45 regels in `static/src/workflows/pdf-translation/index.js`
+- Head: `feature/pdf-vector-fallback-option` @ `07b953a`
+- Eerste ronde: `1d34ae1` (`Expose PDF vector fallback option`; 45 regels in
+  `static/src/workflows/pdf-translation/index.js`) — Tweede ronde: `07b953a`
+  (`Close PDF fallback option review findings`; 12 regels in hetzelfde bestand)
 - Uitgevoerd: de volledige diff en de omliggende code gelezen; `README.md` en `docs/README.md`
   nagekeken op vermeldingen van de renderopties; **de gewijzigde module echt geladen en
   geïnstantieerd in headless Chromium** en de nieuwe `<select>` uit de opgebouwde DOM gelezen;
@@ -18,7 +19,10 @@
   (`git diff --stat main...HEAD -- '*.py'` is leeg), dus de failures zijn aantoonbaar bestaand en
   staan los van deze PR
 
-**Verdict: approve with nits.** De optie is netjes ingepast: `reject` is zichtbaar én technisch
+**Status: beide bevindingen en de nit zijn verwerkt en nageteld. Verdict herzien naar
+approve — zie *Tweede ronde* onderaan.**
+
+**Verdict eerste ronde: approve with nits.** De optie is netjes ingepast: `reject` is zichtbaar én technisch
 de default, submit en rerender lezen dezelfde bron, de select wordt met de andere renderopties
 uitgeschakeld, en een wijziging op een voltooid document gaat door de bestaande cached
 rerenderweg zonder nieuwe workflow. De nieuwe statusregel toont bij beide weigerpoorten zowel de
@@ -26,9 +30,9 @@ foutcode als de reden. Eén bevinding zou ik voor de merge willen zien: de outpu
 de weigerreden zodra de service het veld `pdf_output_mode_requested` niet stuurt — en dat is
 vandaag de situatie, want dat veld bestaat alleen op een nog niet gemergede servicebranch.
 
-## Bevindingen
+## Bevindingen eerste ronde
 
-### Medium — de Output-regel laat de weigerreden vallen tegen een service zonder `pdf_output_mode_requested`
+### ~~Medium~~ opgelost in `07b953a` — de Output-regel laat de weigerreden vallen tegen een service zonder `pdf_output_mode_requested`
 
 `outputRouteRow` (`static/src/workflows/pdf-translation/index.js:479-492`) is van
 
@@ -71,7 +75,7 @@ uitsluitend als `mode === "vector"`), en `pdf_engine_declined` bestaat alleen na
 vectorpoging. De conditie `mode === 'raster' && (declined || engineDeclined.length)` dekt beide
 backendversies.
 
-### Laag — na een weigering doet het omzetten naar `raster` niets, en zegt ook niets
+### ~~Laag~~ opgelost in `07b953a` — na een weigering doet het omzetten naar `raster` niets, en zegt ook niets
 
 Dit is precies de vervolgstap die de nieuwe foutmelding uitlokt: je leest "vector PDF output is
 unsupported for this document", je zet Vector fallback op `raster`, en er gebeurt niets.
@@ -87,7 +91,7 @@ bestaan is een servicevraag. Het kleinste dat het gat dicht is een statusregel i
 `!canReenter()`-tak wanneer de state `failed` is, in de trant van "submit the document again to
 apply the new render options".
 
-### Nit — dat de optie niets doet bij een directe rasteraanvraag staat alleen in de tooltip
+### ~~Nit~~ deels opgelost in `07b953a` — dat de optie niets doet bij een directe rasteraanvraag staat alleen in de tooltip
 
 De `title` op de select zegt het expliciet: "This setting does nothing when Output is already
 raster." Dat is de juiste tekst, maar hij is alleen zichtbaar bij hoveren, en er is geen
@@ -96,7 +100,7 @@ onveranderd wanneer Output op `raster` staat. Dat is consistent met de buur-opti
 tree, die op dezelfde manier "Vector route only" in haar tooltip zet, dus ik zou er geen
 patroonbreuk voor maken. Wel het noemen waard omdat de reviewprompt er expliciet naar vraagt.
 
-## Wat aantoonbaar klopt
+## Wat aantoonbaar klopt (eerste ronde)
 
 **`reject` is zichtbaar én technisch de default — gemeten in een echte DOM.** Ik heb de module
 in Chromium geïmporteerd en `createPdfTranslationView()` aangeroepen:
@@ -173,7 +177,7 @@ verder alleen de rapportagefuncties. Geen nieuwe route, geen nieuw scherm, geen 
 **Documentatie loopt niet achter.** `README.md` en `docs/README.md` noemen de individuele
 renderopties niet, dus er is niets dat door deze toevoeging onjuist wordt.
 
-## Open vragen en aannames
+## Open vragen en aannames (eerste ronde)
 
 - De reviewprompt schrijft de vijf Python-failures toe aan een ontbrekende serviceprompt
   `translate_realtime_first`. Ik heb dat niet kunnen bevestigen: de fout die ik zie is
@@ -188,7 +192,7 @@ renderopties niet, dus er is niets dat door deze toevoeging onjuist wordt.
   nodig. Ik heb in plaats daarvan de twee beslisfuncties met de echte payloadvormen in een
   browser uitgevoerd en de DOM-opbouw gemeten.
 
-## Resterende risico's
+## Resterende risico's (eerste ronde)
 
 - **Mergevolgorde.** Deze PR leest twee velden die de service alleen op een openstaande branch
   stuurt: `pdf_output_mode_requested` en `pdf_engine_declined`. Het tweede degradeert netjes
@@ -197,3 +201,63 @@ renderopties niet, dus er is niets dat door deze toevoeging onjuist wordt.
 - **Er is geen frontendtest.** De hele controle van dit paneel hangt op handmatige stappen; er
   is in deze repo geen JS-testsuite en op deze host geen Node om er een te draaien. Wat ik in
   Chromium heb uitgevoerd is reproduceerbaar maar staat niet in de repo.
+
+## Tweede ronde — `07b953a`
+
+- Uitgevoerd: de fixdiff gelezen; de gecorrigeerde outputregel-logica opnieuw in headless
+  Chromium uitgevoerd op dezelfde vijf payloadvormen; de module opnieuw geladen en de view
+  opgebouwd; de tooltip van de Output-select uit de opgebouwde DOM gelezen
+- De Python-suite is niet opnieuw gedraaid: de diff raakt opnieuw geen `.py`-bestand
+
+**Verdict tweede ronde: approve.**
+
+### De outputregel geeft de reden terug, ook aan een oudere service
+
+De voorwaarde `requested === 'vector'` is weg; wat overblijft is
+`mode === 'raster' && (declined || engineDeclined.length)`. Opnieuw uitgevoerd in Chromium op
+dezelfde vijf vormen als in de eerste ronde:
+
+| responsevorm | eerste ronde | nu |
+|--------------|--------------|-----|
+| nieuwe backend, late decline | reden | reden |
+| nieuwe backend, vroege decline | reden | reden |
+| **alleen `vector_declined`, geen `requested`** | **`raster`** | **reden** |
+| directe rasteraanvraag | `raster` | `raster` |
+| vectorroute gelukt | vectorrapport | vectorrapport |
+
+De derde rij is de bevinding: die toont nu weer
+`raster — vector declined: document has pages this route cannot take (mystery)`. De twee andere
+declinevormen en de twee niet-decline-vormen zijn ongewijzigd, dus de fix is precies zo smal als
+hij moest zijn. Daarmee is de mergevolgorde ook geen risico meer: het paneel werkt tegen de
+huidige service én tegen de versie met `pdf_output_mode_requested`.
+
+### Een weigering geeft nu wél een vervolgstap
+
+`rerenderRequest` keert niet langer stil terug: bij `!isBusy && currentState() === 'failed'`
+zet hij "Choose the PDF again to apply the changed render options." als foutstatus. Dat is
+precies de ontbrekende schakel — je leest de weigering, je zet Vector fallback op `raster`, en
+je krijgt te horen wat je moet doen in plaats van niets. De guard blijft verder ongewijzigd, dus
+er komt geen rerender op een niet-voltooid document bij.
+
+### De Output-tooltip beschrijft de route die er nog is
+
+Niet gevraagd, wel gedaan en de moeite waard: de tooltip van `#pdfOutputMode` beschreef nog de
+oude route waarin een scanned pagina "keeps its own image and gains small patches over the text
+areas" — precies wat de servicewijziging weghaalt. Uit de opgebouwde DOM gelezen:
+
+```
+Output-tooltip noemt scanned/hybrid-patchroute nog: false
+Output-tooltip verwijst naar Vector fallback:       true
+```
+
+De tekst zegt nu "Vector output currently accepts born-digital pages only. For scanned or hybrid
+pages, Vector fallback either rejects the request or sends the complete document through the
+raster route." Dat maakt mijn derde punt grotendeels overbodig: de koppeling tussen de twee
+selects staat nu in de Output-tooltip in plaats van alleen in die van de fallback. Zichtbaar
+zonder hoveren is het nog steeds niet, maar dat is het patroon van het hele paneel.
+
+### Niets anders bewoog
+
+De module laadt nog steeds en de view bouwt op; `#pdfVectorFallback` heeft nog steeds
+`value="reject"` met `reject` als `selected`-optie. De diff blijft 12 regels in één bestand,
+zonder route, scherm of editorstructuur.
