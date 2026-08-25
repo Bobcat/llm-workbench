@@ -126,8 +126,9 @@ export function createPdfTranslationView() {
                 </label>
                 <label class="translation-prompts-field">
                   <span>Page layout</span>
-                  <select id="pdfPageLayoutMode" title="How a DOCUMENT page is laid out. fit puts each translated block back into the box its source occupied and negotiates the width per block with horizontal condensation — the right answer for a picture, where the box IS the design, and what every output so far has used. typeset re-sets the page from its layout instead: one type scale for the page, the source's own column, leading and indents, and no condensation anywhere. A picture page never takes it whatever this says — the gate decides per page, so a paper's appendix of figures stays on fit while its body pages are typeset. Under construction: a formula-dense two-column page still comes out with its set text and its retained source overlapping.">
-                    <option value="fit" selected>fit — each block back in its own box</option>
+                  <select id="pdfPageLayoutMode" title="How a DOCUMENT page is laid out. auto chooses typeset for each born-digital page and fit for each scanned or hybrid page. fit puts every translated block back into its source box. typeset asks the compositor to re-set every page from its layout. The compositor may still use fit when its existing page gate declines typesetting.">
+                    <option value="auto" selected>auto — typeset digital, fit scanned/hybrid</option>
+                    <option value="fit">fit — each block back in its own box</option>
                     <option value="typeset">typeset — re-set the page from its layout</option>
                   </select>
                 </label>
@@ -487,7 +488,7 @@ export function createPdfTranslationView() {
       pdf_output_mode: String(outputModeSelect.value || 'vector'),
       pdf_vector_fallback: String(vectorFallbackSelect.value || 'reject'),
       pdf_structure_mode: String(structureModeSelect.value || 'source_only'),
-      page_layout_mode: String(pageLayoutModeSelect.value || 'fit'),
+      page_layout_mode: String(pageLayoutModeSelect.value || 'auto'),
       page_scale: Number(pageScaleSelect.value || 1),
       doclayout_overlay: String(doclayoutOverlaySelect.value || 'off') === 'on',
     };
@@ -545,6 +546,7 @@ export function createPdfTranslationView() {
     setSelectValue(outputModeSelect, options?.pdf_output_mode || 'vector');
     setSelectValue(vectorFallbackSelect, options?.pdf_vector_fallback || 'reject');
     setSelectValue(structureModeSelect, options?.pdf_structure_mode || 'source_only');
+    // Runs from before `auto` existed omitted this field and therefore used the old fit default.
     setSelectValue(pageLayoutModeSelect, options?.page_layout_mode || 'fit');
     const pageScale = Number(options?.page_scale ?? 1);
     setSelectValue(
