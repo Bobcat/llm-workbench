@@ -29,6 +29,11 @@ from app.translation_services.proxy import (
 router = APIRouter(prefix="/pdf-translation", tags=["pdf-translation"])
 
 
+@router.get("/requests")
+def recent_requests() -> dict:
+    return _request_json(method="GET", path="/v1/requests", timeout=15.0)
+
+
 @router.post("/requests")
 async def submit_request(
     request_json: str = Form(...),
