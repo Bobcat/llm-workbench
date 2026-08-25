@@ -42,9 +42,9 @@ export function createPdfTranslationView() {
               </div>
               <div class="translation-requests-bar-right translation-requests-loaded-only">
                 <!-- Which finished document the right-hand frame shows. Only ever holds
-                     artifacts this run produced, so the doclayout entry is absent unless
-                     the run was asked for it. Sits with the output-side controls because it
-                     is about what the right frame shows, not about what gets translated. -->
+                     artifacts this run produced, so layout comparisons are absent unless
+                     requested. Sits with the output-side controls because it changes what
+                     the right frame shows, not what gets translated. -->
                 <label class="translation-requests-barfield">
                   <span>Artifact</span>
                   <select id="pdfArtifact"></select>
@@ -143,9 +143,9 @@ export function createPdfTranslationView() {
                 </label>
                 <label class="translation-prompts-field">
                   <span>Doclayout overlay</span>
-                  <select id="pdfDoclayoutOverlay" title="Also produce a second PDF showing what the layout detector (PP-DocLayout_plus-L) returned for each page: one box per region with its label and confidence, drawn on the source page. It is what the pipeline reads the page's structure from, so it is the place to look when a column, a table or a figure came out wrong. Off by default because it renders and encodes every page a second time and assembles a second document; its cost is reported separately and changes none of the other timings. Pick it in the Artifact selector above once the run finishes.">
+                  <select id="pdfDoclayoutOverlay" title="Also produce three PDFs showing what PP-DocLayout_plus-L, V2 and V3 returned for each page: one box per raw region with its label and confidence, drawn on the source page. Only plus-L feeds the translation pipeline; V2 and V3 are comparison artifacts. Off by default because the two comparison models and three overlay documents add work. Pick them in the Artifact selector above once the run finishes.">
                     <option value="off" selected>off</option>
-                    <option value="on">on — also return the detector's regions</option>
+                    <option value="on">on — compare plus-L, V2 and V3</option>
                   </select>
                 </label>
                 <label class="translation-prompts-field">
@@ -1533,6 +1533,8 @@ export function createPdfTranslationView() {
   const ARTIFACT_LABELS = {
     rendered: 'Translated PDF',
     doclayout: 'PP-DocLayout_plus-L',
+    'doclayout-v2': 'PP-DocLayoutV2',
+    'doclayout-v3': 'PP-DocLayoutV3',
   };
 
   function pdfArtifactNames(result) {
@@ -1541,7 +1543,11 @@ export function createPdfTranslationView() {
       const artifact = artifacts[name] || {};
       return name !== 'input' && String(artifact.mime_type || '').toLowerCase().includes('pdf');
     });
-    const rank = (name) => (name === 'rendered' ? 0 : name === 'doclayout' ? 1 : 2);
+    const artifactOrder = ['rendered', 'doclayout', 'doclayout-v2', 'doclayout-v3'];
+    const rank = (name) => {
+      const index = artifactOrder.indexOf(name);
+      return index < 0 ? artifactOrder.length : index;
+    };
     return names.sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
   }
 
