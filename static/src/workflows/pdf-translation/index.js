@@ -558,14 +558,20 @@ export function createPdfTranslationView() {
     if (!mode) return '';
     const pages = Array.isArray(doc.pages) ? doc.pages : [];
     const reports = pages.map((p) => p.vector).filter(Boolean);
+    // Only what the report actually counts: lines the exporter wrote as text, and
+    // local images it placed. groups_drawn counts any prepared group — including one
+    // that only moved a source object — and fully_native is set on every successful
+    // report, so neither says what a reader would take it to say.
     let detail = mode;
     if (reports.length) {
-      const drawn = reports.reduce((n, v) => n + (Number(v.groups_drawn) || 0), 0);
-      const native = reports.filter((v) => v.fully_native).length;
-      detail = `${mode} — ${drawn} groups as text, ${native}/${pages.length} pages fully native`;
+      const lines = reports.reduce((n, v) => n + (Number(v.lines_drawn) || 0), 0);
+      const patches = reports.reduce((n, v) => n + (Number(v.patches) || 0), 0);
+      const parts = [`${lines} lines as text`];
+      if (patches) parts.push(`${patches} local patches`);
+      detail = `${mode} — ${parts.join(', ')}`;
     }
     return row('Output', detail, 'trt-l1',
-      'How the document was delivered. vector hands you the exported PDF, whose pages keep their own content with the translation written as real text; raster hands you that same document rasterized one bitmap per page. A group the exporter cannot set as text keeps its source text, so it stays untranslated rather than being redrawn wrong.');
+      'How the document was delivered. vector hands you the exported PDF, whose pages keep their own content with the translation written as real text; raster hands you that same document rasterized one bitmap per page. The counts are what the exporter wrote: text lines it authored, and the local images it placed over erased areas on a scanned page.');
   }
 
   function canReenter() {
@@ -821,11 +827,19 @@ export function createPdfTranslationView() {
     const code = String(error.code || '').trim();
     const message = String(error.message || code || 'request failed').trim();
     const details = error.details || {};
+    // Every reason the service reports for refusing to export, in the order it
+    // decides them: the source itself, then the document census, then what the
+    // exporter found in the plan. Leaving one out shows the generic code alone.
+    const sourceReasons = Array.isArray(details.pdf_source_declined)
+      ? details.pdf_source_declined.map(String).filter(Boolean)
+      : [];
     const earlyReason = String(details.vector_declined || '').trim();
     const engineReasons = Array.isArray(details.pdf_engine_declined)
       ? details.pdf_engine_declined.map(String).filter(Boolean)
       : [];
-    const reason = earlyReason || engineReasons.join(', ');
+    const reason = sourceReasons.join(', ')
+      || earlyReason
+      || engineReasons.join(', ');
     const labelled = code && code !== message ? `${message} [${code}]` : message;
     return reason ? `${labelled} — ${reason}` : labelled;
   }
