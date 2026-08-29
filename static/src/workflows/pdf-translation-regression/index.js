@@ -156,6 +156,30 @@ export function createPdfTranslationRegressionView() {
     return `${REG_BASE}/fixtures/${encodeURIComponent(fx.name)}/${encodeURIComponent(fx.target_lang)}/${encodeURIComponent(fx.variant)}/artifact/${artifact}`;
   }
 
+  // What the fixture was frozen under. A replay only means something against the
+  // settings that produced the baseline, and the tree can show only the target
+  // language — so two fixtures that look like peers may have been captured through
+  // different planners or at different type scales, and nothing said so.
+  function settingsPanel(fx) {
+    const captured = fx.captured_with || {};
+    const keys = Object.keys(captured);
+    if (!keys.length) {
+      return '<div class="pdf-reg-settings"><span class="pdf-reg-none">'
+        + 'captured before the settings were recorded</span></div>';
+    }
+    // The ones that decide which code runs lead; the rest keep their own order.
+    const lead = ['page_layout_mode', 'page_scale', 'analysis_dpi', 'width_fit_mode',
+      'erase_fill_mode', 'pdf_structure_mode'];
+    const ordered = [
+      ...lead.filter((k) => k in captured),
+      ...keys.filter((k) => !lead.includes(k)),
+    ];
+    const cells = ordered.map((k) => `<div class="pdf-reg-setting">
+        <span>${escapeHtml(k)}</span><strong>${escapeHtml(String(captured[k]))}</strong>
+      </div>`).join('');
+    return `<div class="pdf-reg-settings">${cells}</div>`;
+  }
+
   function scorePanel(fx, result) {
     const accepted = fx.accepted || null;
     const replay = result?.score?.replay || null;
@@ -237,6 +261,7 @@ export function createPdfTranslationRegressionView() {
         <button type="button" id="pdfRegDelete" ${busy ? 'disabled' : ''}>Delete</button>
       </div>
       <div class="pdf-reg-links">${links}</div>
+      ${settingsPanel(fx)}
       ${scorePanel(fx, result)}
       ${frozenBlock}
       ${docDiffsBlock}

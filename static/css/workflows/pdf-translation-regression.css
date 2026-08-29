@@ -34,6 +34,16 @@
 .pdf-reg-verdict { margin-left: 12px; }
 .pdf-reg-links { font-size: 0.82rem; display: flex; gap: 8px; margin: 8px 0; }
 
+/* What the fixture was captured under. Wraps rather than scrolls: these are read at
+   a glance beside the verdict, not scanned one at a time. */
+.pdf-reg-settings {
+  display: flex; flex-wrap: wrap; gap: 4px 14px;
+  margin: 8px 0; max-width: 640px; font-size: 0.78rem;
+}
+.pdf-reg-setting { display: flex; gap: 5px; }
+.pdf-reg-setting span { opacity: 0.6; }
+.pdf-reg-setting strong { font-family: var(--font-mono); font-weight: 500; }
+
 /* Score panel: accepted vs replay + the exact delta. */
 .pdf-reg-score {
   border: 1px solid var(--border-subtle); border-radius: 8px;
