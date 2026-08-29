@@ -105,21 +105,14 @@ export function createPdfTranslationView() {
               <div class="translation-requests-details-body translation-requests-render-grid">
                 <label class="translation-prompts-field">
                   <span>Output</span>
-                  <select id="pdfOutputMode" title="How the translated PDF is written. raster replaces every page with a bitmap at the analysis dpi — figures, table rules and text all become pixels. vector keeps each source page as it is, removes only the glyphs it replaces, and writes the translation as real text: selectable, searchable and sharp at any zoom, with figures and rules still vector. Vector output currently accepts born-digital pages only. For scanned or hybrid pages, Vector fallback either rejects the request or sends the complete document through the raster route. Switching route needs no new translation after a completed run, so this re-renders the shown document from its cached translations like the other options here.">
+                  <select id="pdfOutputMode" title="How the translated document is delivered. The translation is always written into a copy of the source PDF: each page keeps its own content, only the replaced glyphs are removed, and the translation goes in as real text — selectable, searchable and sharp at any zoom, with figures and rules still vector. vector hands you that document. raster hands you the same document rasterized, one bitmap per page at the analysis dpi, which turns figures, rules and text into pixels. A document the exporter cannot take is refused with its reason either way. Switching delivery needs no new translation after a completed run, so this re-renders the shown document from its cached translations like the other options here.">
                     <option value="raster">raster — bitmap pages</option>
                     <option value="vector" selected>vector — text in the source pages</option>
                   </select>
                 </label>
                 <label class="translation-prompts-field">
-                  <span>Vector fallback</span>
-                  <select id="pdfVectorFallback" title="What to do when vector output cannot safely handle the complete document. reject reports the page and capability reasons without producing a PDF. raster explicitly permits the whole document to use bitmap pages instead. This setting does nothing when Output is already raster.">
-                    <option value="reject" selected>reject — report unsupported</option>
-                    <option value="raster">raster — use bitmap pages</option>
-                  </select>
-                </label>
-                <label class="translation-prompts-field">
                   <span>Structure tree</span>
-                  <select id="pdfStructureMode" title="Whether the output carries a structure tree — the tags a screen reader follows, and the only place the reading order is stated rather than guessed at. source-only writes one where the source already had one, which keeps the output as close to the original as the rest of this route does. always writes one on every document, including scans: there the tags are built from OCR and the model's grouping, so a wrong grouping produces a confidently wrong tree for exactly the reader who cannot see the page to check it — which is why it is asked for rather than assumed. Whatever tree the source had is replaced, never repaired: it would otherwise keep pointing at text we took out. Vector route only; the raster route has no text to tag.">
+                  <select id="pdfStructureMode" title="Whether the output carries a structure tree — the tags a screen reader follows, and the only place the reading order is stated rather than guessed at. source-only writes one where the source already had one, which keeps the output as close to the original as the rest of this route does. always writes one on every document, including scans: there the tags are built from OCR and the model's grouping, so a wrong grouping produces a confidently wrong tree for exactly the reader who cannot see the page to check it — which is why it is asked for rather than assumed. Whatever tree the source had is replaced, never repaired: it would otherwise keep pointing at text we took out. A rasterized delivery has no text left to carry the tree.">
                     <option value="source_only" selected>source-only — only where the source had one</option>
                     <option value="always">always — also where the source had none</option>
                   </select>
@@ -376,7 +369,6 @@ export function createPdfTranslationView() {
   const sizeCohortModeSelect = container.querySelector('#pdfSizeCohortMode');
   const widthFitModeSelect = container.querySelector('#pdfWidthFitMode');
   const outputModeSelect = container.querySelector('#pdfOutputMode');
-  const vectorFallbackSelect = container.querySelector('#pdfVectorFallback');
   const structureModeSelect = container.querySelector('#pdfStructureMode');
   const pageLayoutModeSelect = container.querySelector('#pdfPageLayoutMode');
   const doclayoutOverlaySelect = container.querySelector('#pdfDoclayoutOverlay');
@@ -463,7 +455,6 @@ export function createPdfTranslationView() {
     sizeCohortModeSelect.disabled = renderLocked;
     widthFitModeSelect.disabled = renderLocked;
     outputModeSelect.disabled = renderLocked;
-    vectorFallbackSelect.disabled = renderLocked;
     structureModeSelect.disabled = renderLocked;
     pageLayoutModeSelect.disabled = renderLocked;
     // Always settable, even while the layout mode is still `fit` — the fit path ignores the
@@ -486,7 +477,6 @@ export function createPdfTranslationView() {
       size_cohort_mode: String(sizeCohortModeSelect.value || 'vlm'),
       width_fit_mode: String(widthFitModeSelect.value || 'footprint'),
       pdf_output_mode: String(outputModeSelect.value || 'vector'),
-      pdf_vector_fallback: String(vectorFallbackSelect.value || 'reject'),
       pdf_structure_mode: String(structureModeSelect.value || 'source_only'),
       page_layout_mode: String(pageLayoutModeSelect.value || 'auto'),
       page_scale: Number(pageScaleSelect.value || 1),
@@ -544,7 +534,6 @@ export function createPdfTranslationView() {
     setSelectValue(sizeCohortModeSelect, options?.size_cohort_mode || 'vlm');
     setSelectValue(widthFitModeSelect, options?.width_fit_mode || 'footprint');
     setSelectValue(outputModeSelect, options?.pdf_output_mode || 'vector');
-    setSelectValue(vectorFallbackSelect, options?.pdf_vector_fallback || 'reject');
     setSelectValue(structureModeSelect, options?.pdf_structure_mode || 'source_only');
     // Runs from before `auto` existed omitted this field and therefore used the old fit default.
     setSelectValue(pageLayoutModeSelect, options?.page_layout_mode || 'fit');
@@ -560,31 +549,29 @@ export function createPdfTranslationView() {
     updateModelSelectColor();
   }
 
-  // Which output route actually ran, and — when the vector route was asked for but declined —
-  // why. Reading it back matters: the select picks a route, the service decides whether the
-  // document can take it, and a silent fall back to raster would look like the flag doing
-  // nothing. The per-page vector report says how much of each page became real text.
+  // How the document was delivered, and how much of each page the exporter actually
+  // set as text. There is one export; a refusal never silently becomes something
+  // else, it fails the request with its reason (see lifecycleErrorMessage).
   function outputRouteRow(result, row) {
     const doc = result?.response?.document || {};
     const mode = String(doc.pdf_output_mode || '');
     if (!mode) return '';
-    const declined = String(doc.vector_declined || '');
-    const engineDeclined = Array.isArray(doc.pdf_engine_declined)
-      ? doc.pdf_engine_declined.map(String).filter(Boolean)
-      : [];
     const pages = Array.isArray(doc.pages) ? doc.pages : [];
     const reports = pages.map((p) => p.vector).filter(Boolean);
+    // Only what the report actually counts: lines the exporter wrote as text, and
+    // local images it placed. groups_drawn counts any prepared group — including one
+    // that only moved a source object — and fully_native is set on every successful
+    // report, so neither says what a reader would take it to say.
     let detail = mode;
-    if (mode === 'raster' && (declined || engineDeclined.length)) {
-      detail = `raster — vector declined: ${declined || engineDeclined.join(', ')}`;
-    } else if (mode === 'vector' && reports.length) {
-      const drawn = reports.reduce((n, v) => n + (Number(v.groups_drawn) || 0), 0);
-      const fell = reports.reduce((n, v) => n + (Number(v.groups_fallback) || 0), 0);
-      const native = reports.filter((v) => v.fully_native).length;
-      detail = `vector — ${drawn}/${drawn + fell} groups as text, ${native}/${pages.length} pages fully native`;
+    if (reports.length) {
+      const lines = reports.reduce((n, v) => n + (Number(v.lines_drawn) || 0), 0);
+      const patches = reports.reduce((n, v) => n + (Number(v.patches) || 0), 0);
+      const parts = [`${lines} lines as text`];
+      if (patches) parts.push(`${patches} local patches`);
+      detail = `${mode} — ${parts.join(', ')}`;
     }
     return row('Output', detail, 'trt-l1',
-      'The route this run took. vector keeps the source pages and writes the translation as real text; raster replaces every page with a bitmap. A group that cannot be set as text keeps its source text, so it stays untranslated rather than being redrawn wrong.');
+      'How the document was delivered. vector hands you the exported PDF, whose pages keep their own content with the translation written as real text; raster hands you that same document rasterized one bitmap per page. The counts are what the exporter wrote: text lines it authored, and the local images it placed over erased areas on a scanned page.');
   }
 
   function canReenter() {
@@ -840,11 +827,19 @@ export function createPdfTranslationView() {
     const code = String(error.code || '').trim();
     const message = String(error.message || code || 'request failed').trim();
     const details = error.details || {};
+    // Every reason the service reports for refusing to export, in the order it
+    // decides them: the source itself, then the document census, then what the
+    // exporter found in the plan. Leaving one out shows the generic code alone.
+    const sourceReasons = Array.isArray(details.pdf_source_declined)
+      ? details.pdf_source_declined.map(String).filter(Boolean)
+      : [];
     const earlyReason = String(details.vector_declined || '').trim();
     const engineReasons = Array.isArray(details.pdf_engine_declined)
       ? details.pdf_engine_declined.map(String).filter(Boolean)
       : [];
-    const reason = earlyReason || engineReasons.join(', ');
+    const reason = sourceReasons.join(', ')
+      || earlyReason
+      || engineReasons.join(', ');
     const labelled = code && code !== message ? `${message} [${code}]` : message;
     return reason ? `${labelled} — ${reason}` : labelled;
   }
@@ -1714,7 +1709,7 @@ export function createPdfTranslationView() {
   // A render flag changing on a completed document re-renders it; with nothing loaded the new
   // value simply rides along on the next translation.
   [renderSizeModeSelect, eraseFillModeSelect, sizeMetricModeSelect, sizeCohortModeSelect,
-    widthFitModeSelect, outputModeSelect, vectorFallbackSelect, structureModeSelect, pageLayoutModeSelect,
+    widthFitModeSelect, outputModeSelect, structureModeSelect, pageLayoutModeSelect,
    pageScaleSelect, doclayoutOverlaySelect].forEach(
     (select) => select.addEventListener('change', rerenderRequest));
 
