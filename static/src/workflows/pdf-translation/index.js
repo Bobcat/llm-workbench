@@ -574,6 +574,21 @@ export function createPdfTranslationView() {
       'How the document was delivered. vector hands you the exported PDF, whose pages keep their own content with the translation written as real text; raster hands you that same document rasterized one bitmap per page. The counts are what the exporter wrote: text lines it authored, and the local images it placed over erased areas on a scanned page.');
   }
 
+  // What the source asked for and the delivered document does not carry. It is a
+  // warning, not a statistic: somebody is being handed a document whose seal or
+  // whose encryption is gone, and the raw response is not where they look.
+  function surrenderedProtectionsRow(result, row) {
+    const given = result?.response?.metadata?.source_protections_surrendered;
+    if (!Array.isArray(given) || !given.length) return '';
+    const said = {
+      PDF_SOURCE_DIGITAL_SIGNATURE: 'digital signature removed',
+      PDF_SOURCE_ENCRYPTION_REMOVED: 'encryption removed',
+    };
+    const detail = given.map((code) => said[code] || String(code)).join(', ');
+    return row('Source protections', detail, 'trt-warn',
+      'The source carried a protection this translation cannot. A signature seals the exact bytes the translation changes; an encryption belongs to the source file rather than to the document you were handed. Both are dropped rather than left broken, because a viewer would otherwise report the document as altered — and named here, since the delivered file no longer says so itself.');
+  }
+
   function canReenter() {
     return !isBusy
       && (!isInspectingHistory || historyOptionsAvailable)
@@ -1252,6 +1267,7 @@ export function createPdfTranslationView() {
         row('Pages', typeof m.page_count === 'number' ? String(m.page_count) : '—', 'trt-l1'),
         row('Page concurrency', typeof m.page_concurrency === 'number' ? String(m.page_concurrency) : '—', 'trt-l1'),
         outputRouteRow(result, row),
+        surrenderedProtectionsRow(result, row),
         note(`Pages run in parallel, so the rows below add up to more than the elapsed document total. Their percentages are shares of that sum and add up to 100%.${effective !== null
           ? ' Neither multiplier is a speed-up: the raw one grows with the queue, and <strong>working</strong> grows with per-page slowdown under contention — both rise as the GPU gets more congested. To know what page concurrency actually buys, compare the document total against a run at page concurrency 1.'
           : ''}`),
