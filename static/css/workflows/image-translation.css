@@ -450,7 +450,7 @@
 
 /* A protection the delivered document no longer carries. Marked because it is a
    warning about the file somebody is about to hand on, not a statistic. */
-.translation-requests-view .trt-warn > span:last-child {
+.translation-requests-view .trt-warn > strong {
   color: var(--text-warning, #b45309);
   font-weight: 600;
 }

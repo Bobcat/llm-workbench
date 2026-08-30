@@ -584,7 +584,9 @@ export function createPdfTranslationView() {
       PDF_SOURCE_DIGITAL_SIGNATURE: 'digital signature removed',
       PDF_SOURCE_ENCRYPTION_REMOVED: 'encryption removed',
     };
-    const detail = given.map((code) => said[code] || String(code)).join(', ');
+    const detail = escapeHtml(
+      given.map((code) => said[code] || String(code)).join(', '),
+    );
     return row('Source protections', detail, 'trt-warn',
       'The source carried a protection this translation cannot. A signature seals the exact bytes the translation changes; an encryption belongs to the source file rather than to the document you were handed. Both are dropped rather than left broken, because a viewer would otherwise report the document as altered — and named here, since the delivered file no longer says so itself.');
   }
