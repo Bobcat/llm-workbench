@@ -137,9 +137,16 @@ export function createPdfTranslationView() {
                 </label>
                 <label class="translation-prompts-field">
                   <span>Doclayout overlay</span>
-                  <select id="pdfDoclayoutOverlay" title="Also produce three PDFs showing what PP-DocLayout_plus-L, V2 and V3 returned for each page: one box per raw region with its label and confidence, drawn on the source page. Only plus-L feeds the translation pipeline; V2 and V3 are comparison artifacts. Off by default because the two comparison models and three overlay documents add work. Pick them in the Artifact selector above once the run finishes.">
+                  <select id="pdfDoclayoutOverlay" title="Also produce three PDFs showing what PP-DocLayoutV2, plus-L and V3 returned for each page: one box per raw region with its label and confidence, drawn on the source page. V2 feeds the translation pipeline; plus-L and V3 are comparison artifacts. Off by default because the two comparison models and three overlay documents add work. Pick them in the Artifact selector above once the run finishes.">
                     <option value="off" selected>off</option>
                     <option value="on">on — compare plus-L, V2 and V3</option>
+                  </select>
+                </label>
+                <label class="translation-prompts-field">
+                  <span>PaddleOCR V5 overlay</span>
+                  <select id="pdfPaddleocrV5Overlay" title="Also run pure PaddleOCR V5 over every rasterized source page and produce one PDF with each detected polygon, confidence and recognized text drawn on the page. This is independent of the production OCR route: it also covers born-digital pages and never includes V6 recovery. Off by default because it adds a V5 pass over the full document. Pick PaddleOCR V5 in the Artifact selector once the run finishes.">
+                    <option value="off" selected>off</option>
+                    <option value="on">on — inspect pure V5</option>
                   </select>
                 </label>
                 <label class="translation-prompts-field">
@@ -372,6 +379,7 @@ export function createPdfTranslationView() {
   const structureModeSelect = container.querySelector('#pdfStructureMode');
   const pageLayoutModeSelect = container.querySelector('#pdfPageLayoutMode');
   const doclayoutOverlaySelect = container.querySelector('#pdfDoclayoutOverlay');
+  const paddleocrV5OverlaySelect = container.querySelector('#pdfPaddleocrV5Overlay');
   const artifactSelect = container.querySelector('#pdfArtifact');
   const pageScaleSelect = container.querySelector('#pdfPageScale');
   const inputPreview = container.querySelector('#pdfInputPreview');
@@ -463,6 +471,7 @@ export function createPdfTranslationView() {
     // had already run at 1.00, and only the run after that could carry 0.90.
     pageScaleSelect.disabled = renderLocked;
     doclayoutOverlaySelect.disabled = renderLocked;
+    paddleocrV5OverlaySelect.disabled = renderLocked;
     artifactSelect.disabled = isBusy;
     historySelect.disabled = isBusy || Boolean(currentRequestId && !isTerminalState(currentState()));
   }
@@ -481,6 +490,7 @@ export function createPdfTranslationView() {
       page_layout_mode: String(pageLayoutModeSelect.value || 'auto'),
       page_scale: Number(pageScaleSelect.value || 1),
       doclayout_overlay: String(doclayoutOverlaySelect.value || 'off') === 'on',
+      paddleocr_v5_overlay: String(paddleocrV5OverlaySelect.value || 'off') === 'on',
     };
   }
 
@@ -545,6 +555,7 @@ export function createPdfTranslationView() {
       true,
     );
     setSelectValue(doclayoutOverlaySelect, options?.doclayout_overlay ? 'on' : 'off');
+    setSelectValue(paddleocrV5OverlaySelect, options?.paddleocr_v5_overlay ? 'on' : 'off');
     lastTargetLang = String(options?.target_lang_code || '');
     updateModelSelectColor();
   }
@@ -1266,6 +1277,10 @@ export function createPdfTranslationView() {
           ? row('Doclayout overlay (debug)', `${Math.round(m.doclayout_assemble_wall_ms)} ms`, 'trt-l1',
             'Drawing the detector\'s regions on every page and assembling them as a second PDF. Asked for by the Doclayout overlay option; it lengthens the request but is no part of the rows above, whose figures mean the same with or without it.')
           : '',
+        typeof m.paddleocr_v5_assemble_wall_ms === 'number'
+          ? row('PaddleOCR V5 PDF (debug)', `${Math.round(m.paddleocr_v5_assemble_wall_ms)} ms`, 'trt-l1',
+            'Assembling the labelled V5 page overlays into a PDF. The separate V5 inference appears in the timeline; this assembly time is not part of the translation-stage rows above.')
+          : '',
         row('Pages', typeof m.page_count === 'number' ? String(m.page_count) : '—', 'trt-l1'),
         row('Page concurrency', typeof m.page_concurrency === 'number' ? String(m.page_concurrency) : '—', 'trt-l1'),
         outputRouteRow(result, row),
@@ -1547,9 +1562,10 @@ export function createPdfTranslationView() {
   // translation first, because that is what the view is for.
   const ARTIFACT_LABELS = {
     rendered: 'Translated PDF',
-    doclayout: 'PP-DocLayout_plus-L',
-    'doclayout-v2': 'PP-DocLayoutV2',
+    doclayout: 'PP-DocLayoutV2',
+    'doclayout-plus-l': 'PP-DocLayout_plus-L',
     'doclayout-v3': 'PP-DocLayoutV3',
+    'paddleocr-v5': 'PaddleOCR V5',
   };
 
   function pdfArtifactNames(result) {
@@ -1558,7 +1574,7 @@ export function createPdfTranslationView() {
       const artifact = artifacts[name] || {};
       return name !== 'input' && String(artifact.mime_type || '').toLowerCase().includes('pdf');
     });
-    const artifactOrder = ['rendered', 'doclayout', 'doclayout-v2', 'doclayout-v3'];
+    const artifactOrder = ['rendered', 'paddleocr-v5', 'doclayout', 'doclayout-plus-l', 'doclayout-v3'];
     const rank = (name) => {
       const index = artifactOrder.indexOf(name);
       return index < 0 ? artifactOrder.length : index;
@@ -1728,7 +1744,7 @@ export function createPdfTranslationView() {
   // value simply rides along on the next translation.
   [renderSizeModeSelect, eraseFillModeSelect, sizeMetricModeSelect, sizeCohortModeSelect,
     widthFitModeSelect, outputModeSelect, structureModeSelect, pageLayoutModeSelect,
-   pageScaleSelect, doclayoutOverlaySelect].forEach(
+   pageScaleSelect, doclayoutOverlaySelect, paddleocrV5OverlaySelect].forEach(
     (select) => select.addEventListener('change', rerenderRequest));
 
   // Choosing another finished document only re-points the frame — nothing is re-run.
