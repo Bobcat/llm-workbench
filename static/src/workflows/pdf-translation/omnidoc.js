@@ -1,8 +1,20 @@
 import { api } from '../../api-client.js';
 import { escapeHtml, escapeAttr, formatApiError } from '../../shared/ui-helpers.js';
 
-const COLORS = { heading: '#ea580c', title: '#ea580c', paragraph: '#2563eb', table: '#9333ea',
-  table_cell: '#9333ea', figure: '#059669', footnote: '#c026d3', footer: '#64748b', decoration: '#94a3b8' };
+const COLORS = {
+  text: '#2563eb', content: '#2563eb', abstract: '#16a34a', aside: '#16a34a',
+  list: '#0284c7', reference: '#4f46e5', reference_content: '#4f46e5',
+  heading: '#ea580c', title: '#ea580c', table: '#9333ea',
+  figure: '#059669', image: '#059669', chart: '#059669',
+  formula: '#0d9488', display_formula: '#0d9488', inline_formula: '#0d9488', formula_number: '#0d9488',
+  caption: '#ca8a04', figure_caption: '#ca8a04', table_caption: '#ca8a04', footnote: '#c026d3', vision_footnote: '#c026d3',
+  header: '#64748b', footer: '#64748b', page_number: '#64748b', decoration: '#94a3b8',
+  header_image: '#64748b', footer_image: '#64748b',
+};
+const FURNITURE = new Set([
+  'header', 'footer', 'footnote', 'vision_footnote', 'page_number',
+  'header_image', 'footer_image', 'decoration',
+]);
 
 export function createOmnidocInspector(host) {
   let generation = 0;
@@ -11,116 +23,116 @@ export function createOmnidocInspector(host) {
   let selected = '';
   let pageIndex = 0;
   let controller = null;
-  let evidence = null;
+  let analysis = null;
   let showDecoration = false;
-  let showContainers = true;
+  let showFragments = false;
   let coverage = null;
-  let sourceFragments = new Map();
-  let childIds = new Map();
+
   const artifactUrl = (name) => `/api/pdf-translation/requests/${encodeURIComponent(requestId)}/artifacts/${encodeURIComponent(name)}`;
-  const logicalText = (element) => (element.content || []).map((run) => run.kind === 'text' ? run.text : '◻').join('');
+  const logicalText = (element) => (element?.content || []).map((run) => run.kind === 'text' ? run.text : '◻').join('');
+  const boxPoints = (polygon) => (polygon || []).map((point) => `${point.x},${point.y}`).join(' ');
+
+  function regionText(region, elements) {
+    return region.element_ids.map((id) => logicalText(elements.get(id))).filter(Boolean).join(' ');
+  }
 
   function render() {
     const doc = documentData;
     const page = doc.pages[pageIndex];
     const fragments = new Map(doc.fragments.map((fragment) => [fragment.id, fragment]));
     const elements = new Map(doc.elements.map((element) => [element.id, element]));
-    const parents = new Map(doc.relations.filter((r) => r.kind === 'contains').map((r) => [r.target_id, r.source_id]));
-    const ranks = new Map();
-    doc.reading_sequences.forEach((sequence) => sequence.element_ids.forEach((id, index) => ranks.set(id, `${sequence.id} · ${index + 1}`)));
-    const onPage = doc.elements.filter((element) => (sourceFragments.get(element.id) || []).some((id) => fragments.get(id)?.page_id === page.id));
-    const active = elements.get(selected);
-    const ancestors = [];
-    for (let id = parents.get(selected); id; id = parents.get(id)) ancestors.unshift(id);
-    const relations = active ? doc.relations.filter((r) => r.source_id === selected || r.target_id === selected || active.content.some((run) => run.id === r.source_id)) : [];
-    const relationLink = (id) => elements.has(id)
-      ? `<button type="button" data-element="${escapeAttr(id)}">${escapeHtml(elements.get(id).role)} · ${escapeHtml(id)}</button>`
-      : escapeHtml(id || '');
-    const containerOverlay = onPage.filter((element) => childIds.has(element.id)).map((element) => {
-      const points = (sourceFragments.get(element.id) || []).flatMap((id) => {
-        const fragment = fragments.get(id);
-        return fragment?.page_id === page.id ? fragment.polygon || [] : [];
-      });
-      if (!points.length) return '';
-      const left = Math.min(...points.map((p) => p.x));
-      const top = Math.min(...points.map((p) => p.y));
-      const right = Math.max(...points.map((p) => p.x));
-      const bottom = Math.max(...points.map((p) => p.y));
-      return `<rect x="${left}" y="${top}" width="${right-left}" height="${bottom-top}" class="omnidoc-container ${element.id === selected ? 'selected' : ''}" style="--region-color:${COLORS[element.role] || '#0891b2'}" data-element="${escapeAttr(element.id)}" tabindex="0" role="button" aria-label="${escapeAttr(element.role)} container"><title>${escapeHtml(element.role)} · ${childIds.get(element.id).length} children</title></rect>`;
+    const regions = (doc.regions || []).filter((region) => region.page_id === page.id)
+      .sort((a, b) => (a.order ?? Number.MAX_SAFE_INTEGER) - (b.order ?? Number.MAX_SAFE_INTEGER) || a.id.localeCompare(b.id));
+    const active = regions.find((region) => region.id === selected) || null;
+    const origin = active ? analysis?.region_origins?.[active.id] : null;
+    const activeElements = active ? active.element_ids.map((id) => elements.get(id)).filter(Boolean) : [];
+    const activeFragments = active ? active.fragment_ids.map((id) => fragments.get(id)).filter(Boolean) : [];
+    const regionOverlay = regions.map((region) => {
+      const text = regionText(region, elements).slice(0, 160);
+      const label = `${region.kind}${region.order == null ? '' : ` · order ${region.order + 1}`}${text ? `: ${text}` : ''}`;
+      const classes = ['omnidoc-region', region.id === selected ? 'selected' : '', FURNITURE.has(region.kind) ? 'decoration' : ''].filter(Boolean).join(' ');
+      return `<polygon points="${boxPoints(region.polygon)}" style="--region-color:${COLORS[region.kind] || '#0891b2'}" class="${classes}" data-region="${escapeAttr(region.id)}" tabindex="0" role="button" aria-label="${escapeAttr(label)}"><title>${escapeHtml(label)}</title></polygon>`;
     }).join('');
-    const overlay = onPage.flatMap((element) => element.fragment_ids.map((id) => {
-      const fragment = fragments.get(id);
-      if (fragment?.page_id !== page.id || !fragment.polygon) return '';
-      const points = fragment.polygon.map((p) => `${p.x},${p.y}`).join(' ');
-      const label = `${element.role}: ${logicalText(element).slice(0, 160)}`;
-      return `<polygon points="${points}" style="--region-color:${COLORS[element.role] || '#0891b2'}" class="${element.id === selected ? 'selected' : ''} ${element.role === 'decoration' ? 'decoration' : ''}" data-element="${escapeAttr(element.id)}" tabindex="0" role="button" aria-label="${escapeAttr(label)}"><title>${escapeHtml(label)}</title></polygon>`;
-    })).join('');
+    const fragmentOverlay = activeFragments.filter((fragment) => fragment.polygon).map((fragment) =>
+      `<polygon points="${boxPoints(fragment.polygon)}" class="omnidoc-fragment" aria-hidden="true"><title>${escapeHtml(fragment.id)}</title></polygon>`).join('');
+    const elementDetails = activeElements.map((element) => `<details>
+      <summary>${escapeHtml(element.role)} · ${escapeHtml(logicalText(element).slice(0, 80) || element.id)}</summary>
+      <code>${escapeHtml(element.id)}</code>
+      <pre class="omnidoc-text">${escapeHtml(logicalText(element) || '(No text)')}</pre>
+      <pre>${escapeHtml(JSON.stringify({
+        fragment_ids: element.fragment_ids,
+        styles: doc.styles.filter((style) => element.content.some((run) => run.style_id === style.id)),
+        text_mappings: element.text_mappings,
+      }, null, 2))}</pre>
+    </details>`).join('');
+    const sourceDescription = !active ? '' : origin
+      ? `<dl class="omnidoc-origin">
+          <dt>Origin</dt><dd>${escapeHtml(origin.origin)}</dd>
+          <dt>DocLayout label</dt><dd>${escapeHtml(origin.source_label ?? '—')}</dd>
+          <dt>Score</dt><dd>${origin.source_score == null ? '—' : escapeHtml(String(origin.source_score))}</dd>
+          <dt>Detector index</dt><dd>${origin.source_index == null ? '—' : escapeHtml(String(origin.source_index))}</dd>
+          <dt>Detector order</dt><dd>${origin.source_order == null ? '—' : escapeHtml(String(origin.source_order))}</dd>
+        </dl>`
+      : '<p>Open “Analysis evidence” to load the recorded DocLayout origin.</p>';
+
     host.innerHTML = `
       <div class="omnidoc-toolbar">
         <a href="${artifactUrl('omnidoc-bundle')}" download="omnidoc.zip">Download capture</a>
-        <label>Page <select data-page>${doc.pages.map((p, i) => `<option value="${i}" ${i === pageIndex ? 'selected' : ''}>${p.index + 1}</option>`).join('')}</select> / ${doc.pages.length}</label>
-        <span>${onPage.length} elements · ${doc.fragments.length} document fragments</span>
-        <label><input type="checkbox" data-decoration ${showDecoration ? 'checked' : ''}> Show decoration</label>
-        <label><input type="checkbox" data-containers ${showContainers ? 'checked' : ''}> Show containers</label>
+        <label>Page <select data-page>${doc.pages.map((item, index) => `<option value="${index}" ${index === pageIndex ? 'selected' : ''}>${item.index + 1}</option>`).join('')}</select> / ${doc.pages.length}</label>
+        <span>${regions.length} regions · ${doc.fragments.length} document fragments</span>
+        <label><input type="checkbox" data-decoration ${showDecoration ? 'checked' : ''}> Show furniture</label>
+        <label><input type="checkbox" data-fragments ${showFragments ? 'checked' : ''}> Show selected fragments</label>
         <span class="omnidoc-coverage" role="status">${coverage?.status === 'complete' ? 'Complete source coverage' : coverage?.status === 'partial' ? 'Partial representation — see coverage' : 'Source coverage unavailable'}</span>
       </div>
       <div class="omnidoc-body">
         <div class="omnidoc-page-scroll"><div class="omnidoc-page" style="aspect-ratio:${page.width}/${page.height}">
           <img src="${artifactUrl(`page-${String(page.index + 1).padStart(3, '0')}-source`)}" alt="Source page ${page.index + 1}">
-          <svg viewBox="0 0 ${page.width} ${page.height}" aria-label="Document elements">${containerOverlay}${overlay}</svg>
+          <svg viewBox="0 0 ${page.width} ${page.height}" aria-label="Document regions">${regionOverlay}${fragmentOverlay}</svg>
         </div></div>
         <aside class="omnidoc-details">
-          <label>Element <select data-select><option value="">Choose on the page</option>${onPage.map((element) => `<option value="${escapeAttr(element.id)}" ${selected === element.id ? 'selected' : ''}>${escapeHtml(element.role)} · ${escapeHtml(logicalText(element).slice(0, 65) || element.id)}</option>`).join('')}</select></label>
-          ${active ? `<strong>${escapeHtml(active.role)}</strong><code>${escapeHtml(active.id)}</code>
-            <nav aria-label="Element ancestors">${ancestors.map(relationLink).join(' → ')}</nav>
-            <p>Reading order: ${escapeHtml(ranks.get(active.id) || (parents.has(active.id) ? `Through parent ${parents.get(active.id)}` : 'Container'))}</p>
-            <pre class="omnidoc-text">${escapeHtml(logicalText(active) || (childIds.has(active.id) ? '(Container: text belongs to its children)' : '(No text)'))}</pre>
-            ${childIds.has(active.id) ? `<details open><summary>${childIds.get(active.id).length} children</summary>${childIds.get(active.id).map(relationLink).join('<br>')}</details>` : ''}
-            <div class="omnidoc-relations">${relations.map((r) => `<div>${escapeHtml(r.kind)}<br>${relationLink(r.source_id)} → ${r.uri ? escapeHtml(r.uri) : relationLink(r.target_id)}</div>`).join('')}</div>
-            <details><summary>Source fragments and styles</summary><pre>${escapeHtml(JSON.stringify({
-              fragments: active.fragment_ids.map((id) => fragments.get(id)),
-              styles: doc.styles.filter((style) => active.content.some((run) => run.style_id === style.id)),
-              text_mappings: active.text_mappings,
-              table_shape: active.table_shape,
-              row_index: active.row_index,
-              cell_position: active.cell_position,
-            }, null, 2))}</pre></details>` : '<p>Select an element to inspect its text, role and source links.</p>'}
+          <label>Region <select data-select><option value="">Choose on the page</option>${regions.map((region) => `<option value="${escapeAttr(region.id)}" ${selected === region.id ? 'selected' : ''}>${escapeHtml(region.kind)}${region.order == null ? '' : ` · ${region.order + 1}`} · ${escapeHtml(regionText(region, elements).slice(0, 65) || region.id)}</option>`).join('')}</select></label>
+          ${active ? `<strong>${escapeHtml(active.kind)}</strong><code>${escapeHtml(active.id)}</code>
+            <p>Page order: ${active.order == null ? 'not in the content flow' : active.order + 1}</p>
+            ${sourceDescription}
+            <details open><summary>${activeElements.length} linked element(s)</summary>${elementDetails || '<p>No logical element is linked to this physical region.</p>'}</details>
+            <details><summary>${activeFragments.length} linked source fragment(s)</summary><pre>${escapeHtml(JSON.stringify(activeFragments, null, 2))}</pre></details>`
+            : '<p>Select a region to inspect its chosen kind, source classification and linked content.</p>'}
           <details><summary>Source coverage · ${escapeHtml(coverage?.status || 'unavailable')}</summary><pre>${escapeHtml(JSON.stringify(coverage, null, 2))}</pre></details>
-          <details data-evidence><summary>Analysis evidence for this page</summary><pre data-evidence-text>${evidence ? escapeHtml(JSON.stringify(evidence, null, 2)) : 'Open to load the recorded decisions and coverage.'}</pre></details>
+          <details data-analysis${analysis ? ' open' : ''}><summary>Analysis evidence for this page</summary><pre data-analysis-text>${analysis ? escapeHtml(JSON.stringify(analysis, null, 2)) : 'Open to load the recorded region origins and coverage.'}</pre></details>
           <details><summary>Document revision</summary><code>${escapeHtml(doc.revision_id)}</code><p>Schema ${doc.schema_version}</p></details>
         </aside>
       </div>`;
     host.classList.toggle('omnidoc-show-decoration', showDecoration);
-    host.classList.toggle('omnidoc-show-containers', showContainers);
-    host.querySelector('[data-containers]').addEventListener('change', (event) => {
-      showContainers = event.target.checked;
-      host.classList.toggle('omnidoc-show-containers', showContainers);
-    });
+    host.classList.toggle('omnidoc-show-fragments', showFragments);
     host.querySelector('[data-page]').addEventListener('change', (event) => {
-      pageIndex = Number(event.target.value); evidence = null; render();
+      pageIndex = Number(event.target.value); selected = ''; analysis = null; render();
     });
     host.querySelector('[data-decoration]').addEventListener('change', (event) => {
       showDecoration = event.target.checked;
       host.classList.toggle('omnidoc-show-decoration', showDecoration);
     });
+    host.querySelector('[data-fragments]').addEventListener('change', (event) => {
+      showFragments = event.target.checked;
+      host.classList.toggle('omnidoc-show-fragments', showFragments);
+    });
     host.querySelector('[data-select]').addEventListener('change', (event) => select(event.target.value));
-    host.querySelectorAll('[data-element]').forEach((node) => {
-      node.addEventListener('click', () => select(node.dataset.element));
+    host.querySelectorAll('[data-region]').forEach((node) => {
+      node.addEventListener('click', () => select(node.dataset.region));
       node.addEventListener('keydown', (event) => {
-        if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); select(node.dataset.element); }
+        if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); select(node.dataset.region); }
       });
     });
-    host.querySelector('[data-evidence]').addEventListener('toggle', async (event) => {
-      if (!event.target.open || evidence) return;
+    host.querySelector('[data-analysis]').addEventListener('toggle', async (event) => {
+      if (!event.target.open || analysis) return;
       const current = generation;
       const currentPage = pageIndex;
       try {
         const data = await api.getPdfArtifactJson(requestId, `page-${String(page.index + 1).padStart(3, '0')}-omnidoc-analysis`, { signal: controller.signal });
         if (generation !== current || pageIndex !== currentPage) return;
-        evidence = data;
-        host.querySelector('[data-evidence-text]').textContent = JSON.stringify(data, null, 2);
+        analysis = data;
+        render();
       } catch (error) {
-        if (generation === current && pageIndex === currentPage && error.name !== 'AbortError') host.querySelector('[data-evidence-text]').textContent = formatApiError(error);
+        if (generation === current && pageIndex === currentPage && error.name !== 'AbortError') host.querySelector('[data-analysis-text]').textContent = formatApiError(error);
       }
     });
     host.querySelector('img').addEventListener('error', (event) => { event.target.alt = 'Source page image unavailable'; });
@@ -128,12 +140,6 @@ export function createOmnidocInspector(host) {
 
   function select(id) {
     selected = id;
-    const members = sourceFragments.get(id) || [];
-    const fragment = documentData.fragments.find((item) => members.includes(item.id) && item.page_id);
-    if (fragment && !members.some((key) => documentData.fragments.some((f) => f.id === key && f.page_id === documentData.pages[pageIndex].id))) {
-      pageIndex = documentData.pages.findIndex((page) => page.id === fragment.page_id);
-      evidence = null;
-    }
     render();
   }
 
@@ -143,10 +149,8 @@ export function createOmnidocInspector(host) {
     host.hidden = true;
     host.replaceChildren();
     documentData = null;
-    evidence = null;
+    analysis = null;
     coverage = null;
-    sourceFragments.clear();
-    childIds.clear();
   }
 
   return {
@@ -174,21 +178,9 @@ export function createOmnidocInspector(host) {
         ]);
         if (current !== generation) return;
         if (!data.pages?.length) throw new Error('This representation contains no PDF pages.');
+        if (!Array.isArray(data.regions)) throw new Error('This capture predates physical Omnidoc regions.');
         documentData = data;
         coverage = report;
-        const elements = new Map(data.elements.map((element) => [element.id, element]));
-        data.relations.filter((relation) => relation.kind === 'contains').forEach((relation) => {
-          if (!childIds.has(relation.source_id)) childIds.set(relation.source_id, []);
-          childIds.get(relation.source_id).push(relation.target_id);
-        });
-        function collect(id) {
-          if (!sourceFragments.has(id)) sourceFragments.set(id, [
-            ...(elements.get(id)?.fragment_ids || []),
-            ...(childIds.get(id) || []).flatMap(collect),
-          ]);
-          return sourceFragments.get(id);
-        }
-        data.elements.forEach((element) => collect(element.id));
         render();
       } catch (error) {
         if (current === generation && error.name !== 'AbortError') host.textContent = formatApiError(error);

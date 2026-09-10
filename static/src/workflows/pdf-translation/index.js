@@ -139,7 +139,7 @@ export function createPdfTranslationView() {
                 </label>
                 <label class="translation-prompts-field">
                   <span>Doclayout overlay</span>
-                  <select id="pdfDoclayoutOverlay" title="Also produce three PDFs showing what PP-DocLayout_plus-L, V2 and V3 returned for each page: one box per raw region with its label and confidence, drawn on the source page. Only plus-L feeds the translation pipeline; V2 and V3 are comparison artifacts. Off by default because the two comparison models and three overlay documents add work. Pick them in the Artifact selector above once the run finishes.">
+                  <select id="pdfDoclayoutOverlay" title="Also produce three PDFs showing what PP-DocLayoutV2, plus-L and V3 returned for each page: one box per raw region with its label and confidence, drawn on the source page. V2 feeds the translation pipeline; plus-L and V3 are comparison artifacts. Off by default because the two comparison models and three overlay documents add work. Pick them in the Artifact selector above once the run finishes.">
                     <option value="off" selected>off</option>
                     <option value="on">on — compare plus-L, V2 and V3</option>
                   </select>
@@ -1553,8 +1553,8 @@ export function createPdfTranslationView() {
     omnidoc: 'Omnidoc · source representation',
     'omnidoc-coverage': 'Omnidoc · analysis incomplete',
     rendered: 'Translated PDF',
-    doclayout: 'PP-DocLayout_plus-L',
-    'doclayout-v2': 'PP-DocLayoutV2',
+    doclayout: 'PP-DocLayoutV2',
+    'doclayout-plus-l': 'PP-DocLayout_plus-L',
     'doclayout-v3': 'PP-DocLayoutV3',
   };
 
@@ -1565,7 +1565,7 @@ export function createPdfTranslationView() {
       return name === 'omnidoc' || (name === 'omnidoc-coverage' && !artifacts.omnidoc)
         || (name !== 'input' && String(artifact.mime_type || '').toLowerCase().includes('pdf'));
     });
-    const artifactOrder = ['rendered', 'omnidoc', 'doclayout', 'doclayout-v2', 'doclayout-v3'];
+    const artifactOrder = ['rendered', 'omnidoc', 'doclayout', 'doclayout-plus-l', 'doclayout-v3'];
     const rank = (name) => {
       const index = artifactOrder.indexOf(name);
       return index < 0 ? artifactOrder.length : index;
