@@ -13,6 +13,9 @@
 .omnidoc-page svg polygon.selected { fill: #facc1538; stroke: #e11d48; stroke-width: 1.5; }
 .omnidoc-page svg polygon.decoration { display: none; }
 .omnidoc-show-decoration .omnidoc-page svg polygon.decoration { display: block; }
+.omnidoc-container { display: none; fill: none; stroke: var(--region-color); stroke-width: .8; stroke-dasharray: 4 2; pointer-events: stroke; cursor: pointer; }
+.omnidoc-show-containers .omnidoc-container { display: block; }
+.omnidoc-container.selected, .omnidoc-container:focus { stroke: #e11d48; stroke-width: 1.8; outline: none; }
 .omnidoc-details { overflow: auto; padding: 12px; font-size: 12px; border-left: 1px solid #64748b; }
 .omnidoc-details select { max-width: 100%; width: 100%; margin: 6px 0 12px; }
 .omnidoc-details strong, .omnidoc-details code { display: block; overflow-wrap: anywhere; margin: 5px 0; }
@@ -20,5 +23,5 @@
 .omnidoc-details .omnidoc-text { font: inherit; line-height: 1.5; }
 .omnidoc-details details { margin-top: 16px; }
 .omnidoc-relations > div { margin-top: 10px; }
-.omnidoc-relations button { border: 0; background: none; color: var(--action-primary); cursor: pointer; font: inherit; padding: 2px 0; text-align: left; overflow-wrap: anywhere; }
+.omnidoc-details button { border: 0; background: none; color: var(--action-primary); cursor: pointer; font: inherit; padding: 2px 0; text-align: left; overflow-wrap: anywhere; }
 @media (max-width: 800px) { .omnidoc-body { grid-template-columns: 1fr; grid-template-rows: minmax(320px, 1fr) 220px; } .omnidoc-details { border-left: 0; border-top: 1px solid #64748b; } }

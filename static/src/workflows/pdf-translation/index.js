@@ -1645,7 +1645,9 @@ export function createPdfTranslationView() {
       const benchNote = out.benchmark?.run_id
         ? ' · added to the PDF-testing matrix as "ours"'
         : (out.benchmark?.error ? ` · benchmark mirror failed: ${out.benchmark.error}` : '');
-      setCaptureStatus(`Captured ${out.name}/${out.target_lang}/${out.variant}: ${out.pages} page(s), ${out.units} unit(s)${scoreNote}${benchNote}. See the PDF translation regression view.`);
+      const omnidocNote = out.omnidoc?.status === 'failed'
+        ? ` · Omnidoc capture failed: ${out.omnidoc.error}` : '';
+      setCaptureStatus(`Captured ${out.name}/${out.target_lang}/${out.variant}: ${out.pages} page(s), ${out.units} unit(s)${scoreNote}${benchNote}${omnidocNote}. See the PDF translation regression view.`);
       await refreshRegStatus();  // the new variant now shows in the badge
     } catch (err) {
       setCaptureStatus(formatApiError(err), 'error');
