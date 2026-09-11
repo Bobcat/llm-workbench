@@ -280,8 +280,8 @@ export function createPdfTranslationView() {
                   <textarea id="pdfOtherCalls" rows="8" spellcheck="false" placeholder="Every other call this page made, in order, with its role — the island batch, hint-line and per-unit calls."></textarea>
                 </label>
                 <label class="translation-prompts-field translation-prompts-field-response">
-                  <span>Font detection — document batches</span>
-                  <textarea id="pdfFontCalls" rows="8" spellcheck="false" placeholder="Document-wide font-region calls, with each prompt, response and duration."></textarea>
+                  <span>Font detection — selected page</span>
+                  <textarea id="pdfFontCalls" rows="8" spellcheck="false" placeholder="Font-region calls for this page, with each crop, prompt, response and duration."></textarea>
                 </label>
               </div>
             </details>
@@ -966,8 +966,6 @@ export function createPdfTranslationView() {
     clearOutputPreview();
     clearCallFields();
     callsLoadedFor = '';
-    fontCallsLoadedFor = '';
-    lastCallsResult = null;
     callsStatusEl.textContent = '';
     isInspectingHistory = true;
     historyOptionsAvailable = false;
@@ -1217,8 +1215,8 @@ export function createPdfTranslationView() {
       const timings = result?.timings || {};
       const pages = result?.response?.document?.pages || [];
       const total = m.translate_pdf_total_wall_ms;
-      // Font detection, render and assemble are document-level; the other stages are per page,
-      // so sum those here across pages for the whole-document breakdown.
+      // Render and assemble are document-level; the other stages are per page, so sum those
+      // here across pages for the whole-document breakdown.
       const sum = (key) => {
         const vals = pages.map((p) => p?.metrics?.[key]).filter((v) => typeof v === 'number');
         return vals.length ? vals.reduce((a, b) => a + b, 0) : undefined;
@@ -1228,14 +1226,14 @@ export function createPdfTranslationView() {
       // total. Sharing each stage against the elapsed total would print percentages over 100 that
       // are only that sum in disguise (they are the work shares scaled by one constant factor), so
       // share against the stage sum instead and state the factor once, on its own row.
-      const fontCallCount = Number(m.font_detection_call_count || 0);
-      const fontRegionCount = Number(m.font_region_count || 0);
+      const fontCallCount = Number(m.font_detection_call_count_total || 0);
+      const fontCorrectedCount = Number(m.font_corrected_unit_count_total || 0);
       const stages = [
         ['OCR', sum('ocr_wall_ms')],
         ['Grouping (VLM)', sum('grouping_wall_ms')],
         ['Layout', sum('layout_wall_ms')],
         ['Align', sum('align_wall_ms')],
-        ...(fontCallCount > 0 ? [['Font detection (VLM)', m.font_detection_wall_ms]] : []),
+        ...(fontCallCount > 0 ? [['Font detection (VLM)', sum('font_detection_wall_ms')]] : []),
         ['Translation', sum('translation_wall_ms')],
         ['Render', typeof m.replacement_wall_ms_total === 'number' ? m.replacement_wall_ms_total : sum('replacement_wall_ms')],
         ['Assemble PDF', m.assemble_wall_ms],
@@ -1280,8 +1278,8 @@ export function createPdfTranslationView() {
           : '',
         ...stages.map(stage),
         fontCallCount > 0
-          ? row('Font model calls', `${fontCallCount} · ${fontRegionCount} regions`, 'trt-l1',
-            'Small text-region crops are batched document-wide; the timing above is elapsed stage time, not the sum of concurrently running calls.')
+          ? row('Font model calls', `${fontCallCount} · ${fontCorrectedCount} corrected units`, 'trt-l1',
+            'Short text-lane crops are batched within each page. The timing above is the sum of the per-page stage times; pages themselves can overlap.')
           : '',
         // Deliberately outside `stages`: the debug overlay is not a step of producing the
         // translation, and folding it in would move every share and the multiplier above,
@@ -1308,7 +1306,6 @@ export function createPdfTranslationView() {
 
     const page = (result?.response?.document?.pages || []).find((p) => String(p.page) === String(timingsScopeValue));
     const m = page?.metrics || {};
-    const documentMetrics = result?.response?.metrics || {};
     const total = m.translate_image_total_wall_ms;
     // Stage row with its share of the page total — the same breakdown the image view shows.
     const stage = (label, v) => {
@@ -1322,14 +1319,17 @@ export function createPdfTranslationView() {
       stage('Grouping (VLM)', m.grouping_wall_ms),
       stage('Layout', m.layout_wall_ms),
       stage('Align', m.align_wall_ms),
+      Number(m.font_detection_call_count || 0) > 0
+        ? stage('Font detection (VLM)', m.font_detection_wall_ms)
+        : '',
       stage('Translation', m.translation_wall_ms),
       stage('Render', m.replacement_wall_ms),
-      Number(documentMetrics.font_detection_call_count || 0) > 0
+      Number(m.font_detection_call_count || 0) > 0
         ? row(
-          'Font detection (document)',
-          `${ms(documentMetrics.font_detection_wall_ms)} · ${Number(documentMetrics.font_detection_call_count)} calls`,
+          'Font model calls',
+          `${Number(m.font_detection_call_count)} · ${Number(m.font_corrected_unit_count || 0)} corrected units`,
           'trt-l1',
-          'This model stage is batched across the document and is therefore not part of this page total.',
+          'Batched text-lane crops for this page; calls inside the stage can overlap.',
         )
         : '',
     ].join('');
@@ -1344,8 +1344,6 @@ export function createPdfTranslationView() {
   // studying one page across renders, and being thrown back to page 1 each time defeats that.
   let callsPage = 0;
   let callsLoadedFor = '';
-  let fontCallsLoadedFor = '';
-  let lastCallsResult = null;
 
   function pagesWithCalls(result) {
     const artifacts = result?.response?.artifacts || {};
@@ -1357,12 +1355,6 @@ export function createPdfTranslationView() {
   }
 
   function syncCallsSection(result) {
-    lastCallsResult = result;
-    const requestId = String(result?.request_id || currentRequestId || '');
-    if (fontCallsLoadedFor !== requestId) {
-      fontCallsLoadedFor = '';
-      callEls.font.value = '';
-    }
     const pages = pagesWithCalls(result);
     if (!pages.length) {
       callsPageSelect.innerHTML = '';
@@ -1392,7 +1384,7 @@ export function createPdfTranslationView() {
     const page = parseInt(callsPageSelect.value || '0', 10);
     if (!requestId || !page) return;
     const key = `${requestId}|${page}`;
-    if (callsLoadedFor === key && fontCallsLoadedFor === requestId) return;
+    if (callsLoadedFor === key) return;
     callsStatusEl.textContent = 'Loading…';
     try {
       const name = `page-${String(page).padStart(3, '0')}-llm-calls`;
@@ -1401,39 +1393,11 @@ export function createPdfTranslationView() {
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       fillCallFields(await response.json());
       callsLoadedFor = key;
-      callsStatusEl.textContent = await loadFontCallsForRequest(requestId);
+      callsStatusEl.textContent = '';
     } catch (err) {
       clearCallFields();
       callsLoadedFor = '';
-      fontCallsLoadedFor = '';
       callsStatusEl.textContent = `Could not load page ${page}: ${err.message || err}`;
-    }
-  }
-
-  async function loadFontCallsForRequest(requestId) {
-    if (fontCallsLoadedFor === requestId) return '';
-    const artifact = lastCallsResult?.response?.artifacts?.['font-region-llm-calls'];
-    if (!artifact) {
-      callEls.font.value = '(none — this run made no document-wide font-region calls)';
-      fontCallsLoadedFor = requestId;
-      return '';
-    }
-    try {
-      const name = 'font-region-llm-calls';
-      const url = `/api/pdf-translation/requests/${encodeURIComponent(requestId)}/artifacts/${name}`;
-      const response = await fetch(url);
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const payload = await response.json();
-      const calls = Array.isArray(payload?.calls) ? payload.calls : [];
-      callEls.font.value = calls.length
-        ? calls.map(formatFontCall).join('\n\n──────────\n\n')
-        : '(none — the font-region call log is empty)';
-      fontCallsLoadedFor = requestId;
-      return '';
-    } catch (err) {
-      callEls.font.value = '';
-      fontCallsLoadedFor = '';
-      return `Could not load document font calls: ${err.message || err}`;
     }
   }
 
@@ -1447,7 +1411,8 @@ export function createPdfTranslationView() {
       const role = String(c?.role || '');
       return role === 'translation_main' || role === 'translation_main_numbered';
     });
-    const others = calls.filter((c) => c !== grouping && c !== main);
+    const fonts = calls.filter((c) => String(c?.role || '') === 'font_region_vlm');
+    const others = calls.filter((c) => c !== grouping && c !== main && !fonts.includes(c));
     callEls.vlmSystem.value = grouping ? String(grouping?.payload?.instructions || '') : '';
     callEls.vlmInput.value = grouping ? callInputText(grouping) : '';
     callEls.vlmResponse.value = grouping ? callResponseText(grouping) : '';
@@ -1457,6 +1422,9 @@ export function createPdfTranslationView() {
     callEls.other.value = others.length
       ? others.map(formatCall).join('\n\n──────────\n\n')
       : '(none — the page needed no calls beyond the two above)';
+    callEls.font.value = fonts.length
+      ? fonts.map(formatRegionalFontCall).join('\n\n──────────\n\n')
+      : '(none — this page made no font-region calls)';
   }
 
   function callInputText(call) {
@@ -1487,17 +1455,30 @@ export function createPdfTranslationView() {
     ].filter(Boolean).join('\n');
   }
 
-  function formatFontCall(call) {
-    const regionIds = Array.isArray(call?.region_ids) ? call.region_ids : [];
-    const mapping = regionIds
-      .map((id, index) => `R${String(index + 1).padStart(2, '0')}=${String(id)}`)
-      .join(', ');
-    const parsed = Number(call?.parsed_region_count);
-    const batch = String(call?.batch || 'montage');
+  function formatRegionalFontCall(call) {
+    const regions = Array.isArray(call?.regions) ? call.regions : [];
+    const regionSummary = regions.map((region) => {
+      const cellIds = Array.isArray(region?.cell_ids) ? region.cell_ids.join(', ') : '—';
+      const crop = Array.isArray(region?.crop_size) ? region.crop_size.join('×') : '—';
+      const parsed = region?.font_category
+        ? `${String(region?.closest_family || '—')} · ${String(region.font_category)}`
+        : 'unparsed';
+      return `${String(region?.label || '—')} = region ${String(region?.region_index ?? '—')}`
+        + ` · lines ${cellIds} · ${crop}px · ${parsed}`;
+    }).join('\n');
+    const cellIds = Array.isArray(call?.cell_ids) ? call.cell_ids.join(', ') : '';
+    const crop = Array.isArray(call?.crop_size) ? call.crop_size.join('×') : '';
+    const montage = Array.isArray(call?.montage_size) ? call.montage_size.join('×') : '';
     const context = [
-      `[image batch]\n${batch}`,
-      mapping ? `[regions]\n${mapping}` : '',
-      Number.isFinite(parsed) ? `[parsed]\n${parsed}/${regionIds.length}` : '',
+      regions.length
+        ? `[batch]\n${regions.length} crops${montage ? ` · ${montage}px` : ''}`
+        : `[region]\n${String(call?.region_index ?? '—')} · ${String(call?.region_label || '—')}`,
+      regionSummary ? `[regions]\n${regionSummary}` : '',
+      !regions.length && cellIds ? `[OCR lines]\n${cellIds}` : '',
+      !regions.length && crop ? `[crop]\n${crop}px` : '',
+      !regions.length && call?.font_category
+        ? `[parsed]\n${String(call?.closest_family || '—')} · ${String(call.font_category)}`
+        : '',
     ].filter(Boolean).join('\n');
     return formatCall(call, context);
   }
@@ -1781,8 +1762,6 @@ export function createPdfTranslationView() {
     callsPageSelect.innerHTML = '';
     callsStatusEl.textContent = '';
     callsLoadedFor = '';
-    fontCallsLoadedFor = '';
-    lastCallsResult = null;
     clearCallFields();
     timingsScope.innerHTML = '';
     timingsEl.innerHTML = '';
