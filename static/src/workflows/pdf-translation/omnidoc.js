@@ -44,6 +44,13 @@ export function createOmnidocInspector(host) {
     const fragments = new Map(doc.fragments.map((fragment) => [fragment.id, fragment]));
     const sourceElements = new Map(doc.elements.map((element) => [element.id, element]));
     const targetElements = new Map((targetData?.elements || []).map((element) => [element.id, element]));
+    const targetIssuesByElement = new Map();
+    for (const issue of coverage?.issues || []) {
+      if (!issue.element_id) continue;
+      const issues = targetIssuesByElement.get(issue.element_id) || [];
+      issues.push(issue);
+      targetIssuesByElement.set(issue.element_id, issues);
+    }
     const targetBySource = new Map((targetData?.correspondences || []).flatMap((group) => (
       group.source_ids.length === 1 && group.target_ids.length === 1
         ? [[group.source_ids[0], targetElements.get(group.target_ids[0])]] : []
@@ -68,16 +75,20 @@ export function createOmnidocInspector(host) {
     }).join('');
     const fragmentOverlay = activeFragments.filter((fragment) => fragment.polygon).map((fragment) =>
       `<polygon points="${boxPoints(fragment.polygon)}" class="omnidoc-fragment" aria-hidden="true"><title>${escapeHtml(fragment.id)}</title></polygon>`).join('');
-    const elementDetails = activeElements.map(({ sourceElement, element }) => `<details>
+    const elementDetails = activeElements.map(({ sourceElement, element }) => {
+      const elementIssues = targetIssuesByElement.get(sourceElement.id) || [];
+      return `<details>
       <summary>${escapeHtml(element?.role || sourceElement.role)} · ${escapeHtml(logicalText(element).slice(0, 80) || element?.id || sourceElement.id)}</summary>
       <code>${escapeHtml(targetData ? `${sourceElement.id} → ${element?.id || 'missing target'}` : sourceElement.id)}</code>
       <pre class="omnidoc-text">${escapeHtml(logicalText(element) || (targetData ? '(No target text)' : '(No text)'))}</pre>
+      ${elementIssues.length ? `<details open><summary>${elementIssues.length} target issue(s)</summary><pre>${escapeHtml(JSON.stringify(elementIssues, null, 2))}</pre></details>` : ''}
       <pre>${escapeHtml(JSON.stringify({
         fragment_ids: sourceElement.fragment_ids,
         styles: contentDocument.styles.filter((style) => (element?.content || []).some((run) => run.style_id === style.id)),
         text_mappings: element?.text_mappings || [],
       }, null, 2))}</pre>
-    </details>`).join('');
+    </details>`;
+    }).join('');
     const sourceDescription = !active ? '' : origin
       ? `<dl class="omnidoc-origin">
           <dt>Origin</dt><dd>${escapeHtml(origin.origin)}</dd>
@@ -95,7 +106,7 @@ export function createOmnidocInspector(host) {
         <span>${regions.length} regions · ${doc.fragments.length} document fragments</span>
         <label><input type="checkbox" data-decoration ${showDecoration ? 'checked' : ''}> Show furniture and footnotes</label>
         <label><input type="checkbox" data-fragments ${showFragments ? 'checked' : ''}> Show selected fragments</label>
-        <span class="omnidoc-coverage" role="status">${targetData ? `Target ${coverage?.status || 'status unavailable'} · source geometry` : coverage?.status === 'complete' ? 'Complete source coverage' : 'Source representation failed — see coverage'}</span>
+        <span class="omnidoc-coverage" role="status">${targetData ? `Target structure: ${coverage?.status || 'status unavailable'} · source geometry` : coverage?.status === 'complete' ? 'Complete source coverage' : 'Source representation failed — see coverage'}</span>
       </div>
       <div class="omnidoc-body">
         <div class="omnidoc-page-scroll"><div class="omnidoc-page" style="aspect-ratio:${page.width}/${page.height}">
@@ -110,7 +121,7 @@ export function createOmnidocInspector(host) {
             <details open><summary>${activeElements.length} linked element(s)</summary>${elementDetails || '<p>No logical element is linked to this physical region.</p>'}</details>
             <details><summary>${activeFragments.length} linked source fragment(s)</summary><pre>${escapeHtml(JSON.stringify(activeFragments, null, 2))}</pre></details>`
             : '<p>Select a region to inspect its chosen kind, source classification and linked content.</p>'}
-          <details><summary>${targetData ? 'Target status' : 'Source coverage'} · ${escapeHtml(coverage?.status || 'unavailable')}</summary><pre>${escapeHtml(JSON.stringify(coverage, null, 2))}</pre></details>
+          <details><summary>${targetData ? 'Target structural status' : 'Source coverage'} · ${escapeHtml(coverage?.status || 'unavailable')}</summary><pre>${escapeHtml(JSON.stringify(coverage, null, 2))}</pre></details>
           <details data-analysis${analysis ? ' open' : ''}><summary>Analysis evidence for this page</summary><pre data-analysis-text>${analysis ? escapeHtml(JSON.stringify(analysis, null, 2)) : 'Open to load the recorded region origins and coverage.'}</pre></details>
           <details><summary>Document revision</summary><code>${escapeHtml(contentDocument.revision_id)}</code>${targetData ? `<p>Source ${escapeHtml(coverage?.source_revision_id || doc.revision_id)}</p>` : ''}<p>Schema ${contentDocument.schema_version}</p></details>
         </aside>
