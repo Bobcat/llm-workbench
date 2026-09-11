@@ -6,6 +6,7 @@ const COLORS = {
   list: '#0284c7', reference: '#4f46e5', reference_content: '#4f46e5',
   heading: '#ea580c', title: '#ea580c', table: '#9333ea',
   figure: '#059669', image: '#059669', chart: '#059669',
+  algorithm: '#0f766e', seal: '#0f766e', vertical_text: '#0f766e',
   formula: '#0d9488', display_formula: '#0d9488', inline_formula: '#0d9488', formula_number: '#0d9488',
   caption: '#ca8a04', figure_caption: '#ca8a04', table_caption: '#ca8a04', footnote: '#c026d3', vision_footnote: '#c026d3',
   header: '#64748b', footer: '#64748b', page_number: '#64748b', decoration: '#94a3b8',
@@ -80,9 +81,9 @@ export function createOmnidocInspector(host) {
         <a href="${artifactUrl('omnidoc-bundle')}" download="omnidoc.zip">Download capture</a>
         <label>Page <select data-page>${doc.pages.map((item, index) => `<option value="${index}" ${index === pageIndex ? 'selected' : ''}>${item.index + 1}</option>`).join('')}</select> / ${doc.pages.length}</label>
         <span>${regions.length} regions · ${doc.fragments.length} document fragments</span>
-        <label><input type="checkbox" data-decoration ${showDecoration ? 'checked' : ''}> Show furniture</label>
+        <label><input type="checkbox" data-decoration ${showDecoration ? 'checked' : ''}> Show furniture and footnotes</label>
         <label><input type="checkbox" data-fragments ${showFragments ? 'checked' : ''}> Show selected fragments</label>
-        <span class="omnidoc-coverage" role="status">${coverage?.status === 'complete' ? 'Complete source coverage' : coverage?.status === 'partial' ? 'Partial representation — see coverage' : 'Source coverage unavailable'}</span>
+        <span class="omnidoc-coverage" role="status">${coverage?.status === 'complete' ? 'Complete source coverage' : 'Source representation failed — see coverage'}</span>
       </div>
       <div class="omnidoc-body">
         <div class="omnidoc-page-scroll"><div class="omnidoc-page" style="aspect-ratio:${page.width}/${page.height}">

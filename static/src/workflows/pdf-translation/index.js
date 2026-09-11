@@ -1692,7 +1692,12 @@ export function createPdfTranslationView() {
     const base = (selectedFile()?.name || historicalFilename || 'document').replace(/\.[^.]+$/, '') || 'document';
     const lang = String(lastTargetLang || '').toLowerCase() || 'out';
     downloadLink.href = url;
-    downloadLink.setAttribute('download', isOmnidoc ? `${base}_omnidoc.json` : `${base}_${lang}.pdf`);
+    const downloadName = artifactName === 'omnidoc-coverage'
+      ? `${base}_omnidoc_coverage.json`
+      : artifactName === 'omnidoc'
+        ? `${base}_omnidoc.json`
+        : `${base}_${lang}.pdf`;
+    downloadLink.setAttribute('download', downloadName);
     downloadLink.textContent = isOmnidoc ? 'Download JSON' : 'Download PDF';
     downloadLink.hidden = false;
     benchmarkBtn.hidden = isOmnidoc;
