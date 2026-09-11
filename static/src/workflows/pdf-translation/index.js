@@ -145,6 +145,13 @@ export function createPdfTranslationView() {
                   </select>
                 </label>
                 <label class="translation-prompts-field">
+                  <span>PaddleOCR V5 overlay</span>
+                  <select id="pdfPaddleocrV5Overlay" title="Also run pure PaddleOCR V5 over every rasterized source page and produce one PDF with each detected polygon, confidence and recognized text drawn on the page. This is independent of the production OCR route: it also covers born-digital pages and never includes V6 recovery. Off by default because it adds a V5 pass over the full document. Pick PaddleOCR V5 in the Artifact selector once the run finishes.">
+                    <option value="off" selected>off</option>
+                    <option value="on">on — inspect pure V5</option>
+                  </select>
+                </label>
+                <label class="translation-prompts-field">
                   <span>Render size mode</span>
                   <select id="pdfRenderSizeMode" title="How a render group's one font size is chosen from its lines: median resists one under-measured (lowercase) line dragging the whole block down; min never overflows the smallest line's band. Changing this re-renders every page of the shown document from its cached translations (no new translation).">
                     <option value="median" selected>median — default</option>
@@ -274,6 +281,10 @@ export function createPdfTranslationView() {
                   <span>Other calls (prompts + responses)</span>
                   <textarea id="pdfOtherCalls" rows="8" spellcheck="false" placeholder="Every other call this page made, in order, with its role — the island batch, hint-line and per-unit calls."></textarea>
                 </label>
+                <label class="translation-prompts-field translation-prompts-field-response">
+                  <span>Font detection — selected page</span>
+                  <textarea id="pdfFontCalls" rows="8" spellcheck="false" placeholder="Font-region calls for this page, with each crop, prompt, response and duration."></textarea>
+                </label>
               </div>
             </details>
             <!-- Freeze this completed run as a document regression fixture (frozen per-page
@@ -374,6 +385,7 @@ export function createPdfTranslationView() {
   const structureModeSelect = container.querySelector('#pdfStructureMode');
   const pageLayoutModeSelect = container.querySelector('#pdfPageLayoutMode');
   const doclayoutOverlaySelect = container.querySelector('#pdfDoclayoutOverlay');
+  const paddleocrV5OverlaySelect = container.querySelector('#pdfPaddleocrV5Overlay');
   const artifactSelect = container.querySelector('#pdfArtifact');
   const pageScaleSelect = container.querySelector('#pdfPageScale');
   const inputPreview = container.querySelector('#pdfInputPreview');
@@ -400,6 +412,7 @@ export function createPdfTranslationView() {
     xlateInput: container.querySelector('#pdfXlateInput'),
     xlateResponse: container.querySelector('#pdfXlateResponse'),
     other: container.querySelector('#pdfOtherCalls'),
+    font: container.querySelector('#pdfFontCalls'),
   };
   const regInfoEl = container.querySelector('#pdfRegInfo');
   const regSubdirSel = container.querySelector('#pdfRegSubdir');
@@ -466,6 +479,7 @@ export function createPdfTranslationView() {
     // had already run at 1.00, and only the run after that could carry 0.90.
     pageScaleSelect.disabled = renderLocked;
     doclayoutOverlaySelect.disabled = renderLocked;
+    paddleocrV5OverlaySelect.disabled = renderLocked;
     artifactSelect.disabled = isBusy;
     historySelect.disabled = isBusy || Boolean(currentRequestId && !isTerminalState(currentState()));
   }
@@ -484,6 +498,7 @@ export function createPdfTranslationView() {
       page_layout_mode: String(pageLayoutModeSelect.value || 'auto'),
       page_scale: Number(pageScaleSelect.value || 1),
       doclayout_overlay: String(doclayoutOverlaySelect.value || 'off') === 'on',
+      paddleocr_v5_overlay: String(paddleocrV5OverlaySelect.value || 'off') === 'on',
     };
   }
 
@@ -548,6 +563,7 @@ export function createPdfTranslationView() {
       true,
     );
     setSelectValue(doclayoutOverlaySelect, options?.doclayout_overlay ? 'on' : 'off');
+    setSelectValue(paddleocrV5OverlaySelect, options?.paddleocr_v5_overlay ? 'on' : 'off');
     lastTargetLang = String(options?.target_lang_code || '');
     updateModelSelectColor();
   }
@@ -1202,8 +1218,8 @@ export function createPdfTranslationView() {
       const timings = result?.timings || {};
       const pages = result?.response?.document?.pages || [];
       const total = m.translate_pdf_total_wall_ms;
-      // Only render and assemble are summed on the document response; the earlier stages are
-      // per page, so sum them here across pages for the whole-document breakdown.
+      // Render and assemble are document-level; the other stages are per page, so sum those
+      // here across pages for the whole-document breakdown.
       const sum = (key) => {
         const vals = pages.map((p) => p?.metrics?.[key]).filter((v) => typeof v === 'number');
         return vals.length ? vals.reduce((a, b) => a + b, 0) : undefined;
@@ -1213,11 +1229,14 @@ export function createPdfTranslationView() {
       // total. Sharing each stage against the elapsed total would print percentages over 100 that
       // are only that sum in disguise (they are the work shares scaled by one constant factor), so
       // share against the stage sum instead and state the factor once, on its own row.
+      const fontCallCount = Number(m.font_detection_call_count_total || 0);
+      const fontCorrectedCount = Number(m.font_corrected_unit_count_total || 0);
       const stages = [
         ['OCR', sum('ocr_wall_ms')],
         ['Grouping (VLM)', sum('grouping_wall_ms')],
         ['Layout', sum('layout_wall_ms')],
         ['Align', sum('align_wall_ms')],
+        ...(fontCallCount > 0 ? [['Font detection (VLM)', sum('font_detection_wall_ms')]] : []),
         ['Translation', sum('translation_wall_ms')],
         ['Render', typeof m.replacement_wall_ms_total === 'number' ? m.replacement_wall_ms_total : sum('replacement_wall_ms')],
         ['Assemble PDF', m.assemble_wall_ms],
@@ -1261,6 +1280,10 @@ export function createPdfTranslationView() {
             'The queue taken out. Still not a speed-up: a page costs measurably more work under contention than it does alone, so this multiplier rises as the GPU gets busier — the opposite of what it looks like.')
           : '',
         ...stages.map(stage),
+        fontCallCount > 0
+          ? row('Font model calls', `${fontCallCount} · ${fontCorrectedCount} corrected units`, 'trt-l1',
+            'Short text-lane crops are batched within each page. The timing above is the sum of the per-page stage times; pages themselves can overlap.')
+          : '',
         // Deliberately outside `stages`: the debug overlay is not a step of producing the
         // translation, and folding it in would move every share and the multiplier above,
         // so the same run would read differently for having been inspected. Present only
@@ -1268,6 +1291,10 @@ export function createPdfTranslationView() {
         typeof m.doclayout_assemble_wall_ms === 'number'
           ? row('Doclayout overlay (debug)', `${Math.round(m.doclayout_assemble_wall_ms)} ms`, 'trt-l1',
             'Drawing the detector\'s regions on every page and assembling them as a second PDF. Asked for by the Doclayout overlay option; it lengthens the request but is no part of the rows above, whose figures mean the same with or without it.')
+          : '',
+        typeof m.paddleocr_v5_assemble_wall_ms === 'number'
+          ? row('PaddleOCR V5 PDF (debug)', `${Math.round(m.paddleocr_v5_assemble_wall_ms)} ms`, 'trt-l1',
+            'Assembling the labelled V5 page overlays into a PDF. The separate V5 inference appears in the timeline; this assembly time is not part of the translation-stage rows above.')
           : '',
         row('Pages', typeof m.page_count === 'number' ? String(m.page_count) : '—', 'trt-l1'),
         row('Page concurrency', typeof m.page_concurrency === 'number' ? String(m.page_concurrency) : '—', 'trt-l1'),
@@ -1295,8 +1322,19 @@ export function createPdfTranslationView() {
       stage('Grouping (VLM)', m.grouping_wall_ms),
       stage('Layout', m.layout_wall_ms),
       stage('Align', m.align_wall_ms),
+      Number(m.font_detection_call_count || 0) > 0
+        ? stage('Font detection (VLM)', m.font_detection_wall_ms)
+        : '',
       stage('Translation', m.translation_wall_ms),
       stage('Render', m.replacement_wall_ms),
+      Number(m.font_detection_call_count || 0) > 0
+        ? row(
+          'Font model calls',
+          `${Number(m.font_detection_call_count)} · ${Number(m.font_corrected_unit_count || 0)} corrected units`,
+          'trt-l1',
+          'Batched text-lane crops for this page; calls inside the stage can overlap.',
+        )
+        : '',
     ].join('');
   }
 
@@ -1376,7 +1414,8 @@ export function createPdfTranslationView() {
       const role = String(c?.role || '');
       return role === 'translation_main' || role === 'translation_main_numbered';
     });
-    const others = calls.filter((c) => c !== grouping && c !== main);
+    const fonts = calls.filter((c) => String(c?.role || '') === 'font_region_vlm');
+    const others = calls.filter((c) => c !== grouping && c !== main && !fonts.includes(c));
     callEls.vlmSystem.value = grouping ? String(grouping?.payload?.instructions || '') : '';
     callEls.vlmInput.value = grouping ? callInputText(grouping) : '';
     callEls.vlmResponse.value = grouping ? callResponseText(grouping) : '';
@@ -1386,6 +1425,9 @@ export function createPdfTranslationView() {
     callEls.other.value = others.length
       ? others.map(formatCall).join('\n\n──────────\n\n')
       : '(none — the page needed no calls beyond the two above)';
+    callEls.font.value = fonts.length
+      ? fonts.map(formatRegionalFontCall).join('\n\n──────────\n\n')
+      : '(none — this page made no font-region calls)';
   }
 
   function callInputText(call) {
@@ -1404,15 +1446,44 @@ export function createPdfTranslationView() {
     return String(response || call?.error || '');
   }
 
-  function formatCall(call) {
+  function formatCall(call, context = '') {
     const system = String(call?.payload?.instructions || '');
     const ms = call?.wall_ms;
     return [
       `# ${String(call?.role || 'call')}${typeof ms === 'number' ? `   (${(ms / 1000).toFixed(2)}s)` : ''}`,
+      context,
       system ? `[system]\n${system}` : '',
       `[input]\n${callInputText(call)}`,
       `[response]\n${callResponseText(call)}`,
     ].filter(Boolean).join('\n');
+  }
+
+  function formatRegionalFontCall(call) {
+    const regions = Array.isArray(call?.regions) ? call.regions : [];
+    const regionSummary = regions.map((region) => {
+      const cellIds = Array.isArray(region?.cell_ids) ? region.cell_ids.join(', ') : '—';
+      const crop = Array.isArray(region?.crop_size) ? region.crop_size.join('×') : '—';
+      const parsed = region?.font_category
+        ? `${String(region?.closest_family || '—')} · ${String(region.font_category)}`
+        : 'unparsed';
+      return `${String(region?.label || '—')} = region ${String(region?.region_index ?? '—')}`
+        + ` · lines ${cellIds} · ${crop}px · ${parsed}`;
+    }).join('\n');
+    const cellIds = Array.isArray(call?.cell_ids) ? call.cell_ids.join(', ') : '';
+    const crop = Array.isArray(call?.crop_size) ? call.crop_size.join('×') : '';
+    const montage = Array.isArray(call?.montage_size) ? call.montage_size.join('×') : '';
+    const context = [
+      regions.length
+        ? `[batch]\n${regions.length} crops${montage ? ` · ${montage}px` : ''}`
+        : `[region]\n${String(call?.region_index ?? '—')} · ${String(call?.region_label || '—')}`,
+      regionSummary ? `[regions]\n${regionSummary}` : '',
+      !regions.length && cellIds ? `[OCR lines]\n${cellIds}` : '',
+      !regions.length && crop ? `[crop]\n${crop}px` : '',
+      !regions.length && call?.font_category
+        ? `[parsed]\n${String(call?.closest_family || '—')} · ${String(call.font_category)}`
+        : '',
+    ].filter(Boolean).join('\n');
+    return formatCall(call, context);
   }
 
   callsPageSelect.addEventListener('change', () => {
@@ -1556,6 +1627,7 @@ export function createPdfTranslationView() {
     doclayout: 'PP-DocLayoutV2',
     'doclayout-plus-l': 'PP-DocLayout_plus-L',
     'doclayout-v3': 'PP-DocLayoutV3',
+    'paddleocr-v5': 'PaddleOCR V5',
   };
 
   function pdfArtifactNames(result) {
@@ -1565,7 +1637,9 @@ export function createPdfTranslationView() {
       return name === 'omnidoc' || (name === 'omnidoc-coverage' && !artifacts.omnidoc)
         || (name !== 'input' && String(artifact.mime_type || '').toLowerCase().includes('pdf'));
     });
-    const artifactOrder = ['rendered', 'omnidoc', 'doclayout', 'doclayout-plus-l', 'doclayout-v3'];
+    const artifactOrder = [
+      'rendered', 'omnidoc', 'paddleocr-v5', 'doclayout', 'doclayout-plus-l', 'doclayout-v3',
+    ];
     const rank = (name) => {
       const index = artifactOrder.indexOf(name);
       return index < 0 ? artifactOrder.length : index;
@@ -1745,7 +1819,7 @@ export function createPdfTranslationView() {
   // value simply rides along on the next translation.
   [renderSizeModeSelect, eraseFillModeSelect, sizeMetricModeSelect, sizeCohortModeSelect,
     widthFitModeSelect, outputModeSelect, structureModeSelect, pageLayoutModeSelect,
-   pageScaleSelect, doclayoutOverlaySelect].forEach(
+   pageScaleSelect, doclayoutOverlaySelect, paddleocrV5OverlaySelect].forEach(
     (select) => select.addEventListener('change', rerenderRequest));
 
   // Choosing another finished document only re-points the frame — nothing is re-run.
