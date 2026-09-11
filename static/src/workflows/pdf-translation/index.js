@@ -1218,6 +1218,7 @@ export function createPdfTranslationView() {
       const timings = result?.timings || {};
       const pages = result?.response?.document?.pages || [];
       const total = m.translate_pdf_total_wall_ms;
+      const mib = (bytes) => (typeof bytes === 'number' ? `${(bytes / (1024 * 1024)).toFixed(1)} MiB` : '—');
       // Render and assemble are document-level; the other stages are per page, so sum those
       // here across pages for the whole-document breakdown.
       const sum = (key) => {
@@ -1237,6 +1238,9 @@ export function createPdfTranslationView() {
         ['Layout', sum('layout_wall_ms')],
         ['Align', sum('align_wall_ms')],
         ...(fontCallCount > 0 ? [['Font detection (VLM)', sum('font_detection_wall_ms')]] : []),
+        ['Persist page analyses', m.analysis_persist_wall_ms_total],
+        ['Build Omnidoc', m.omnidoc_wall_ms],
+        ['Load page analyses', m.analysis_load_wall_ms_total],
         ['Translation', sum('translation_wall_ms')],
         ['Render', typeof m.replacement_wall_ms_total === 'number' ? m.replacement_wall_ms_total : sum('replacement_wall_ms')],
         ['Assemble PDF', m.assemble_wall_ms],
@@ -1264,6 +1268,10 @@ export function createPdfTranslationView() {
         row('Queued (runner slot)', secMs(timings.pool_queue_wait_s), '',
           'Waited for a free runner slot in translation-services before this request started — not model time.'),
         row('Document total', ms(total), 'trt-total'),
+        row('Analyze all pages (elapsed)', ms(m.source_analysis_wall_ms), 'trt-l1',
+          'Elapsed document time from starting page analysis until every persisted page analysis is ready. Pages can overlap.'),
+        row('Translate all pages (elapsed)', ms(m.page_translation_wall_ms), 'trt-l1',
+          'Elapsed document time from loading the stored page analyses until every placement plan is ready. Pages can overlap.'),
         // Sum of every row below. Most are per-page totals of overlapping pages, so the sum
         // exceeds the elapsed time; Assemble PDF is document-level and runs after the pages, which
         // is why this is not called "summed over pages". It splits into queued + working, and both
@@ -1278,6 +1286,18 @@ export function createPdfTranslationView() {
         effective !== null
           ? row('working', `${Math.round(stageTotal - waited)} ms · ${effective.toFixed(1)}× document total`, 'trt-l1',
             'The queue taken out. Still not a speed-up: a page costs measurably more work under contention than it does alone, so this multiplier rises as the GPU gets busier — the opposite of what it looks like.')
+          : '',
+        typeof m.model_work_ms_total === 'number'
+          ? row('Model work', `${Math.round(m.model_work_ms_total)} ms`, 'trt-l1',
+            'Work time reported around llm-pool calls. It is already contained in the analysis and translation rows below.')
+          : '',
+        typeof m.model_wait_ms_total === 'number'
+          ? row('Model wait', `${Math.round(m.model_wait_ms_total)} ms`, 'trt-l1',
+            'Admission and engine queue time for llm-pool calls. It is already contained in the queued row and the stage rows below.')
+          : '',
+        typeof m.analysis_storage_bytes === 'number'
+          ? row('Stored page analyses', `${mib(m.analysis_storage_bytes)} · largest ${mib(m.analysis_largest_page_bytes)}`, 'trt-l1',
+            'Serialized analysis state retained for the source-first boundary. Translation reloads one record per active page worker.')
           : '',
         ...stages.map(stage),
         fontCallCount > 0
