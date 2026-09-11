@@ -15,6 +15,7 @@
 @import url("./workflows/chat.css");
 @import url("./workflows/image-translation.css");
 @import url("./workflows/pdf-translation.css");
+@import url("./workflows/omnidoc.css");
 @import url("./workflows/pdf-translation-regression.css");
 @import url("./workflows/pdf-testing.css");
 @import url("./workflows/pdf-anatomy.css");

@@ -1,4 +1,5 @@
 import { api } from '../../api-client.js';
+import { createOmnidocInspector } from './omnidoc.js';
 import { escapeAttr, escapeHtml, formatApiError } from '../../shared/ui-helpers.js';
 import { TRANSLATION_LANGUAGES } from '../../shared/translation-languages.js';
 import { publishWorkflowBusy } from '../../shared/workflow-activity.js';
@@ -85,6 +86,7 @@ export function createPdfTranslationView() {
                 <div class="translation-preview-block translation-requests-frame-translated">
                   <div class="translation-preview-frame pdf-translation-frame">
                     <iframe id="pdfOutputPreview" title="Translated PDF" hidden></iframe>
+                    <div id="pdfOmnidoc" class="omnidoc-inspector" hidden></div>
                     <div id="pdfOutputEmpty" class="translation-preview-empty">No output yet</div>
                     <div id="pdfOutputPending" class="translation-preview-pending" hidden>
                       <div class="translation-spinner" aria-hidden="true"></div>
@@ -389,6 +391,7 @@ export function createPdfTranslationView() {
   const inputPreview = container.querySelector('#pdfInputPreview');
   const inputEmpty = container.querySelector('#pdfInputEmpty');
   const outputPreview = container.querySelector('#pdfOutputPreview');
+  const omnidocInspector = createOmnidocInspector(container.querySelector('#pdfOmnidoc'));
   const outputEmpty = container.querySelector('#pdfOutputEmpty');
   const outputPending = container.querySelector('#pdfOutputPending');
   const outputPendingLabel = container.querySelector('.translation-preview-pending-label');
@@ -1493,6 +1496,7 @@ export function createPdfTranslationView() {
   });
 
   function clearOutputPreview() {
+    omnidocInspector.hide();
     outputPreview.hidden = true;
     outputPreview.removeAttribute('src');
     downloadLink.hidden = true;
@@ -1611,12 +1615,14 @@ export function createPdfTranslationView() {
 
   function hidePending() {
     outputPending.hidden = true;
-    outputEmpty.hidden = !outputPreview.hidden;
+    outputEmpty.hidden = !outputPreview.hidden || !container.querySelector('#pdfOmnidoc').hidden;
   }
 
   // Every finished document this run produced, in the order the selector offers them: the
   // translation first, because that is what the view is for.
   const ARTIFACT_LABELS = {
+    omnidoc: 'Omnidoc · source representation',
+    'omnidoc-coverage': 'Omnidoc · analysis incomplete',
     rendered: 'Translated PDF',
     doclayout: 'PP-DocLayoutV2',
     'doclayout-plus-l': 'PP-DocLayout_plus-L',
@@ -1628,9 +1634,12 @@ export function createPdfTranslationView() {
     const artifacts = result?.response?.artifacts || {};
     const names = Object.keys(artifacts).filter((name) => {
       const artifact = artifacts[name] || {};
-      return name !== 'input' && String(artifact.mime_type || '').toLowerCase().includes('pdf');
+      return name === 'omnidoc' || (name === 'omnidoc-coverage' && !artifacts.omnidoc)
+        || (name !== 'input' && String(artifact.mime_type || '').toLowerCase().includes('pdf'));
     });
-    const artifactOrder = ['rendered', 'paddleocr-v5', 'doclayout', 'doclayout-plus-l', 'doclayout-v3'];
+    const artifactOrder = [
+      'rendered', 'omnidoc', 'paddleocr-v5', 'doclayout', 'doclayout-plus-l', 'doclayout-v3',
+    ];
     const rank = (name) => {
       const index = artifactOrder.indexOf(name);
       return index < 0 ? artifactOrder.length : index;
@@ -1669,16 +1678,29 @@ export function createPdfTranslationView() {
       return;
     }
     const url = `/api/pdf-translation/requests/${encodeURIComponent(requestId)}/artifacts/${encodeURIComponent(artifactName)}?ts=${Date.now()}`;
-    outputPreview.src = url;
-    outputPreview.hidden = false;
+    omnidocInspector.hide();
+    const isOmnidoc = artifactName === 'omnidoc' || artifactName === 'omnidoc-coverage';
+    outputPreview.hidden = isOmnidoc;
+    if (isOmnidoc) {
+      outputPreview.removeAttribute('src');
+      omnidocInspector.show(requestId, { coverageOnly: artifactName === 'omnidoc-coverage' });
+    } else {
+      outputPreview.src = url;
+    }
     outputEmpty.hidden = true;
     outputPending.hidden = true;
     const base = (selectedFile()?.name || historicalFilename || 'document').replace(/\.[^.]+$/, '') || 'document';
     const lang = String(lastTargetLang || '').toLowerCase() || 'out';
     downloadLink.href = url;
-    downloadLink.setAttribute('download', `${base}_${lang}.pdf`);
+    const downloadName = artifactName === 'omnidoc-coverage'
+      ? `${base}_omnidoc_coverage.json`
+      : artifactName === 'omnidoc'
+        ? `${base}_omnidoc.json`
+        : `${base}_${lang}.pdf`;
+    downloadLink.setAttribute('download', downloadName);
+    downloadLink.textContent = isOmnidoc ? 'Download JSON' : 'Download PDF';
     downloadLink.hidden = false;
-    benchmarkBtn.hidden = false;
+    benchmarkBtn.hidden = isOmnidoc;
     // Capture is only meaningful once the run completed (the fixture freezes its per-page
     // artifacts); resolve the fixture name + existing fixtures for the badge.
     refreshRegStatus();
@@ -1702,7 +1724,9 @@ export function createPdfTranslationView() {
       const benchNote = out.benchmark?.run_id
         ? ' · added to the PDF-testing matrix as "ours"'
         : (out.benchmark?.error ? ` · benchmark mirror failed: ${out.benchmark.error}` : '');
-      setCaptureStatus(`Captured ${out.name}/${out.target_lang}/${out.variant}: ${out.pages} page(s), ${out.units} unit(s)${scoreNote}${benchNote}. See the PDF translation regression view.`);
+      const omnidocNote = out.omnidoc?.status === 'failed'
+        ? ` · Omnidoc capture failed: ${out.omnidoc.error}` : '';
+      setCaptureStatus(`Captured ${out.name}/${out.target_lang}/${out.variant}: ${out.pages} page(s), ${out.units} unit(s)${scoreNote}${benchNote}${omnidocNote}. See the PDF translation regression view.`);
       await refreshRegStatus();  // the new variant now shows in the badge
     } catch (err) {
       setCaptureStatus(formatApiError(err), 'error');
@@ -1843,6 +1867,7 @@ export function createPdfTranslationView() {
     if (!currentRequestId || isTerminalState(currentState())) stopPolling();
   };
   container.__destroy = () => {
+    omnidocInspector.hide();
     stopPolling();
     if (inputObjectUrl) {
       URL.revokeObjectURL(inputObjectUrl);

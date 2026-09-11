@@ -58,6 +58,9 @@ function formatApiErrorMessage(status, payload) {
 }
 
 export const api = {
+  getPdfArtifactJson(requestId, artifact, options = {}) {
+    return fetchJson(`/api/pdf-translation/requests/${encodeURIComponent(requestId)}/artifacts/${encodeURIComponent(artifact)}`, options);
+  },
   async getDefaultModel() {
     return fetchJson('/api/config/default-model');
   },

@@ -537,7 +537,7 @@
 /* Zoom is relative to the image's NATIVE size (CSS zoom scales layout size, so the frame
    grows with it), capped at the column width so a phone-screenshot original never forces
    the page wide; height follows via the aspect ratio. */
-.translation-requests-view .translation-preview-frame img {
+.translation-requests-view .translation-preview-frame > img {
   display: block;
   grid-area: 1 / 1;
   align-self: start;
