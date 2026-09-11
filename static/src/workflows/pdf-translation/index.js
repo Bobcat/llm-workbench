@@ -1,5 +1,6 @@
 import { api } from '../../api-client.js';
 import { createOmnidocInspector } from './omnidoc.js';
+import { summarizeOmnidocTimings, renderOmnidocTimings } from './omnidoc-timings.js';
 import { escapeAttr, escapeHtml, formatApiError } from '../../shared/ui-helpers.js';
 import { TRANSLATION_LANGUAGES } from '../../shared/translation-languages.js';
 import { publishWorkflowBusy } from '../../shared/workflow-activity.js';
@@ -139,7 +140,7 @@ export function createPdfTranslationView() {
                 </label>
                 <label class="translation-prompts-field">
                   <span>Doclayout overlay</span>
-                  <select id="pdfDoclayoutOverlay" title="Also produce three PDFs showing what PP-DocLayout_plus-L, V2 and V3 returned for each page: one box per raw region with its label and confidence, drawn on the source page. Only plus-L feeds the translation pipeline; V2 and V3 are comparison artifacts. Off by default because the two comparison models and three overlay documents add work. Pick them in the Artifact selector above once the run finishes.">
+                  <select id="pdfDoclayoutOverlay" title="Also produce three PDFs showing what PP-DocLayoutV2, plus-L and V3 returned for each page: one box per raw region with its label and confidence, drawn on the source page. V2 feeds the translation pipeline; plus-L and V3 are comparison artifacts. Off by default because the two comparison models and three overlay documents add work. Pick them in the Artifact selector above once the run finishes.">
                     <option value="off" selected>off</option>
                     <option value="on">on — compare plus-L, V2 and V3</option>
                   </select>
@@ -1141,8 +1142,36 @@ export function createPdfTranslationView() {
   // replacement_wall_ms — the other stages read "—" then, which is honest: they did not run.
   let timingsScopeValue = 'total';
   let lastTimingsResult = null;
+  let timingTimeline = null;
+  let timingTimelineKey = '';
+  let timingTimelineState = '';
+  let timingTimelineController = null;
+
+  function loadTimingTimeline(result) {
+    const id = result?.request_id;
+    const artifact = result?.response?.artifacts?.timeline;
+    const key = id && artifact ? `${id}:${artifact}` : '';
+    if (key === timingTimelineKey) return;
+    timingTimelineController?.abort();
+    timingTimelineKey = key;
+    timingTimeline = null;
+    timingTimelineState = key ? 'loading' : '';
+    if (!key) return;
+    timingTimelineController = new AbortController();
+    api.getPdfArtifactJson(id, 'timeline', { signal: timingTimelineController.signal }).then((data) => {
+      if (timingTimelineKey !== key) return;
+      timingTimeline = data;
+      timingTimelineState = 'loaded';
+      syncTimingsSection(lastTimingsResult);
+    }).catch((error) => {
+      if (timingTimelineKey !== key || error.name === 'AbortError') return;
+      timingTimelineState = 'failed';
+      renderTimings();
+    });
+  }
 
   function syncHistoricalTimings() {
+    loadTimingTimeline(null);
     lastTimingsResult = null;
     timingsScope.innerHTML = '';
     timingsScopeField.hidden = true;
@@ -1150,17 +1179,20 @@ export function createPdfTranslationView() {
   }
 
   function syncResultTimings(result) {
-    if (result?.response?.metrics) syncTimingsSection(result);
+    if (result?.response?.metrics || result?.response?.artifacts?.timeline) syncTimingsSection(result);
     else if (isInspectingHistory) syncHistoricalTimings();
     else syncTimingsSection(result);
   }
 
   function syncTimingsSection(result) {
     lastTimingsResult = result;
-    const pages = result?.response?.document?.pages || [];
+    loadTimingTimeline(result);
+    const pages = result?.response?.document?.pages
+      || [...new Set((timingTimeline?.spans || []).map((span) => span.page)
+        .filter((page) => Number.isInteger(page)))].sort((a, b) => a - b).map((page) => ({ page }));
     const total = result?.response?.metrics?.translate_pdf_total_wall_ms;
     // No run yet: hide the scope picker and show the placeholder card, matching the image view.
-    if (!pages.length && typeof total !== 'number') {
+    if (!pages.length && typeof total !== 'number' && !result?.response?.artifacts?.timeline) {
       timingsScope.innerHTML = '';
       timingsScopeField.hidden = true;
       timingsEl.innerHTML = '<div class="trt-row trt-placeholder"><span>Run a request to see stage timings.</span></div>';
@@ -1196,6 +1228,22 @@ export function createPdfTranslationView() {
     const ms = (v) => (typeof v === 'number' ? `${Math.round(v)} ms` : '—');
     const row = (label, value, cls = '', title = '') => `<div class="trt-row ${cls}"${title ? ` title="${escapeAttr(title)}"` : ''}><span>${label}</span><strong>${value}</strong></div>`;
     const note = (text) => `<div class="trt-note">${text}</div>`;
+    const omnidoc = summarizeOmnidocTimings(timingTimeline,
+      timingsScopeValue === 'total' ? null : Number(timingsScopeValue));
+    const timelineNote = timingTimelineState === 'loading'
+      ? note('Loading detailed timings…') : timingTimelineState === 'failed'
+        ? note('Detailed timings could not be loaded. The values above remain available.') : '';
+    if (!result?.response?.metrics) {
+      // Durable history retains the timeline, but not the original response metrics.
+      // Show those recorded spans without reconstructing missing translation totals.
+      timingsEl.innerHTML = [
+        timingsScopeValue === 'total' && typeof result?.timings?.pool_run_wall_s === 'number'
+          ? row('Request elapsed', ms(result.timings.pool_run_wall_s * 1000), 'trt-total') : '',
+        renderOmnidocTimings(omnidoc, { page: timingsScopeValue !== 'total' }), timelineNote,
+        note('Translation summary metrics were not retained for this request. Available timeline measurements are shown above.'),
+      ].join('');
+      return;
+    }
 
     if (timingsScopeValue === 'total') {
       const m = result?.response?.metrics || {};
@@ -1227,7 +1275,9 @@ export function createPdfTranslationView() {
       const shares = integerShares(measured.map(([, v]) => v));
       const shareByLabel = new Map(measured.map(([label], i) => [label, shares[i]]));
       const factor = typeof total === 'number' && total > 0 ? stageTotal / total : null;
-      const waited = typeof m.wait_ms_total === 'number' ? m.wait_ms_total : null;
+      // Omnidoc's waits are in the timeline but not in these translation-stage totals.
+      const waited = typeof m.wait_ms_total === 'number' && timingTimelineState !== 'loading'
+        && timingTimelineState !== 'failed' ? Math.max(0, m.wait_ms_total - (omnidoc?.wait || 0)) : null;
       // Queue time is not work, so the multiplier that means something is the one left after
       // taking it out: that is the parallelism the run actually got out of the pool.
       const effective = factor !== null && waited !== null && total > 0
@@ -1245,11 +1295,14 @@ export function createPdfTranslationView() {
         row('Queued (runner slot)', secMs(timings.pool_queue_wait_s), '',
           'Waited for a free runner slot in translation-services before this request started — not model time.'),
         row('Document total', ms(total), 'trt-total'),
+        omnidoc ? row('of which Omnidoc', `${Math.round(omnidoc.elapsed)} ms · ${Math.round(omnidoc.elapsed / total * 100)}%`, 'trt-l1') : '',
+        omnidoc ? row('Other elapsed time', ms(Math.max(0, total - omnidoc.elapsed)), 'trt-l1',
+          'Elapsed time outside Omnidoc in this run, not a measurement of another branch.') : '',
         // Sum of every row below. Most are per-page totals of overlapping pages, so the sum
         // exceeds the elapsed time; Assemble PDF is document-level and runs after the pages, which
         // is why this is not called "summed over pages". It splits into queued + working, and both
         // get their own row — but neither multiplier is a speed-up, see the note below.
-        row('All steps summed', factor
+        row('Translation steps summed', factor
           ? `${Math.round(stageTotal)} ms · ${factor.toFixed(1)}× document total`
           : ms(stageTotal), 'trt-total'),
         typeof waited === 'number' && stageTotal > 0
@@ -1273,9 +1326,11 @@ export function createPdfTranslationView() {
         row('Page concurrency', typeof m.page_concurrency === 'number' ? String(m.page_concurrency) : '—', 'trt-l1'),
         outputRouteRow(result, row),
         surrenderedProtectionsRow(result, row),
-        note(`Pages run in parallel, so the rows below add up to more than the elapsed document total. Their percentages are shares of that sum and add up to 100%.${effective !== null
+        note(`Pages run in parallel, so the translation stages above add up to more than their elapsed time. Their percentages are shares of that sum and add up to 100%. Omnidoc is shown separately.${effective !== null
           ? ' Neither multiplier is a speed-up: the raw one grows with the queue, and <strong>working</strong> grows with per-page slowdown under contention — both rise as the GPU gets more congested. To know what page concurrency actually buys, compare the document total against a run at page concurrency 1.'
           : ''}`),
+        renderOmnidocTimings(omnidoc),
+        timelineNote,
       ].join('');
       return;
     }
@@ -1297,6 +1352,8 @@ export function createPdfTranslationView() {
       stage('Align', m.align_wall_ms),
       stage('Translation', m.translation_wall_ms),
       stage('Render', m.replacement_wall_ms),
+      renderOmnidocTimings(omnidoc, { page: true }),
+      timelineNote,
     ].join('');
   }
 
@@ -1553,8 +1610,8 @@ export function createPdfTranslationView() {
     omnidoc: 'Omnidoc · source representation',
     'omnidoc-coverage': 'Omnidoc · analysis incomplete',
     rendered: 'Translated PDF',
-    doclayout: 'PP-DocLayout_plus-L',
-    'doclayout-v2': 'PP-DocLayoutV2',
+    doclayout: 'PP-DocLayoutV2',
+    'doclayout-plus-l': 'PP-DocLayout_plus-L',
     'doclayout-v3': 'PP-DocLayoutV3',
   };
 
@@ -1565,7 +1622,7 @@ export function createPdfTranslationView() {
       return name === 'omnidoc' || (name === 'omnidoc-coverage' && !artifacts.omnidoc)
         || (name !== 'input' && String(artifact.mime_type || '').toLowerCase().includes('pdf'));
     });
-    const artifactOrder = ['rendered', 'omnidoc', 'doclayout', 'doclayout-v2', 'doclayout-v3'];
+    const artifactOrder = ['rendered', 'omnidoc', 'doclayout', 'doclayout-plus-l', 'doclayout-v3'];
     const rank = (name) => {
       const index = artifactOrder.indexOf(name);
       return index < 0 ? artifactOrder.length : index;
@@ -1788,6 +1845,8 @@ export function createPdfTranslationView() {
     if (!currentRequestId || isTerminalState(currentState())) stopPolling();
   };
   container.__destroy = () => {
+    timingTimelineController?.abort();
+    timingTimelineKey = '';
     omnidocInspector.hide();
     stopPolling();
     if (inputObjectUrl) {
