@@ -1242,7 +1242,8 @@ export function createPdfTranslationView() {
         ['Build Omnidoc', m.omnidoc_wall_ms],
         ['Load page analyses', m.analysis_load_wall_ms_total],
         ['Translation', sum('translation_wall_ms')],
-        ['Render', typeof m.replacement_wall_ms_total === 'number' ? m.replacement_wall_ms_total : sum('replacement_wall_ms')],
+        ['Build target Omnidoc', m.target_omnidoc_wall_ms],
+        ['Plan placement', typeof m.replacement_wall_ms_total === 'number' ? m.replacement_wall_ms_total : sum('replacement_wall_ms')],
         ['Assemble PDF', m.assemble_wall_ms],
       ];
       const measured = stages.filter(([, v]) => typeof v === 'number');
@@ -1271,7 +1272,9 @@ export function createPdfTranslationView() {
         row('Analyze all pages (elapsed)', ms(m.source_analysis_wall_ms), 'trt-l1',
           'Elapsed document time from starting page analysis until every persisted page analysis is ready. Pages can overlap.'),
         row('Translate all pages (elapsed)', ms(m.page_translation_wall_ms), 'trt-l1',
-          'Elapsed document time from loading the stored page analyses until every placement plan is ready. Pages can overlap.'),
+          'Elapsed document time from loading the stored page analyses until every translation is ready. Pages can overlap.'),
+        row('Place all pages (elapsed)', ms(m.page_placement_wall_ms), 'trt-l1',
+          'Elapsed document time from the validated target Omnidoc until every placement plan is ready. Pages can overlap.'),
         // Sum of every row below. Most are per-page totals of overlapping pages, so the sum
         // exceeds the elapsed time; Assemble PDF is document-level and runs after the pages, which
         // is why this is not called "summed over pages". It splits into queued + working, and both
@@ -1642,6 +1645,7 @@ export function createPdfTranslationView() {
   // translation first, because that is what the view is for.
   const ARTIFACT_LABELS = {
     omnidoc: 'Omnidoc · source representation',
+    'omnidoc-target': 'Omnidoc · target representation',
     'omnidoc-coverage': 'Omnidoc · analysis incomplete',
     rendered: 'Translated PDF',
     doclayout: 'PP-DocLayoutV2',
@@ -1654,11 +1658,12 @@ export function createPdfTranslationView() {
     const artifacts = result?.response?.artifacts || {};
     const names = Object.keys(artifacts).filter((name) => {
       const artifact = artifacts[name] || {};
-      return name === 'omnidoc' || (name === 'omnidoc-coverage' && !artifacts.omnidoc)
+      return name === 'omnidoc' || name === 'omnidoc-target'
+        || (name === 'omnidoc-coverage' && !artifacts.omnidoc)
         || (name !== 'input' && String(artifact.mime_type || '').toLowerCase().includes('pdf'));
     });
     const artifactOrder = [
-      'rendered', 'omnidoc', 'paddleocr-v5', 'doclayout', 'doclayout-plus-l', 'doclayout-v3',
+      'rendered', 'omnidoc', 'omnidoc-target', 'paddleocr-v5', 'doclayout', 'doclayout-plus-l', 'doclayout-v3',
     ];
     const rank = (name) => {
       const index = artifactOrder.indexOf(name);
@@ -1699,11 +1704,15 @@ export function createPdfTranslationView() {
     }
     const url = `/api/pdf-translation/requests/${encodeURIComponent(requestId)}/artifacts/${encodeURIComponent(artifactName)}?ts=${Date.now()}`;
     omnidocInspector.hide();
-    const isOmnidoc = artifactName === 'omnidoc' || artifactName === 'omnidoc-coverage';
+    const isOmnidoc = artifactName === 'omnidoc' || artifactName === 'omnidoc-target'
+      || artifactName === 'omnidoc-coverage';
     outputPreview.hidden = isOmnidoc;
     if (isOmnidoc) {
       outputPreview.removeAttribute('src');
-      omnidocInspector.show(requestId, { coverageOnly: artifactName === 'omnidoc-coverage' });
+      omnidocInspector.show(requestId, {
+        coverageOnly: artifactName === 'omnidoc-coverage',
+        target: artifactName === 'omnidoc-target',
+      });
     } else {
       outputPreview.src = url;
     }
@@ -1716,6 +1725,8 @@ export function createPdfTranslationView() {
       ? `${base}_omnidoc_coverage.json`
       : artifactName === 'omnidoc'
         ? `${base}_omnidoc.json`
+        : artifactName === 'omnidoc-target'
+          ? `${base}_omnidoc_target.json`
         : `${base}_${lang}.pdf`;
     downloadLink.setAttribute('download', downloadName);
     downloadLink.textContent = isOmnidoc ? 'Download JSON' : 'Download PDF';
