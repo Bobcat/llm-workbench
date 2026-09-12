@@ -88,6 +88,7 @@ export function createPdfTranslationView() {
                   <div class="translation-preview-frame pdf-translation-frame">
                     <iframe id="pdfOutputPreview" title="Translated PDF" hidden></iframe>
                     <div id="pdfOmnidoc" class="omnidoc-inspector" hidden></div>
+                    <div id="pdfPlacementPlan" class="omnidoc-inspector" hidden></div>
                     <div id="pdfOutputEmpty" class="translation-preview-empty">No output yet</div>
                     <div id="pdfOutputPending" class="translation-preview-pending" hidden>
                       <div class="translation-spinner" aria-hidden="true"></div>
@@ -393,7 +394,9 @@ export function createPdfTranslationView() {
   const inputEmpty = container.querySelector('#pdfInputEmpty');
   const outputPreview = container.querySelector('#pdfOutputPreview');
   const omnidocInspector = createOmnidocInspector(container.querySelector('#pdfOmnidoc'));
-  const placementPlanInspector = createPlacementPlanInspector(container.querySelector('#pdfOmnidoc'));
+  const placementPlanInspector = createPlacementPlanInspector(
+    container.querySelector('#pdfPlacementPlan')
+  );
   const outputEmpty = container.querySelector('#pdfOutputEmpty');
   const outputPending = container.querySelector('#pdfOutputPending');
   const outputPendingLabel = container.querySelector('.translation-preview-pending-label');
@@ -1642,7 +1645,9 @@ export function createPdfTranslationView() {
 
   function hidePending() {
     outputPending.hidden = true;
-    outputEmpty.hidden = !outputPreview.hidden || !container.querySelector('#pdfOmnidoc').hidden;
+    outputEmpty.hidden = !outputPreview.hidden
+      || !container.querySelector('#pdfOmnidoc').hidden
+      || !container.querySelector('#pdfPlacementPlan').hidden;
   }
 
   // Every finished document this run produced, in the order the selector offers them: the

@@ -27,17 +27,24 @@ export function createPlacementPlanInspector(host) {
     const sourceRegions = new Map((source.regions || []).map((region) => [region.id, region]));
     const pageTargets = plan.targets.filter((item) => item.page_ids.includes(page.id));
     const pageObjects = plan.physical_objects.filter((item) => item.page_id === page.id);
-    const items = [
+    const allItems = [
+      ...plan.targets.map((item) => ({ ...item, record_kind: 'target' })),
+      ...plan.physical_objects.map((item) => ({ ...item, record_kind: 'physical_object' })),
+    ];
+    const pageItems = [
       ...pageTargets.map((item) => ({ ...item, record_kind: 'target' })),
       ...pageObjects.map((item) => ({ ...item, record_kind: 'physical_object' })),
     ];
+    const withoutPage = allItems.filter(
+      (item) => item.record_kind === 'target' && item.page_ids.length === 0
+    );
     const visibleItems = showFurniture
-      ? items
-      : items.filter((item) => item.mobility !== 'page_fixed');
-    const active = items.find((item) => item.id === selected) || null;
+      ? pageItems
+      : pageItems.filter((item) => item.mobility !== 'page_fixed');
+    const active = allItems.find((item) => item.id === selected) || null;
     const linkedIds = new Set([
       ...(active?.attachment_ids || []),
-      ...items.filter((item) => (item.attachment_ids || []).includes(active?.id)).map((item) => item.id),
+      ...allItems.filter((item) => (item.attachment_ids || []).includes(active?.id)).map((item) => item.id),
     ]);
     const targetOverlay = pageTargets
       .filter((item) => item.bounding_box && (showFurniture || item.mobility !== 'page_fixed'))
@@ -69,7 +76,7 @@ export function createPlacementPlanInspector(host) {
     );
     const sourceRegionOverlay = Array.from(activeRegionIds).map((regionId) => {
       const region = sourceRegions.get(regionId);
-      return region
+      return region?.page_id === page.id
         ? `<polygon points="${polygonPoints(region.polygon)}" class="placement-source-region" aria-hidden="true"/>`
         : '';
     }).join('');
@@ -83,7 +90,7 @@ export function createPlacementPlanInspector(host) {
       <div class="omnidoc-toolbar">
         <a href="${artifactUrl('omnidoc-placement-plan')}" download="omnidoc-placement-plan.json">Download placement plan</a>
         <label>Page <select data-page>${source.pages.map((item, index) => `<option value="${index}" ${index === pageIndex ? 'selected' : ''}>${item.index + 1}</option>`).join('')}</select> / ${source.pages.length}</label>
-        <span>${pageTargets.length} targets · ${pageObjects.length} physical objects</span>
+        <span>${pageTargets.length} targets · ${pageObjects.length} physical objects · ${withoutPage.length} targets without page</span>
         <label><input type="checkbox" data-furniture ${showFurniture ? 'checked' : ''}> Show page-fixed objects</label>
         <span>Green: flow eligible · dashed blue: withheld · purple: physical object</span>
         <span class="omnidoc-coverage" role="status">Inspection only · PDF placement unchanged</span>
@@ -94,7 +101,7 @@ export function createPlacementPlanInspector(host) {
           <svg viewBox="0 0 ${page.width} ${page.height}" aria-label="Placement inventory">${targetOverlay}${objectOverlay}${sourceRegionOverlay}</svg>
         </div></div>
         <aside class="omnidoc-details">
-          <label>Placement item <select data-select><option value="">Choose on the page</option>${visibleItems.map((item) => `<option value="${escapeAttr(item.id)}" ${selected === item.id ? 'selected' : ''}>${escapeHtml(item.record_kind === 'target' ? item.content_class : item.region_kind)} · ${escapeHtml(item.id)}</option>`).join('')}</select></label>
+          <label>Placement item <select data-select><option value="">Choose on the page</option>${visibleItems.map((item) => `<option value="${escapeAttr(item.id)}" ${selected === item.id ? 'selected' : ''}>${escapeHtml(item.record_kind === 'target' ? item.content_class : item.region_kind)} · ${escapeHtml(item.id)}</option>`).join('')}${withoutPage.length ? `<optgroup label="Without page">${withoutPage.map((item) => `<option value="${escapeAttr(item.id)}" ${selected === item.id ? 'selected' : ''}>${escapeHtml(item.content_class)} · ${escapeHtml(item.id)}</option>`).join('')}</optgroup>` : ''}</select></label>
           ${active ? `<strong>${escapeHtml(activeTitle)}</strong><code>${escapeHtml(active.id)}</code>
             <dl class="omnidoc-origin">
               <dt>Record</dt><dd>${escapeHtml(active.record_kind)}</dd>
