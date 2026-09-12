@@ -1363,6 +1363,7 @@ export function createPdfTranslationView() {
     };
     timingsEl.innerHTML = [
       row('Page total', ms(total), 'trt-total'),
+      row('Effective layout', escapeHtml(String(page?.effective_page_layout_mode || '—')), 'trt-l1'),
       stage('OCR', m.ocr_wall_ms),
       stage('Grouping (VLM)', m.grouping_wall_ms),
       stage('Layout', m.layout_wall_ms),
