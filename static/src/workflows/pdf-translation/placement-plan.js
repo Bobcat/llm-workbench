@@ -84,7 +84,8 @@ export function createPlacementPlanInspector(host) {
         <a href="${artifactUrl('omnidoc-placement-plan')}" download="omnidoc-placement-plan.json">Download placement plan</a>
         <label>Page <select data-page>${source.pages.map((item, index) => `<option value="${index}" ${index === pageIndex ? 'selected' : ''}>${item.index + 1}</option>`).join('')}</select> / ${source.pages.length}</label>
         <span>${pageTargets.length} targets · ${pageObjects.length} physical objects</span>
-        <label><input type="checkbox" data-furniture ${showFurniture ? 'checked' : ''}> Show furniture and footnotes</label>
+        <label><input type="checkbox" data-furniture ${showFurniture ? 'checked' : ''}> Show page-fixed objects</label>
+        <span>Green: flow eligible · dashed blue: withheld · purple: physical object</span>
         <span class="omnidoc-coverage" role="status">Inspection only · PDF placement unchanged</span>
       </div>
       <div class="omnidoc-body">
