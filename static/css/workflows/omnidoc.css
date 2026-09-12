@@ -15,6 +15,15 @@
 .omnidoc-show-decoration .omnidoc-region.decoration { display: block; }
 .omnidoc-fragment { display: none; fill: transparent; stroke: #06b6d4; stroke-width: .45; stroke-dasharray: 2 1; pointer-events: none; }
 .omnidoc-show-fragments .omnidoc-fragment { display: block; }
+.placement-item { cursor: pointer; vector-effect: non-scaling-stroke; }
+.placement-target { fill: transparent; stroke: #2563eb; stroke-width: .8; }
+.placement-target.withheld { stroke-dasharray: 3 2; }
+.placement-target.eligible { fill: #22c55e18; stroke: #16a34a; }
+.placement-object { fill: #9333ea12; stroke: #9333ea; stroke-width: 1.1; }
+.placement-item:hover, .placement-item:focus { fill: #2563eb26; stroke-width: 1.8; outline: none; }
+.placement-item.linked { stroke: #f59e0b; stroke-width: 1.6; }
+.placement-item.selected { fill: #facc1538; stroke: #e11d48; stroke-width: 2; }
+.placement-source-region { fill: transparent; stroke: #0f172a; stroke-width: 1.1; stroke-dasharray: 5 2; pointer-events: none; vector-effect: non-scaling-stroke; }
 .omnidoc-details { overflow: auto; padding: 12px; font-size: 12px; border-left: 1px solid #64748b; }
 .omnidoc-details select { max-width: 100%; width: 100%; margin: 6px 0 12px; }
 .omnidoc-details strong, .omnidoc-details code { display: block; overflow-wrap: anywhere; margin: 5px 0; }

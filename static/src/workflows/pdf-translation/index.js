@@ -1,5 +1,6 @@
 import { api } from '../../api-client.js';
 import { createOmnidocInspector } from './omnidoc.js';
+import { createPlacementPlanInspector } from './placement-plan.js';
 import { escapeAttr, escapeHtml, formatApiError } from '../../shared/ui-helpers.js';
 import { TRANSLATION_LANGUAGES } from '../../shared/translation-languages.js';
 import { publishWorkflowBusy } from '../../shared/workflow-activity.js';
@@ -392,6 +393,7 @@ export function createPdfTranslationView() {
   const inputEmpty = container.querySelector('#pdfInputEmpty');
   const outputPreview = container.querySelector('#pdfOutputPreview');
   const omnidocInspector = createOmnidocInspector(container.querySelector('#pdfOmnidoc'));
+  const placementPlanInspector = createPlacementPlanInspector(container.querySelector('#pdfOmnidoc'));
   const outputEmpty = container.querySelector('#pdfOutputEmpty');
   const outputPending = container.querySelector('#pdfOutputPending');
   const outputPendingLabel = container.querySelector('.translation-preview-pending-label');
@@ -1243,6 +1245,7 @@ export function createPdfTranslationView() {
         ['Load page analyses', m.analysis_load_wall_ms_total],
         ['Translation', sum('translation_wall_ms')],
         ['Build target Omnidoc', m.target_omnidoc_wall_ms],
+        ['Inventory placement', m.placement_inventory_wall_ms],
         ['Plan placement', typeof m.replacement_wall_ms_total === 'number' ? m.replacement_wall_ms_total : sum('replacement_wall_ms')],
         ['Assemble PDF', m.assemble_wall_ms],
       ];
@@ -1520,6 +1523,7 @@ export function createPdfTranslationView() {
 
   function clearOutputPreview() {
     omnidocInspector.hide();
+    placementPlanInspector.hide();
     outputPreview.hidden = true;
     outputPreview.removeAttribute('src');
     downloadLink.hidden = true;
@@ -1646,6 +1650,7 @@ export function createPdfTranslationView() {
   const ARTIFACT_LABELS = {
     omnidoc: 'Omnidoc · source representation',
     'omnidoc-target': 'Omnidoc · target representation',
+    'omnidoc-placement-plan': 'Omnidoc · placement plan',
     'omnidoc-coverage': 'Omnidoc · analysis incomplete',
     rendered: 'Translated PDF',
     doclayout: 'PP-DocLayoutV2',
@@ -1658,12 +1663,12 @@ export function createPdfTranslationView() {
     const artifacts = result?.response?.artifacts || {};
     const names = Object.keys(artifacts).filter((name) => {
       const artifact = artifacts[name] || {};
-      return name === 'omnidoc' || name === 'omnidoc-target'
+      return name === 'omnidoc' || name === 'omnidoc-target' || name === 'omnidoc-placement-plan'
         || (name === 'omnidoc-coverage' && !artifacts.omnidoc)
         || (name !== 'input' && String(artifact.mime_type || '').toLowerCase().includes('pdf'));
     });
     const artifactOrder = [
-      'rendered', 'omnidoc', 'omnidoc-target', 'paddleocr-v5', 'doclayout', 'doclayout-plus-l', 'doclayout-v3',
+      'rendered', 'omnidoc', 'omnidoc-target', 'omnidoc-placement-plan', 'paddleocr-v5', 'doclayout', 'doclayout-plus-l', 'doclayout-v3',
     ];
     const rank = (name) => {
       const index = artifactOrder.indexOf(name);
@@ -1704,10 +1709,16 @@ export function createPdfTranslationView() {
     }
     const url = `/api/pdf-translation/requests/${encodeURIComponent(requestId)}/artifacts/${encodeURIComponent(artifactName)}?ts=${Date.now()}`;
     omnidocInspector.hide();
+    placementPlanInspector.hide();
     const isOmnidoc = artifactName === 'omnidoc' || artifactName === 'omnidoc-target'
       || artifactName === 'omnidoc-coverage';
-    outputPreview.hidden = isOmnidoc;
-    if (isOmnidoc) {
+    const isPlacementPlan = artifactName === 'omnidoc-placement-plan';
+    const isInspector = isOmnidoc || isPlacementPlan;
+    outputPreview.hidden = isInspector;
+    if (isPlacementPlan) {
+      outputPreview.removeAttribute('src');
+      placementPlanInspector.show(requestId);
+    } else if (isOmnidoc) {
       outputPreview.removeAttribute('src');
       omnidocInspector.show(requestId, {
         coverageOnly: artifactName === 'omnidoc-coverage',
@@ -1727,11 +1738,13 @@ export function createPdfTranslationView() {
         ? `${base}_omnidoc.json`
         : artifactName === 'omnidoc-target'
           ? `${base}_omnidoc_target.json`
-        : `${base}_${lang}.pdf`;
+          : artifactName === 'omnidoc-placement-plan'
+            ? `${base}_omnidoc_placement_plan.json`
+            : `${base}_${lang}.pdf`;
     downloadLink.setAttribute('download', downloadName);
-    downloadLink.textContent = isOmnidoc ? 'Download JSON' : 'Download PDF';
+    downloadLink.textContent = isInspector ? 'Download JSON' : 'Download PDF';
     downloadLink.hidden = false;
-    benchmarkBtn.hidden = isOmnidoc;
+    benchmarkBtn.hidden = isInspector;
     // Capture is only meaningful once the run completed (the fixture freezes its per-page
     // artifacts); resolve the fixture name + existing fixtures for the badge.
     refreshRegStatus();
@@ -1899,6 +1912,7 @@ export function createPdfTranslationView() {
   };
   container.__destroy = () => {
     omnidocInspector.hide();
+    placementPlanInspector.hide();
     stopPolling();
     if (inputObjectUrl) {
       URL.revokeObjectURL(inputObjectUrl);
