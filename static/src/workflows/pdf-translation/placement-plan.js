@@ -25,6 +25,7 @@ export function createPlacementPlanInspector(host) {
     const page = source.pages[pageIndex];
     const targetElements = new Map(target.elements.map((element) => [element.id, element]));
     const sourceRegions = new Map((source.regions || []).map((region) => [region.id, region]));
+    const pageFixedObjectIds = new Set(plan.page_fixed_object_ids);
     const pageTargets = plan.targets.filter((item) => item.page_ids.includes(page.id));
     const pageObjects = plan.physical_objects.filter((item) => item.page_id === page.id);
     const allItems = [
@@ -40,7 +41,11 @@ export function createPlacementPlanInspector(host) {
     );
     const visibleItems = showFurniture
       ? pageItems
-      : pageItems.filter((item) => item.mobility !== 'page_fixed');
+      : pageItems.filter((item) => (
+        item.record_kind === 'target'
+          ? item.mobility !== 'page_fixed'
+          : !pageFixedObjectIds.has(item.id)
+      ));
     const active = allItems.find((item) => item.id === selected) || null;
     const linkedIds = new Set([
       ...(active?.attachment_ids || []),
@@ -59,9 +64,9 @@ export function createPlacementPlanInspector(host) {
         return `<polygon points="${boxPoints(item.bounding_box)}" class="${classes}" data-placement="${escapeAttr(item.id)}" tabindex="0" role="button" aria-label="${escapeAttr(label)}"><title>${escapeHtml(label)}</title></polygon>`;
       }).join('');
     const objectOverlay = pageObjects
-      .filter((item) => showFurniture || item.mobility !== 'page_fixed')
+      .filter((item) => showFurniture || !pageFixedObjectIds.has(item.id))
       .map((item) => {
-        const label = `${item.region_kind} · rigid · ${item.mobility} · ${item.decision_code}`;
+        const label = `${item.object_kind} · rigid · ${pageFixedObjectIds.has(item.id) ? 'page_fixed' : 'movable'}`;
         const classes = [
           'placement-item', 'placement-object',
           item.id === selected ? 'selected' : '',
@@ -72,7 +77,7 @@ export function createPlacementPlanInspector(host) {
     const activeRegionIds = new Set(
       active?.record_kind === 'target'
         ? (active.regions || []).map((region) => region.region_id)
-        : active ? [active.source_region_id] : []
+        : active?.source_kind === 'region' ? [active.source_id] : []
     );
     const sourceRegionOverlay = Array.from(activeRegionIds).map((regionId) => {
       const region = sourceRegions.get(regionId);
@@ -84,13 +89,13 @@ export function createPlacementPlanInspector(host) {
       ? targetElements.get(active.target_element_id) : null;
     const activeTitle = !active ? '' : active.record_kind === 'target'
       ? `${active.content_class} · ${elementText(targetElement).slice(0, 90) || active.target_element_id}`
-      : `${active.region_kind} · ${active.source_region_id}`;
+      : `${active.object_kind} · ${active.source_id}`;
 
     host.innerHTML = `
       <div class="omnidoc-toolbar">
         <a href="${artifactUrl('omnidoc-placement-plan')}" download="omnidoc-placement-plan.json">Download placement plan</a>
         <label>Page <select data-page>${source.pages.map((item, index) => `<option value="${index}" ${index === pageIndex ? 'selected' : ''}>${item.index + 1}</option>`).join('')}</select> / ${source.pages.length}</label>
-        <span>${pageTargets.length} targets · ${pageObjects.length} physical objects · ${withoutPage.length} targets without page</span>
+        <span>${pageTargets.length} targets · ${pageObjects.length} physical objects · ${pageObjects.filter((item) => pageFixedObjectIds.has(item.id)).length} page-fixed · ${withoutPage.length} targets without page</span>
         <label><input type="checkbox" data-furniture ${showFurniture ? 'checked' : ''}> Show page-fixed objects</label>
         <span>Green: flow eligible · dashed blue: withheld · purple: physical object</span>
         <span class="omnidoc-coverage" role="status">Inspection only · PDF placement unchanged</span>
@@ -101,14 +106,14 @@ export function createPlacementPlanInspector(host) {
           <svg viewBox="0 0 ${page.width} ${page.height}" aria-label="Placement inventory">${targetOverlay}${objectOverlay}${sourceRegionOverlay}</svg>
         </div></div>
         <aside class="omnidoc-details">
-          <label>Placement item <select data-select><option value="">Choose on the page</option>${visibleItems.map((item) => `<option value="${escapeAttr(item.id)}" ${selected === item.id ? 'selected' : ''}>${escapeHtml(item.record_kind === 'target' ? item.content_class : item.region_kind)} · ${escapeHtml(item.id)}</option>`).join('')}${withoutPage.length ? `<optgroup label="Without page">${withoutPage.map((item) => `<option value="${escapeAttr(item.id)}" ${selected === item.id ? 'selected' : ''}>${escapeHtml(item.content_class)} · ${escapeHtml(item.id)}</option>`).join('')}</optgroup>` : ''}</select></label>
+          <label>Placement item <select data-select><option value="">Choose on the page</option>${visibleItems.map((item) => `<option value="${escapeAttr(item.id)}" ${selected === item.id ? 'selected' : ''}>${escapeHtml(item.record_kind === 'target' ? item.content_class : item.object_kind)} · ${escapeHtml(item.id)}</option>`).join('')}${withoutPage.length ? `<optgroup label="Without page">${withoutPage.map((item) => `<option value="${escapeAttr(item.id)}" ${selected === item.id ? 'selected' : ''}>${escapeHtml(item.content_class)} · ${escapeHtml(item.id)}</option>`).join('')}</optgroup>` : ''}</select></label>
           ${active ? `<strong>${escapeHtml(activeTitle)}</strong><code>${escapeHtml(active.id)}</code>
             <dl class="omnidoc-origin">
               <dt>Record</dt><dd>${escapeHtml(active.record_kind)}</dd>
               <dt>Shape</dt><dd>${escapeHtml(active.shape)}</dd>
-              <dt>Mobility</dt><dd>${escapeHtml(active.mobility)}</dd>
-              <dt>${active.record_kind === 'target' ? 'Flow eligible' : 'Movement enabled'}</dt><dd>${active.record_kind === 'target' ? String(active.flow_eligible) : String(active.movement_enabled)}</dd>
-              <dt>Decision</dt><dd>${escapeHtml(active.decision_code)}</dd>
+              ${active.record_kind === 'target'
+                ? `<dt>Mobility</dt><dd>${escapeHtml(active.mobility)}</dd><dt>Flow eligible</dt><dd>${String(active.flow_eligible)}</dd><dt>Decision</dt><dd>${escapeHtml(active.decision_code)}</dd>`
+                : `<dt>Source</dt><dd>${escapeHtml(active.source_kind)} · ${escapeHtml(active.source_id)}</dd><dt>Page-fixed</dt><dd>${String(pageFixedObjectIds.has(active.id))}</dd>`}
             </dl>
             ${targetElement ? `<details open><summary>Target content</summary><pre class="omnidoc-text">${escapeHtml(elementText(targetElement) || '(No text)')}</pre></details>` : ''}
             <details open><summary>Attachments · ${(active.attachment_ids || []).length}</summary><pre>${escapeHtml(JSON.stringify(active.attachment_ids || [], null, 2))}</pre></details>
@@ -125,7 +130,11 @@ export function createPlacementPlanInspector(host) {
     });
     host.querySelector('[data-furniture]').addEventListener('change', (event) => {
       showFurniture = event.target.checked;
-      if (!showFurniture && active?.mobility === 'page_fixed') selected = '';
+      if (!showFurniture && (
+        active?.record_kind === 'target'
+          ? active.mobility === 'page_fixed'
+          : pageFixedObjectIds.has(active?.id)
+      )) selected = '';
       render();
     });
     host.querySelector('[data-select]').addEventListener('change', (event) => {
@@ -179,7 +188,11 @@ export function createPlacementPlanInspector(host) {
         target = loadedTarget;
         plan = loadedPlan;
         if (!source.pages?.length) throw new Error('This representation contains no PDF pages.');
-        if (!Array.isArray(plan.targets) || !Array.isArray(plan.physical_objects)) {
+        if (
+          !Array.isArray(plan.targets)
+          || !Array.isArray(plan.physical_objects)
+          || !Array.isArray(plan.page_fixed_object_ids)
+        ) {
           throw new Error('This artifact is not a placement-plan inventory.');
         }
         render();
