@@ -778,6 +778,9 @@ function buildLocalDefinitionFields(model, definition, backend) {
   }
 
   if (normalizedBackend === 'sglang_serve') {
+    const speculativeAlgorithm = normalizeNullableStringValue(
+      definition.sglang_speculative_algorithm
+    );
     const speculativeNumSteps = toPositiveInt(
       definition.sglang_speculative_num_steps
     );
@@ -801,11 +804,13 @@ function buildLocalDefinitionFields(model, definition, backend) {
       { label: 'Quantization', value: definition.sglang_quantization },
       { label: 'Attention backend', value: definition.sglang_attention_backend },
       { label: 'FP4 GEMM backend', value: definition.sglang_fp4_gemm_backend },
-      { label: 'MTP algorithm', value: definition.sglang_speculative_algorithm, optional: true },
-      { label: 'MTP assistant', value: definition.sglang_speculative_draft_model, code: true, optional: true },
-      { label: 'MTP steps', value: definition.sglang_speculative_num_steps, optional: true },
-      { label: 'MTP draft tokens', value: speculativeNumDraftTokens, optional: true },
-      { label: 'MTP top-k', value: definition.sglang_speculative_eagle_topk, optional: true },
+      ...(speculativeAlgorithm ? [
+        { label: 'MTP algorithm', value: speculativeAlgorithm },
+        { label: 'MTP assistant', value: definition.sglang_speculative_draft_model, code: true, optional: true },
+        { label: 'MTP steps', value: definition.sglang_speculative_num_steps },
+        { label: 'MTP draft tokens', value: speculativeNumDraftTokens },
+        { label: 'MTP top-k', value: definition.sglang_speculative_eagle_topk },
+      ] : []),
       { label: 'Binary', value: definition.sglang_serve_binary, code: true },
       { label: 'Prompt format', value: definition.prompt_format },
       { label: 'Configured enabled', value: model.configured_enabled },
@@ -2355,6 +2360,7 @@ function buildLoadPayload(model, draft) {
     'sglang_context_length',
     'sglang_max_total_tokens',
     'sglang_speculative_num_steps',
+    'sglang_speculative_num_draft_tokens',
   ].forEach((key) => {
     const value = toPositiveInt(draft[key]);
     if (
