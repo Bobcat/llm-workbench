@@ -130,10 +130,10 @@ export function createPdfTranslationView() {
                   </select>
                 </label>
                 <label class="translation-prompts-field">
-                  <span>Omnidoc flow</span>
-                  <select id="pdfOmnidocSingleLaneFlow" title="Experimental first Omnidoc placement route. On tries a whole-page flow only when Omnidoc proves one ordinary text lane and unchanged fixed page furniture. The page is accepted atomically; any unsupported item, collision or lack of room sends it through the selected Page layout unchanged.">
-                    <option value="off" selected>off — use the selected page layout</option>
-                    <option value="on">on — strict single-lane preview</option>
+                  <span>Omnidoc preview</span>
+                  <select id="pdfOmnidocSingleLaneFlow" title="Build a separate experimental PDF. A page is translated in that artifact only when Omnidoc proves one ordinary text lane and the Omnidoc compositor accepts the complete page. Every withheld source page becomes a blank notice page with its reason. The preview never uses the selected legacy page layout as a fallback; Translated PDF continues to use that layout.">
+                    <option value="off" selected>off — no placement preview</option>
+                    <option value="on">on — build strict preview</option>
                   </select>
                 </label>
                 <label class="translation-prompts-field">
@@ -1253,6 +1253,10 @@ export function createPdfTranslationView() {
       // share against the stage sum instead and state the factor once, on its own row.
       const fontCallCount = Number(m.font_detection_call_count_total || 0);
       const fontCorrectedCount = Number(m.font_corrected_unit_count_total || 0);
+      const previewPages = pages.filter((page) => page?.omnidoc_preview);
+      const previewAdmitted = previewPages.filter(
+        (page) => page.omnidoc_preview.status === 'admitted',
+      ).length;
       const stages = [
         ['OCR', sum('ocr_wall_ms')],
         ['Grouping (VLM)', sum('grouping_wall_ms')],
@@ -1267,6 +1271,8 @@ export function createPdfTranslationView() {
         ['Inventory placement', m.placement_inventory_wall_ms],
         ['Plan placement', typeof m.replacement_wall_ms_total === 'number' ? m.replacement_wall_ms_total : sum('replacement_wall_ms')],
         ['Assemble PDF', m.assemble_wall_ms],
+        ['Plan Omnidoc preview', m.omnidoc_preview_placement_wall_ms_total],
+        ['Assemble Omnidoc preview', m.omnidoc_preview_assemble_wall_ms],
       ];
       const measured = stages.filter(([, v]) => typeof v === 'number');
       const stageTotal = measured.reduce((a, [, v]) => a + v, 0);
@@ -1324,6 +1330,14 @@ export function createPdfTranslationView() {
           ? row('Stored page analyses', `${mib(m.analysis_storage_bytes)} · largest ${mib(m.analysis_largest_page_bytes)}`, 'trt-l1',
             'Serialized analysis state retained for the source-first boundary. Translation reloads one record per active page worker.')
           : '',
+        previewPages.length
+          ? row(
+            'Omnidoc preview',
+            `${previewAdmitted}/${previewPages.length} pages admitted`,
+            'trt-l1',
+            'Only admitted pages use Omnidoc placement in the separate preview PDF. Every withheld source page is replaced by a blank notice page with its reason.',
+          )
+          : '',
         ...stages.map(stage),
         fontCallCount > 0
           ? row('Font model calls', `${fontCallCount} · ${fontCorrectedCount} corrected units`, 'trt-l1',
@@ -1364,6 +1378,17 @@ export function createPdfTranslationView() {
     timingsEl.innerHTML = [
       row('Page total', ms(total), 'trt-total'),
       row('Effective layout', escapeHtml(String(page?.effective_page_layout_mode || '—')), 'trt-l1'),
+      page?.omnidoc_preview
+        ? row(
+          'Omnidoc preview',
+          escapeHtml(
+            page.omnidoc_preview.status === 'admitted'
+              ? 'admitted'
+              : `withheld · ${page.omnidoc_preview.reason || 'unspecified'}`,
+          ),
+          'trt-l1',
+        )
+        : '',
       stage('OCR', m.ocr_wall_ms),
       stage('Grouping (VLM)', m.grouping_wall_ms),
       stage('Layout', m.layout_wall_ms),
@@ -1673,6 +1698,7 @@ export function createPdfTranslationView() {
     omnidoc: 'Omnidoc · source representation',
     'omnidoc-target': 'Omnidoc · target representation',
     'omnidoc-placement-plan': 'Omnidoc · placement plan',
+    'omnidoc-preview': 'Omnidoc · placement preview',
     'omnidoc-coverage': 'Omnidoc · analysis incomplete',
     rendered: 'Translated PDF',
     doclayout: 'PP-DocLayoutV2',
@@ -1680,6 +1706,17 @@ export function createPdfTranslationView() {
     'doclayout-v3': 'PP-DocLayoutV3',
     'paddleocr-v5': 'PaddleOCR V5',
   };
+
+  function artifactLabel(name, result) {
+    const label = ARTIFACT_LABELS[name] || name;
+    if (name !== 'omnidoc-preview') return label;
+    const statuses = (result?.response?.document?.pages || [])
+      .map((page) => page?.omnidoc_preview)
+      .filter(Boolean);
+    if (!statuses.length) return label;
+    const admitted = statuses.filter((status) => status.status === 'admitted').length;
+    return `${label} · ${admitted}/${statuses.length} admitted`;
+  }
 
   function pdfArtifactNames(result) {
     const artifacts = result?.response?.artifacts || {};
@@ -1690,7 +1727,7 @@ export function createPdfTranslationView() {
         || (name !== 'input' && String(artifact.mime_type || '').toLowerCase().includes('pdf'));
     });
     const artifactOrder = [
-      'rendered', 'omnidoc', 'omnidoc-target', 'omnidoc-placement-plan', 'paddleocr-v5', 'doclayout', 'doclayout-plus-l', 'doclayout-v3',
+      'rendered', 'omnidoc-preview', 'omnidoc', 'omnidoc-target', 'omnidoc-placement-plan', 'paddleocr-v5', 'doclayout', 'doclayout-plus-l', 'doclayout-v3',
     ];
     const rank = (name) => {
       const index = artifactOrder.indexOf(name);
@@ -1713,7 +1750,7 @@ export function createPdfTranslationView() {
     const wanted = names.includes(artifactSelect.value) ? artifactSelect.value : (names[0] || '');
     artifactSelect.innerHTML = names.length
       ? names.map((name) => {
-        const label = ARTIFACT_LABELS[name] || name;
+        const label = artifactLabel(name, result);
         return `<option value="${name}"${name === wanted ? ' selected' : ''}>${label}</option>`;
       }).join('')
       : '<option value="">No document</option>';
