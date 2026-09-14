@@ -130,6 +130,13 @@ export function createPdfTranslationView() {
                   </select>
                 </label>
                 <label class="translation-prompts-field">
+                  <span>Omnidoc flow</span>
+                  <select id="pdfOmnidocSingleLaneFlow" title="Experimental first Omnidoc placement route. On tries a whole-page flow only when Omnidoc proves one ordinary text lane and unchanged fixed page furniture. The page is accepted atomically; any unsupported item, collision or lack of room sends it through the selected Page layout unchanged.">
+                    <option value="off" selected>off — use the selected page layout</option>
+                    <option value="on">on — strict single-lane preview</option>
+                  </select>
+                </label>
+                <label class="translation-prompts-field">
                   <span>Page scale</span>
                   <select id="pdfPageScale" title="typeset only: the type size as a fraction of the source's own. Dutch runs longer than English, so a re-set page takes lines its source did not have; smaller type in the SAME column buys them back. The design solves one scale per document from what its pages have room for; until that solve is wired in, this picks it by hand. The reference system sets the transformer paper at 0.90 of the source size.">
                     <option value="1.0" selected>1.00 — the source's own size</option>
@@ -386,6 +393,7 @@ export function createPdfTranslationView() {
   const outputModeSelect = container.querySelector('#pdfOutputMode');
   const structureModeSelect = container.querySelector('#pdfStructureMode');
   const pageLayoutModeSelect = container.querySelector('#pdfPageLayoutMode');
+  const omnidocSingleLaneFlowSelect = container.querySelector('#pdfOmnidocSingleLaneFlow');
   const doclayoutOverlaySelect = container.querySelector('#pdfDoclayoutOverlay');
   const paddleocrV5OverlaySelect = container.querySelector('#pdfPaddleocrV5Overlay');
   const artifactSelect = container.querySelector('#pdfArtifact');
@@ -478,6 +486,7 @@ export function createPdfTranslationView() {
     outputModeSelect.disabled = renderLocked;
     structureModeSelect.disabled = renderLocked;
     pageLayoutModeSelect.disabled = renderLocked;
+    omnidocSingleLaneFlowSelect.disabled = renderLocked;
     // Always settable, even while the layout mode is still `fit` — the fit path ignores the
     // flag, so the only thing disabling it bought was an ordering trap: this state is
     // recomputed after a render, so picking `typeset` left the scale locked until a render
@@ -501,6 +510,9 @@ export function createPdfTranslationView() {
       pdf_output_mode: String(outputModeSelect.value || 'vector'),
       pdf_structure_mode: String(structureModeSelect.value || 'source_only'),
       page_layout_mode: String(pageLayoutModeSelect.value || 'auto'),
+      omnidoc_single_lane_flow: String(
+        omnidocSingleLaneFlowSelect.value || 'off'
+      ) === 'on',
       page_scale: Number(pageScaleSelect.value || 1),
       doclayout_overlay: String(doclayoutOverlaySelect.value || 'off') === 'on',
       paddleocr_v5_overlay: String(paddleocrV5OverlaySelect.value || 'off') === 'on',
@@ -560,6 +572,10 @@ export function createPdfTranslationView() {
     setSelectValue(structureModeSelect, options?.pdf_structure_mode || 'source_only');
     // Runs from before `auto` existed omitted this field and therefore used the old fit default.
     setSelectValue(pageLayoutModeSelect, options?.page_layout_mode || 'fit');
+    setSelectValue(
+      omnidocSingleLaneFlowSelect,
+      options?.omnidoc_single_lane_flow ? 'on' : 'off',
+    );
     const pageScale = Number(options?.page_scale ?? 1);
     setSelectValue(
       pageScaleSelect,
@@ -1347,6 +1363,7 @@ export function createPdfTranslationView() {
     };
     timingsEl.innerHTML = [
       row('Page total', ms(total), 'trt-total'),
+      row('Effective layout', escapeHtml(String(page?.effective_page_layout_mode || '—')), 'trt-l1'),
       stage('OCR', m.ocr_wall_ms),
       stage('Grouping (VLM)', m.grouping_wall_ms),
       stage('Layout', m.layout_wall_ms),
@@ -1873,7 +1890,8 @@ export function createPdfTranslationView() {
   // value simply rides along on the next translation.
   [renderSizeModeSelect, eraseFillModeSelect, sizeMetricModeSelect, sizeCohortModeSelect,
     widthFitModeSelect, outputModeSelect, structureModeSelect, pageLayoutModeSelect,
-   pageScaleSelect, doclayoutOverlaySelect, paddleocrV5OverlaySelect].forEach(
+    omnidocSingleLaneFlowSelect, pageScaleSelect, doclayoutOverlaySelect,
+    paddleocrV5OverlaySelect].forEach(
     (select) => select.addEventListener('change', rerenderRequest));
 
   // Choosing another finished document only re-points the frame — nothing is re-run.
