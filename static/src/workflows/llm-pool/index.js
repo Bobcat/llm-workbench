@@ -1412,10 +1412,18 @@ function buildLoadSettingsMarkup(model, draft, runtimeState) {
     }));
   }
 
+  const sglangSpeculativeTopk = toPositiveInt(
+    getEffectiveLoadValue(model, 'sglang_speculative_eagle_topk')
+  );
   const sglangSpecIntegerFields = [
     ['sglang_speculative_num_steps', 'MTP steps'],
-    ['sglang_speculative_num_draft_tokens', 'MTP draft tokens'],
   ];
+  if (sglangSpeculativeTopk !== 1) {
+    sglangSpecIntegerFields.push([
+      'sglang_speculative_num_draft_tokens',
+      'MTP draft tokens',
+    ]);
+  }
   sglangSpecIntegerFields.forEach(([key, label]) => {
     const constraint = getIntegerConstraint(model, key);
     if (!constraint) return;
@@ -1451,6 +1459,11 @@ function buildLoadSettingsMarkup(model, draft, runtimeState) {
     notes.push(buildLoadSettingNoteMarkup(
       'MTP uses the configured assistant model. NEXTN is promoted to Gemma 4 FROZEN_KV_MTP; the assistant and top-k remain fixed in the model definition.'
     ));
+    if (sglangSpeculativeTopk === 1) {
+      notes.push(buildLoadSettingNoteMarkup(
+        'With top-k 1, SGLang derives MTP draft tokens as MTP steps + 1.'
+      ));
+    }
   }
 
   const llamaServerNctxConstraint = getIntegerConstraint(model, 'llama_server_n_ctx');
@@ -1950,6 +1963,10 @@ function getMmProcessorMaxPixels(model) {
   if (override && Object.prototype.hasOwnProperty.call(override, 'vllm_max_pixels')) {
     return toPositiveInt(override.vllm_max_pixels);
   }
+  return getConfiguredMmProcessorMaxPixels(model);
+}
+
+function getConfiguredMmProcessorMaxPixels(model) {
   const mmKwargs = model?.definition?.vllm_mm_processor_kwargs;
   if (Array.isArray(mmKwargs)) {
     const entry = mmKwargs.find((pair) => Array.isArray(pair) && pair[0] === 'max_pixels');
@@ -2182,7 +2199,7 @@ function buildLoadPayload(model, draft) {
   if (
     vllmMaxLen != null
     && hasLoadConstraint(model, 'vllm_max_model_len')
-    && vllmMaxLen !== toPositiveInt(getEffectiveLoadValue(model, 'vllm_max_model_len'))
+    && vllmMaxLen !== toPositiveInt(model.definition?.vllm_max_model_len)
   ) {
     payload.vllm_max_model_len = vllmMaxLen;
   }
@@ -2194,7 +2211,7 @@ function buildLoadPayload(model, draft) {
   const vllmKvMib = toPositiveInt(draft.vllm_kv_cache_mib);
   if (vllmKvMib != null && hasLoadConstraint(model, 'vllm_kv_cache_memory_bytes')) {
     const bytes = vllmKvMib * MIB;
-    if (bytes !== toPositiveInt(getEffectiveLoadValue(model, 'vllm_kv_cache_memory_bytes'))) {
+    if (bytes !== toPositiveInt(model.definition?.vllm_kv_cache_memory_bytes)) {
       payload.vllm_kv_cache_memory_bytes = bytes;
     }
   }
@@ -2204,7 +2221,7 @@ function buildLoadPayload(model, draft) {
     vllmMaxPixels != null
     && hasLoadConstraint(model, 'vllm_max_pixels')
     && shouldShowVllmMaxPixelsControl(model)
-    && vllmMaxPixels !== getMmProcessorMaxPixels(model)
+    && vllmMaxPixels !== getConfiguredMmProcessorMaxPixels(model)
   ) {
     payload.vllm_max_pixels = vllmMaxPixels;
   }
@@ -2215,8 +2232,8 @@ function buildLoadPayload(model, draft) {
     && shouldShowVllmSpeculativeMethodControl(model)
   ) {
     const draftSpeculativeMethod = normalizeNullableStringValue(draft.vllm_speculative_method);
-    const effectiveSpeculativeMethod = normalizeNullableStringValue(getEffectiveLoadValue(model, 'vllm_speculative_method'));
-    if (draftSpeculativeMethod !== effectiveSpeculativeMethod) {
+    const configuredSpeculativeMethod = normalizeNullableStringValue(model.definition?.vllm_speculative_method);
+    if (draftSpeculativeMethod !== configuredSpeculativeMethod) {
       payload.vllm_speculative_method = draftSpeculativeMethod;
     }
   }
@@ -2227,8 +2244,8 @@ function buildLoadPayload(model, draft) {
     && shouldShowVllmSpeculativeModelControl(model)
   ) {
     const draftSpeculativeModel = normalizeNullableStringValue(draft.vllm_speculative_model);
-    const effectiveSpeculativeModel = normalizeNullableStringValue(getEffectiveLoadValue(model, 'vllm_speculative_model'));
-    if (draftSpeculativeModel !== effectiveSpeculativeModel) {
+    const configuredSpeculativeModel = normalizeNullableStringValue(model.definition?.vllm_speculative_model);
+    if (draftSpeculativeModel !== configuredSpeculativeModel) {
       payload.vllm_speculative_model = draftSpeculativeModel;
     }
   }
@@ -2239,10 +2256,10 @@ function buildLoadPayload(model, draft) {
     && shouldShowVllmSpeculativeMoeBackendControl(model)
   ) {
     const draftSpeculativeMoeBackend = normalizeNullableStringValue(draft.vllm_speculative_moe_backend);
-    const effectiveSpeculativeMoeBackend = normalizeNullableStringValue(
-      getEffectiveLoadValue(model, 'vllm_speculative_moe_backend')
+    const configuredSpeculativeMoeBackend = normalizeNullableStringValue(
+      model.definition?.vllm_speculative_moe_backend
     );
-    if (draftSpeculativeMoeBackend !== effectiveSpeculativeMoeBackend) {
+    if (draftSpeculativeMoeBackend !== configuredSpeculativeMoeBackend) {
       payload.vllm_speculative_moe_backend = draftSpeculativeMoeBackend;
     }
   }
@@ -2253,10 +2270,10 @@ function buildLoadPayload(model, draft) {
     && shouldShowVllmSpeculativeAttentionBackendControl(model)
   ) {
     const draftSpeculativeAttentionBackend = normalizeNullableStringValue(draft.vllm_speculative_attention_backend);
-    const effectiveSpeculativeAttentionBackend = normalizeNullableStringValue(
-      getEffectiveLoadValue(model, 'vllm_speculative_attention_backend')
+    const configuredSpeculativeAttentionBackend = normalizeNullableStringValue(
+      model.definition?.vllm_speculative_attention_backend
     );
-    if (draftSpeculativeAttentionBackend !== effectiveSpeculativeAttentionBackend) {
+    if (draftSpeculativeAttentionBackend !== configuredSpeculativeAttentionBackend) {
       payload.vllm_speculative_attention_backend = draftSpeculativeAttentionBackend;
     }
   }
@@ -2266,7 +2283,7 @@ function buildLoadPayload(model, draft) {
     vllmNumSpeculativeTokens != null
     && hasLoadConstraint(model, 'vllm_num_speculative_tokens')
     && shouldShowVllmSpeculativeTokenControl(model)
-    && vllmNumSpeculativeTokens !== toPositiveInt(getEffectiveLoadValue(model, 'vllm_num_speculative_tokens'))
+    && vllmNumSpeculativeTokens !== toPositiveInt(model.definition?.vllm_num_speculative_tokens)
   ) {
     payload.vllm_num_speculative_tokens = vllmNumSpeculativeTokens;
   }
@@ -2275,7 +2292,7 @@ function buildLoadPayload(model, draft) {
   if (
     trtllmMaxSeqLen != null
     && hasLoadConstraint(model, 'trtllm_max_seq_len')
-    && trtllmMaxSeqLen !== toPositiveInt(getEffectiveLoadValue(model, 'trtllm_max_seq_len'))
+    && trtllmMaxSeqLen !== toPositiveInt(model.definition?.trtllm_max_seq_len)
   ) {
     payload.trtllm_max_seq_len = trtllmMaxSeqLen;
   }
@@ -2283,7 +2300,7 @@ function buildLoadPayload(model, draft) {
   const trtllmKvMib = toPositiveInt(draft.trtllm_kv_cache_mib);
   if (trtllmKvMib != null && hasLoadConstraint(model, 'trtllm_kv_cache_memory_bytes')) {
     const bytes = trtllmKvMib * MIB;
-    if (bytes !== toPositiveInt(getEffectiveLoadValue(model, 'trtllm_kv_cache_memory_bytes'))) {
+    if (bytes !== toPositiveInt(model.definition?.trtllm_kv_cache_memory_bytes)) {
       payload.trtllm_kv_cache_memory_bytes = bytes;
     }
   }
@@ -2292,7 +2309,7 @@ function buildLoadPayload(model, draft) {
   if (
     trtllmMaxNumTokens != null
     && hasLoadConstraint(model, 'trtllm_max_num_tokens')
-    && trtllmMaxNumTokens !== toPositiveInt(getEffectiveLoadValue(model, 'trtllm_max_num_tokens'))
+    && trtllmMaxNumTokens !== toPositiveInt(model.definition?.trtllm_max_num_tokens)
   ) {
     payload.trtllm_max_num_tokens = trtllmMaxNumTokens;
   }
@@ -2302,10 +2319,10 @@ function buildLoadPayload(model, draft) {
     && hasLoadConstraint(model, 'trtllm_enable_chunked_prefill')
   ) {
     const chunkedPrefill = normalizeBooleanValue(draft.trtllm_enable_chunked_prefill);
-    const effectiveChunkedPrefill = normalizeBooleanValue(
-      getEffectiveLoadValue(model, 'trtllm_enable_chunked_prefill')
+    const configuredChunkedPrefill = normalizeBooleanValue(
+      model.definition?.trtllm_enable_chunked_prefill
     );
-    if (chunkedPrefill != null && chunkedPrefill !== effectiveChunkedPrefill) {
+    if (chunkedPrefill != null && chunkedPrefill !== configuredChunkedPrefill) {
       payload.trtllm_enable_chunked_prefill = chunkedPrefill;
     }
   }
@@ -2315,10 +2332,10 @@ function buildLoadPayload(model, draft) {
     && hasLoadConstraint(model, 'trtllm_kv_cache_dtype')
   ) {
     const kvCacheDtype = String(draft.trtllm_kv_cache_dtype || '').trim();
-    const effectiveKvCacheDtype = String(
-      getEffectiveLoadValue(model, 'trtllm_kv_cache_dtype') || ''
+    const configuredKvCacheDtype = String(
+      model.definition?.trtllm_kv_cache_dtype || ''
     ).trim();
-    if (kvCacheDtype && kvCacheDtype !== effectiveKvCacheDtype) {
+    if (kvCacheDtype && kvCacheDtype !== configuredKvCacheDtype) {
       payload.trtllm_kv_cache_dtype = kvCacheDtype;
     }
   }
@@ -2327,13 +2344,12 @@ function buildLoadPayload(model, draft) {
     'sglang_context_length',
     'sglang_max_total_tokens',
     'sglang_speculative_num_steps',
-    'sglang_speculative_num_draft_tokens',
   ].forEach((key) => {
     const value = toPositiveInt(draft[key]);
     if (
       value != null
       && hasLoadConstraint(model, key)
-      && value !== toPositiveInt(getEffectiveLoadValue(model, key))
+      && value !== toPositiveInt(model.definition?.[key])
     ) {
       payload[key] = value;
     }
@@ -2343,7 +2359,7 @@ function buildLoadPayload(model, draft) {
   if (
     sglangMemFraction != null
     && hasLoadConstraint(model, 'sglang_mem_fraction_static')
-    && sglangMemFraction !== toFiniteNumber(getEffectiveLoadValue(model, 'sglang_mem_fraction_static'))
+    && sglangMemFraction !== toFiniteNumber(model.definition?.sglang_mem_fraction_static)
   ) {
     payload.sglang_mem_fraction_static = sglangMemFraction;
   }
@@ -2353,7 +2369,7 @@ function buildLoadPayload(model, draft) {
     sglangChunkedPrefillSize != null
     && hasLoadConstraint(model, 'sglang_chunked_prefill_size')
     && Math.trunc(sglangChunkedPrefillSize) !== toFiniteNumber(
-      getEffectiveLoadValue(model, 'sglang_chunked_prefill_size')
+      model.definition?.sglang_chunked_prefill_size
     )
   ) {
     payload.sglang_chunked_prefill_size = Math.trunc(sglangChunkedPrefillSize);
@@ -2364,10 +2380,10 @@ function buildLoadPayload(model, draft) {
     && hasLoadConstraint(model, 'sglang_kv_cache_dtype')
   ) {
     const draftValue = String(draft.sglang_kv_cache_dtype || '').trim();
-    const effectiveValue = String(
-      getEffectiveLoadValue(model, 'sglang_kv_cache_dtype') || ''
+    const configuredValue = String(
+      model.definition?.sglang_kv_cache_dtype || ''
     ).trim();
-    if (draftValue && draftValue !== effectiveValue) {
+    if (draftValue && draftValue !== configuredValue) {
       payload.sglang_kv_cache_dtype = draftValue;
     }
   }
@@ -2378,8 +2394,8 @@ function buildLoadPayload(model, draft) {
       || !hasLoadConstraint(model, key)
     ) return;
     const draftValue = normalizeNullableStringValue(draft[key]);
-    const effectiveValue = normalizeNullableStringValue(getEffectiveLoadValue(model, key));
-    if (draftValue !== effectiveValue) {
+    const configuredValue = normalizeNullableStringValue(model.definition?.[key]);
+    if (draftValue !== configuredValue) {
       payload[key] = draftValue;
     }
   });
@@ -2388,7 +2404,7 @@ function buildLoadPayload(model, draft) {
   if (
     llamaServerNctx != null
     && hasLoadConstraint(model, 'llama_server_n_ctx')
-    && llamaServerNctx !== toPositiveInt(getEffectiveLoadValue(model, 'llama_server_n_ctx'))
+    && llamaServerNctx !== toPositiveInt(model.definition?.llama_server_n_ctx)
   ) {
     payload.llama_server_n_ctx = llamaServerNctx;
   }
@@ -2397,7 +2413,7 @@ function buildLoadPayload(model, draft) {
   if (
     llamaServerImageTokens != null
     && hasLoadConstraint(model, 'llama_server_image_max_tokens')
-    && llamaServerImageTokens !== toPositiveInt(getEffectiveLoadValue(model, 'llama_server_image_max_tokens'))
+    && llamaServerImageTokens !== toPositiveInt(model.definition?.llama_server_image_max_tokens)
   ) {
     payload.llama_server_image_max_tokens = llamaServerImageTokens;
   }
@@ -2407,7 +2423,7 @@ function buildLoadPayload(model, draft) {
     && hasLoadConstraint(model, 'llama_server_spec_type')
   ) {
     const draftSpecType = String(draft.llama_server_spec_type || '').trim();
-    if (draftSpecType && draftSpecType !== String(getEffectiveLoadValue(model, 'llama_server_spec_type') || '')) {
+    if (draftSpecType && draftSpecType !== String(model.definition?.llama_server_spec_type || '')) {
       payload.llama_server_spec_type = draftSpecType;
     }
   }
@@ -2416,7 +2432,7 @@ function buildLoadPayload(model, draft) {
   if (
     llamaServerDraftMax != null
     && hasLoadConstraint(model, 'llama_server_spec_draft_n_max')
-    && llamaServerDraftMax !== toPositiveInt(getEffectiveLoadValue(model, 'llama_server_spec_draft_n_max'))
+    && llamaServerDraftMax !== toPositiveInt(model.definition?.llama_server_spec_draft_n_max)
   ) {
     payload.llama_server_spec_draft_n_max = llamaServerDraftMax;
   }
@@ -2425,7 +2441,7 @@ function buildLoadPayload(model, draft) {
   if (
     llamaServerDraftPMin != null
     && hasLoadConstraint(model, 'llama_server_spec_draft_p_min')
-    && llamaServerDraftPMin !== toFiniteNumber(getEffectiveLoadValue(model, 'llama_server_spec_draft_p_min'))
+    && llamaServerDraftPMin !== toFiniteNumber(model.definition?.llama_server_spec_draft_p_min)
   ) {
     payload.llama_server_spec_draft_p_min = llamaServerDraftPMin;
   }
@@ -2573,7 +2589,5 @@ function isStringLoadSettingKey(key) {
     || key === 'vllm_speculative_model'
     || key === 'vllm_speculative_moe_backend'
     || key === 'vllm_speculative_attention_backend'
-    || key === 'sglang_speculative_algorithm'
-    || key === 'sglang_speculative_draft_model'
   );
 }
