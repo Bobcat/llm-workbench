@@ -7,7 +7,15 @@ const LLM_POOL_ADDRESS_LABEL = 'llm-pool';
 const LOAD_SETTING_SLIDER_MAX = 65536;
 const VLLM_KV_CACHE_STEP_MIB = 256;
 const VLLM_KV_CACHE_MAX_MIB = 64 * 1024;
+const TRTLLM_KV_CACHE_STEP_MIB = 256;
+const TRTLLM_KV_CACHE_MAX_MIB = 64 * 1024;
 const LLAMA_SERVER_SPEC_DRAFT_P_MIN_STEP = 0.05;
+const SGLANG_WORKBENCH_KV_CACHE_DTYPES = new Set([
+  'auto',
+  'bf16',
+  'fp8_e4m3',
+  'fp8_e5m2',
+]);
 
 const FILTERS = [
   { id: 'all', label: 'All' },
@@ -662,7 +670,11 @@ function buildDefinitionGridMarkup(model, definitionGridClass) {
       { label: 'Configured enabled', value: model.configured_enabled },
       { label: 'Last error', value: model.last_error || 'none' },
     ]
-    : buildLocalDefinitionFields(model, definition, backend);
+    : [
+      ...buildLocalDefinitionFields(model, definition, backend),
+      { label: 'Target inflight', value: configuredTargetInflightForDisplay(model) },
+      { label: 'Effective inflight', value: model.effective_target_inflight },
+    ];
   const visibleFields = fields.filter(shouldShowDefinitionField);
 
   return `
@@ -688,7 +700,7 @@ function buildLocalDefinitionFields(model, definition, backend) {
       },
       { label: 'MMProj', value: definition.llama_server_mmproj_path, code: true, optional: true },
       { label: 'Draft model', value: definition.llama_server_draft_model_path, code: true, optional: true },
-      { label: 'Context size', value: definition.llama_server_n_ctx },
+      { label: 'Total context tokens', value: definition.llama_server_n_ctx },
       { label: 'Image tokens', value: definition.llama_server_image_max_tokens, optional: true },
       { label: 'Spec type', value: definition.llama_server_spec_type, optional: true },
       { label: 'Draft tokens', value: definition.llama_server_spec_draft_n_max, optional: true },
@@ -742,6 +754,53 @@ function buildLocalDefinitionFields(model, definition, backend) {
       { label: 'VRAM source', value: model.vram_estimate_source || 'unavailable' },
     );
     return fields;
+  }
+
+  if (normalizedBackend === 'trtllm_serve') {
+    return [
+      { label: 'Path', value: definition.model_path, code: true, optional: true },
+      { label: 'Backend', value: formatBackendLabel(backend) },
+      { label: 'TensorRT-LLM model', value: definition.trtllm_model, code: true },
+      { label: 'Max sequence length', value: definition.trtllm_max_seq_len },
+      {
+        label: 'KV cache',
+        value: formatBytesAsMib(definition.trtllm_kv_cache_memory_bytes),
+      },
+      { label: 'Max batched tokens', value: definition.trtllm_max_num_tokens },
+      { label: 'Chunked prefill', value: definition.trtllm_enable_chunked_prefill },
+      { label: 'KV cache dtype', value: definition.trtllm_kv_cache_dtype },
+      { label: 'Binary', value: definition.trtllm_serve_binary, code: true },
+      { label: 'Prompt format', value: definition.prompt_format },
+      { label: 'Configured enabled', value: model.configured_enabled },
+      { label: 'Last error', value: model.last_error, optional: true },
+      { label: 'VRAM source', value: model.vram_estimate_source || 'unavailable' },
+    ];
+  }
+
+  if (normalizedBackend === 'sglang_serve') {
+    return [
+      { label: 'Path', value: definition.model_path, code: true, optional: true },
+      { label: 'Backend', value: formatBackendLabel(backend) },
+      { label: 'SGLang model', value: definition.sglang_model, code: true },
+      { label: 'Context length', value: definition.sglang_context_length },
+      { label: 'GPU memory fraction', value: definition.sglang_mem_fraction_static },
+      { label: 'KV cache tokens', value: definition.sglang_max_total_tokens },
+      { label: 'Prefill chunk tokens', value: definition.sglang_chunked_prefill_size },
+      { label: 'KV cache dtype', value: definition.sglang_kv_cache_dtype },
+      { label: 'Quantization', value: definition.sglang_quantization },
+      { label: 'Attention backend', value: definition.sglang_attention_backend },
+      { label: 'FP4 GEMM backend', value: definition.sglang_fp4_gemm_backend },
+      { label: 'MTP algorithm', value: definition.sglang_speculative_algorithm, optional: true },
+      { label: 'MTP assistant', value: definition.sglang_speculative_draft_model, code: true, optional: true },
+      { label: 'MTP steps', value: definition.sglang_speculative_num_steps, optional: true },
+      { label: 'MTP draft tokens', value: definition.sglang_speculative_num_draft_tokens, optional: true },
+      { label: 'MTP top-k', value: definition.sglang_speculative_eagle_topk, optional: true },
+      { label: 'Binary', value: definition.sglang_serve_binary, code: true },
+      { label: 'Prompt format', value: definition.prompt_format },
+      { label: 'Configured enabled', value: model.configured_enabled },
+      { label: 'Last error', value: model.last_error, optional: true },
+      { label: 'VRAM source', value: model.vram_estimate_source || 'unavailable' },
+    ];
   }
 
   return [
@@ -804,14 +863,53 @@ function formatSecondsValue(value) {
   return `${numeric}s`;
 }
 
+function formatBytesAsMib(value) {
+  const bytes = toPositiveInt(value);
+  if (bytes == null) return '-';
+  return `${Math.round(bytes / MIB)} MiB`;
+}
+
 function buildLoadSettingsMarkup(model, draft, runtimeState) {
   const wideControls = [];
   const compactControls = [];
   const notes = [];
   const canConfigure = canConfigureLoadSettings(runtimeState);
+  const normalizedBackend = normalizeBackend(
+    model?.resolved_backend || model?.definition?.backend
+  );
   let hasGgufConfigControls = false;
   const replicaMax = toPositiveInt(model?.replica_max) ?? 1;
   let replicaControlMarkup = '';
+
+  const targetInflightConstraint = getIntegerConstraint(model, 'target_inflight');
+  if (targetInflightConstraint) {
+    compactControls.push(buildNumberSettingMarkup({
+      modelName: model.name,
+      key: 'target_inflight',
+      label: 'Target inflight',
+      value: getDraftOrEffectiveIntegerValue(
+        model,
+        draft,
+        'target_inflight',
+        targetInflightConstraint.minimum,
+      ),
+      minimum: targetInflightConstraint.minimum,
+      maximum: targetInflightConstraint.maximum,
+      step: targetInflightConstraint.step,
+      disabled: !canConfigure,
+    }));
+    const nativeConcurrencySetting = {
+      llama_server: 'llama-server --parallel',
+      vllm_serve: 'vLLM --max-num-seqs',
+      trtllm_serve: 'TensorRT-LLM max_batch_size',
+      sglang_serve: 'SGLang --max-running-requests',
+    }[normalizedBackend];
+    if (nativeConcurrencySetting) {
+      notes.push(buildLoadSettingNoteMarkup(
+        `Target inflight sets both llm-pool admission and ${nativeConcurrencySetting} for this load.`
+      ));
+    }
+  }
 
   if (replicaMax > 1) {
     const currentReplicaCount = canConfigure
@@ -1083,12 +1181,284 @@ function buildLoadSettingsMarkup(model, draft, runtimeState) {
     }));
   }
 
+  const trtllmMaxSeqLenConstraint = getIntegerConstraint(model, 'trtllm_max_seq_len');
+  if (trtllmMaxSeqLenConstraint) {
+    wideControls.push(buildSliderSettingMarkup({
+      modelName: model.name,
+      key: 'trtllm_max_seq_len',
+      label: 'Max sequence length',
+      value: getDraftOrEffectiveIntegerValue(
+        model,
+        draft,
+        'trtllm_max_seq_len',
+        trtllmMaxSeqLenConstraint.minimum,
+      ),
+      minimum: trtllmMaxSeqLenConstraint.minimum,
+      step: trtllmMaxSeqLenConstraint.step,
+      disabled: !canConfigure,
+    }));
+  }
+
+  const trtllmKvBytesConstraint = getIntegerConstraint(model, 'trtllm_kv_cache_memory_bytes');
+  if (trtllmKvBytesConstraint) {
+    const minimumMib = bytesToKvCacheMibStep(trtllmKvBytesConstraint.minimum);
+    const kvCacheMib = getDraftOrEffectiveTrtllmKvCacheMib(model, draft, minimumMib);
+    wideControls.push(buildSliderSettingMarkup({
+      modelName: model.name,
+      key: 'trtllm_kv_cache_mib',
+      label: 'KV cache (MiB)',
+      value: kvCacheMib,
+      valueLabel: formatSliderSettingValue('trtllm_kv_cache_mib', kvCacheMib),
+      minimum: minimumMib,
+      step: TRTLLM_KV_CACHE_STEP_MIB,
+      maximum: TRTLLM_KV_CACHE_MAX_MIB,
+      disabled: !canConfigure,
+    }));
+  }
+
+  const trtllmMaxTokensConstraint = getIntegerConstraint(model, 'trtllm_max_num_tokens');
+  if (trtllmMaxTokensConstraint) {
+    compactControls.push(buildNumberSettingMarkup({
+      modelName: model.name,
+      key: 'trtllm_max_num_tokens',
+      label: 'TRT token budget',
+      value: getDraftOrEffectiveIntegerValue(
+        model,
+        draft,
+        'trtllm_max_num_tokens',
+        trtllmMaxTokensConstraint.minimum,
+      ),
+      minimum: trtllmMaxTokensConstraint.minimum,
+      step: trtllmMaxTokensConstraint.step,
+      disabled: !canConfigure,
+    }));
+  }
+
+  const trtllmChunkedPrefillConstraint = getBooleanConstraint(
+    model,
+    'trtllm_enable_chunked_prefill',
+  );
+  if (trtllmChunkedPrefillConstraint) {
+    compactControls.push(buildEnumSelectSettingMarkup({
+      modelName: model.name,
+      key: 'trtllm_enable_chunked_prefill',
+      label: 'Chunked prefill',
+      options: ['false', 'true'],
+      value: String(getDraftOrEffectiveBooleanValue(
+        model,
+        draft,
+        'trtllm_enable_chunked_prefill',
+        trtllmChunkedPrefillConstraint.defaultValue,
+      )),
+      disabled: !canConfigure,
+    }));
+  }
+
+  const trtllmKvDtypeConstraint = getEnumConstraint(model, 'trtllm_kv_cache_dtype');
+  if (trtllmKvDtypeConstraint) {
+    compactControls.push(buildEnumSelectSettingMarkup({
+      modelName: model.name,
+      key: 'trtllm_kv_cache_dtype',
+      label: 'KV cache dtype',
+      options: trtllmKvDtypeConstraint.allowedValues,
+      value: getDraftOrEffectiveEnumValue(
+        model,
+        draft,
+        'trtllm_kv_cache_dtype',
+        trtllmKvDtypeConstraint.defaultValue,
+      ),
+      disabled: !canConfigure,
+    }));
+  }
+
+  if (
+    trtllmMaxSeqLenConstraint
+    || trtllmKvBytesConstraint
+    || trtllmMaxTokensConstraint
+  ) {
+    notes.push(buildLoadSettingNoteMarkup(
+      'TensorRT-LLM applies these settings when its server starts; unload before changing them.'
+    ));
+  }
+
+  const sglangContextConstraint = getIntegerConstraint(model, 'sglang_context_length');
+  if (sglangContextConstraint) {
+    wideControls.push(buildSliderSettingMarkup({
+      modelName: model.name,
+      key: 'sglang_context_length',
+      label: 'Context length',
+      value: getDraftOrEffectiveIntegerValue(
+        model,
+        draft,
+        'sglang_context_length',
+        sglangContextConstraint.minimum,
+      ),
+      minimum: sglangContextConstraint.minimum,
+      step: sglangContextConstraint.step,
+      disabled: !canConfigure,
+    }));
+  }
+
+  const sglangMaxTotalTokensConstraint = getIntegerConstraint(model, 'sglang_max_total_tokens');
+  if (sglangMaxTotalTokensConstraint) {
+    wideControls.push(buildSliderSettingMarkup({
+      modelName: model.name,
+      key: 'sglang_max_total_tokens',
+      label: 'KV cache tokens',
+      value: getDraftOrEffectiveIntegerValue(
+        model,
+        draft,
+        'sglang_max_total_tokens',
+        sglangMaxTotalTokensConstraint.minimum,
+      ),
+      minimum: sglangMaxTotalTokensConstraint.minimum,
+      step: sglangMaxTotalTokensConstraint.step,
+      disabled: !canConfigure,
+    }));
+  }
+
+  const sglangMemFractionConstraint = getFloatConstraint(model, 'sglang_mem_fraction_static');
+  if (sglangMemFractionConstraint) {
+    compactControls.push(buildNumberSettingMarkup({
+      modelName: model.name,
+      key: 'sglang_mem_fraction_static',
+      label: 'GPU memory fraction',
+      value: getDraftOrEffectiveNumberValue(
+        model,
+        draft,
+        'sglang_mem_fraction_static',
+        sglangMemFractionConstraint.defaultValue,
+      ),
+      minimum: sglangMemFractionConstraint.minimum,
+      maximum: sglangMemFractionConstraint.maximum,
+      step: 0.01,
+      disabled: !canConfigure,
+    }));
+  }
+
+  const sglangChunkedPrefillConstraint = getSignedIntegerConstraint(
+    model,
+    'sglang_chunked_prefill_size',
+  );
+  if (sglangChunkedPrefillConstraint) {
+    compactControls.push(buildNumberSettingMarkup({
+      modelName: model.name,
+      key: 'sglang_chunked_prefill_size',
+      label: 'Prefill chunk tokens',
+      value: getDraftOrEffectiveSignedIntegerValue(
+        model,
+        draft,
+        'sglang_chunked_prefill_size',
+        sglangChunkedPrefillConstraint.minimum,
+      ),
+      minimum: sglangChunkedPrefillConstraint.minimum,
+      maximum: sglangChunkedPrefillConstraint.maximum,
+      step: sglangChunkedPrefillConstraint.step,
+      disabled: !canConfigure,
+    }));
+  }
+
+  const sglangKvDtypeConstraint = getEnumConstraint(model, 'sglang_kv_cache_dtype');
+  if (sglangKvDtypeConstraint) {
+    const currentKvCacheDtype = getDraftOrEffectiveEnumValue(
+      model,
+      draft,
+      'sglang_kv_cache_dtype',
+      sglangKvDtypeConstraint.defaultValue,
+    );
+    const kvCacheDtypeOptions = sglangKvDtypeConstraint.allowedValues.filter(
+      (value) => SGLANG_WORKBENCH_KV_CACHE_DTYPES.has(value) || value === currentKvCacheDtype
+    );
+    compactControls.push(buildEnumSelectSettingMarkup({
+      modelName: model.name,
+      key: 'sglang_kv_cache_dtype',
+      label: 'KV cache dtype',
+      options: kvCacheDtypeOptions,
+      value: currentKvCacheDtype,
+      disabled: !canConfigure,
+    }));
+  }
+
+  const sglangSpecAlgorithmConstraint = getStringConstraint(
+    model,
+    'sglang_speculative_algorithm',
+  );
+  if (sglangSpecAlgorithmConstraint) {
+    const currentSpecAlgorithm = getDraftOrEffectiveStringValue(
+      model,
+      draft,
+      'sglang_speculative_algorithm',
+      sglangSpecAlgorithmConstraint.defaultValue,
+    );
+    const configuredSpecAlgorithm = (
+      normalizeNullableStringValue(model?.definition?.sglang_speculative_algorithm)
+      ?? normalizeNullableStringValue(sglangSpecAlgorithmConstraint.examples[0])
+    );
+    const specAlgorithmOptions = configuredSpecAlgorithm
+      ? ['', configuredSpecAlgorithm]
+      : [''];
+    const specAlgorithmOptionLabels = {'': 'Off'};
+    if (configuredSpecAlgorithm) {
+      specAlgorithmOptionLabels[configuredSpecAlgorithm] = `On (${configuredSpecAlgorithm})`;
+    }
+    compactControls.push(buildEnumSelectSettingMarkup({
+      modelName: model.name,
+      key: 'sglang_speculative_algorithm',
+      label: 'MTP',
+      options: specAlgorithmOptions,
+      optionLabels: specAlgorithmOptionLabels,
+      value: currentSpecAlgorithm,
+      disabled: !canConfigure,
+    }));
+  }
+
+  const sglangSpecIntegerFields = [
+    ['sglang_speculative_num_steps', 'MTP steps'],
+    ['sglang_speculative_num_draft_tokens', 'MTP draft tokens'],
+  ];
+  sglangSpecIntegerFields.forEach(([key, label]) => {
+    const constraint = getIntegerConstraint(model, key);
+    if (!constraint) return;
+    compactControls.push(buildNumberSettingMarkup({
+      modelName: model.name,
+      key,
+      label,
+      value: getDraftOrEffectiveIntegerValue(
+        model,
+        draft,
+        key,
+        constraint.minimum,
+      ),
+      minimum: constraint.minimum,
+      maximum: constraint.maximum,
+      step: constraint.step,
+      disabled: !canConfigure,
+    }));
+  });
+
+  if (
+    sglangContextConstraint
+    || sglangMaxTotalTokensConstraint
+    || sglangMemFractionConstraint
+    || sglangSpecAlgorithmConstraint
+  ) {
+    notes.push(buildLoadSettingNoteMarkup(
+      'SGLang applies these settings at server startup.'
+    ));
+    notes.push(buildLoadSettingNoteMarkup(
+      'Weights and KV cache must fit the GPU memory pool. Unload another large backend before loading SGLang; raising the fraction does not create free VRAM.'
+    ));
+    notes.push(buildLoadSettingNoteMarkup(
+      'MTP uses the configured assistant model. NEXTN is promoted to Gemma 4 FROZEN_KV_MTP; the assistant and top-k remain fixed in the model definition.'
+    ));
+  }
+
   const llamaServerNctxConstraint = getIntegerConstraint(model, 'llama_server_n_ctx');
   if (llamaServerNctxConstraint) {
     wideControls.push(buildNumberSettingMarkup({
       modelName: model.name,
       key: 'llama_server_n_ctx',
-      label: 'Context size',
+      label: 'Total context tokens',
       value: getDraftOrEffectiveIntegerValue(
         model,
         draft,
@@ -1184,6 +1554,11 @@ function buildLoadSettingsMarkup(model, draft, runtimeState) {
       'llama_server MTP settings are native server startup flags; unload before changing them.'
     ));
   }
+  if (llamaServerNctxConstraint && targetInflightConstraint) {
+    notes.push(buildLoadSettingNoteMarkup(
+      'llama-server shares total context tokens across its parallel slots. Approximate context per request is total context tokens divided by target inflight.'
+    ));
+  }
 
   if (replicaControlMarkup) {
     compactControls.push(replicaControlMarkup);
@@ -1228,7 +1603,16 @@ function buildSliderSettingMarkup({modelName, key, label, value, valueLabel, min
   `;
 }
 
-function buildEnumSelectSettingMarkup({modelName, key, label, options, value, disabled, wide = false}) {
+function buildEnumSelectSettingMarkup({
+  modelName,
+  key,
+  label,
+  options,
+  optionLabels = {},
+  value,
+  disabled,
+  wide = false,
+}) {
   return `
     <div class="llm-pool-load-setting${wide ? ' llm-pool-load-setting-wide' : ''}">
       <span>${escapeHtml(label)}</span>
@@ -1240,7 +1624,10 @@ function buildEnumSelectSettingMarkup({modelName, key, label, options, value, di
       >
         ${options.map((option) => {
           const selected = option === value ? ' selected' : '';
-          return `<option value="${escapeAttr(option)}"${selected}>${escapeHtml(option)}</option>`;
+          const optionLabel = Object.prototype.hasOwnProperty.call(optionLabels, option)
+            ? optionLabels[option]
+            : option;
+          return `<option value="${escapeAttr(option)}"${selected}>${escapeHtml(optionLabel)}</option>`;
         }).join('')}
       </select>
     </div>
@@ -1367,6 +1754,20 @@ function getIntegerConstraint(model, key) {
   return { minimum, step, maximum };
 }
 
+function getSignedIntegerConstraint(model, key) {
+  const raw = model?.load_constraints?.[key];
+  if (!raw || typeof raw !== 'object' || raw.kind !== 'integer') return null;
+  const minimum = toFiniteNumber(raw.minimum);
+  const step = toPositiveInt(raw.step);
+  if (minimum == null || step == null) return null;
+  const maximum = toFiniteNumber(raw.maximum);
+  return {
+    minimum: Math.trunc(minimum),
+    step,
+    maximum: maximum == null ? null : Math.trunc(maximum),
+  };
+}
+
 function getFloatConstraint(model, key) {
   const raw = model?.load_constraints?.[key];
   if (!raw || typeof raw !== 'object') return null;
@@ -1390,6 +1791,12 @@ function getEnumConstraint(model, key) {
   return { allowedValues, defaultValue };
 }
 
+function getBooleanConstraint(model, key) {
+  const raw = model?.load_constraints?.[key];
+  if (!raw || typeof raw !== 'object' || raw.kind !== 'boolean') return null;
+  return { defaultValue: raw.default === true };
+}
+
 function getStringConstraint(model, key) {
   const raw = model?.load_constraints?.[key];
   if (!raw || typeof raw !== 'object') return null;
@@ -1411,6 +1818,14 @@ function getDraftOrEffectiveIntegerValue(model, draft, key, fallbackMinimum) {
   return fallbackMinimum;
 }
 
+function getDraftOrEffectiveSignedIntegerValue(model, draft, key, fallbackMinimum) {
+  const draftValue = toFiniteNumber(draft?.[key]);
+  if (draftValue != null) return Math.trunc(draftValue);
+  const effectiveValue = toFiniteNumber(getEffectiveLoadValue(model, key));
+  if (effectiveValue != null) return Math.trunc(effectiveValue);
+  return fallbackMinimum;
+}
+
 function getDraftOrEffectiveEnumValue(model, draft, key, fallbackDefault) {
   const draftValue = draft?.[key];
   if (draftValue != null && String(draftValue).trim() !== '') {
@@ -1420,6 +1835,14 @@ function getDraftOrEffectiveEnumValue(model, draft, key, fallbackDefault) {
   if (effectiveValue != null && String(effectiveValue).trim() !== '') {
     return String(effectiveValue).trim();
   }
+  return fallbackDefault;
+}
+
+function getDraftOrEffectiveBooleanValue(model, draft, key, fallbackDefault) {
+  const draftValue = normalizeBooleanValue(draft?.[key]);
+  if (draftValue != null) return draftValue;
+  const effectiveValue = normalizeBooleanValue(getEffectiveLoadValue(model, key));
+  if (effectiveValue != null) return effectiveValue;
   return fallbackDefault;
 }
 
@@ -1505,8 +1928,16 @@ function getDraftOrEffectiveKvCacheMib(model, draft, fallbackMib) {
   return fallbackMib;
 }
 
+function getDraftOrEffectiveTrtllmKvCacheMib(model, draft, fallbackMib) {
+  const draftValue = toPositiveInt(draft?.trtllm_kv_cache_mib);
+  if (draftValue != null) return draftValue;
+  const effectiveBytes = toPositiveInt(getEffectiveLoadValue(model, 'trtllm_kv_cache_memory_bytes'));
+  if (effectiveBytes != null) return bytesToKvCacheMibStep(effectiveBytes);
+  return fallbackMib;
+}
+
 function formatSliderSettingValue(key, value) {
-  if (key === 'vllm_kv_cache_mib') {
+  if (key === 'vllm_kv_cache_mib' || key === 'trtllm_kv_cache_mib') {
     return `${value} MiB`;
   }
   return String(value);
@@ -1623,6 +2054,12 @@ function normalizeNullableStringValue(value) {
   return normalized === '' ? null : normalized;
 }
 
+function normalizeBooleanValue(value) {
+  if (value === true || value === 'true') return true;
+  if (value === false || value === 'false') return false;
+  return null;
+}
+
 function toExllamaCacheQuant(payload) {
   const kBits = toNullablePositiveInt(payload?.exllama_cache_k_bits);
   const vBits = toNullablePositiveInt(payload?.exllama_cache_v_bits);
@@ -1698,6 +2135,15 @@ function buildLoadPayload(model, draft) {
   if (!draft || typeof draft !== 'object') {
     return Object.keys(payload).length ? payload : null;
   }
+  const targetInflight = toPositiveInt(draft.target_inflight);
+  if (
+    targetInflight != null
+    && hasLoadConstraint(model, 'target_inflight')
+    && targetInflight !== toPositiveInt(model.definition?.target_inflight)
+  ) {
+    payload.target_inflight = targetInflight;
+  }
+
   const ggufNctx = toPositiveInt(draft.gguf_n_ctx);
   if (
     ggufNctx != null
@@ -1824,6 +2270,119 @@ function buildLoadPayload(model, draft) {
   ) {
     payload.vllm_num_speculative_tokens = vllmNumSpeculativeTokens;
   }
+
+  const trtllmMaxSeqLen = toPositiveInt(draft.trtllm_max_seq_len);
+  if (
+    trtllmMaxSeqLen != null
+    && hasLoadConstraint(model, 'trtllm_max_seq_len')
+    && trtllmMaxSeqLen !== toPositiveInt(getEffectiveLoadValue(model, 'trtllm_max_seq_len'))
+  ) {
+    payload.trtllm_max_seq_len = trtllmMaxSeqLen;
+  }
+
+  const trtllmKvMib = toPositiveInt(draft.trtllm_kv_cache_mib);
+  if (trtllmKvMib != null && hasLoadConstraint(model, 'trtllm_kv_cache_memory_bytes')) {
+    const bytes = trtllmKvMib * MIB;
+    if (bytes !== toPositiveInt(getEffectiveLoadValue(model, 'trtllm_kv_cache_memory_bytes'))) {
+      payload.trtllm_kv_cache_memory_bytes = bytes;
+    }
+  }
+
+  const trtllmMaxNumTokens = toPositiveInt(draft.trtllm_max_num_tokens);
+  if (
+    trtllmMaxNumTokens != null
+    && hasLoadConstraint(model, 'trtllm_max_num_tokens')
+    && trtllmMaxNumTokens !== toPositiveInt(getEffectiveLoadValue(model, 'trtllm_max_num_tokens'))
+  ) {
+    payload.trtllm_max_num_tokens = trtllmMaxNumTokens;
+  }
+
+  if (
+    Object.prototype.hasOwnProperty.call(draft, 'trtllm_enable_chunked_prefill')
+    && hasLoadConstraint(model, 'trtllm_enable_chunked_prefill')
+  ) {
+    const chunkedPrefill = normalizeBooleanValue(draft.trtllm_enable_chunked_prefill);
+    const effectiveChunkedPrefill = normalizeBooleanValue(
+      getEffectiveLoadValue(model, 'trtllm_enable_chunked_prefill')
+    );
+    if (chunkedPrefill != null && chunkedPrefill !== effectiveChunkedPrefill) {
+      payload.trtllm_enable_chunked_prefill = chunkedPrefill;
+    }
+  }
+
+  if (
+    Object.prototype.hasOwnProperty.call(draft, 'trtllm_kv_cache_dtype')
+    && hasLoadConstraint(model, 'trtllm_kv_cache_dtype')
+  ) {
+    const kvCacheDtype = String(draft.trtllm_kv_cache_dtype || '').trim();
+    const effectiveKvCacheDtype = String(
+      getEffectiveLoadValue(model, 'trtllm_kv_cache_dtype') || ''
+    ).trim();
+    if (kvCacheDtype && kvCacheDtype !== effectiveKvCacheDtype) {
+      payload.trtllm_kv_cache_dtype = kvCacheDtype;
+    }
+  }
+
+  [
+    'sglang_context_length',
+    'sglang_max_total_tokens',
+    'sglang_speculative_num_steps',
+    'sglang_speculative_num_draft_tokens',
+  ].forEach((key) => {
+    const value = toPositiveInt(draft[key]);
+    if (
+      value != null
+      && hasLoadConstraint(model, key)
+      && value !== toPositiveInt(getEffectiveLoadValue(model, key))
+    ) {
+      payload[key] = value;
+    }
+  });
+
+  const sglangMemFraction = toFiniteNumber(draft.sglang_mem_fraction_static);
+  if (
+    sglangMemFraction != null
+    && hasLoadConstraint(model, 'sglang_mem_fraction_static')
+    && sglangMemFraction !== toFiniteNumber(getEffectiveLoadValue(model, 'sglang_mem_fraction_static'))
+  ) {
+    payload.sglang_mem_fraction_static = sglangMemFraction;
+  }
+
+  const sglangChunkedPrefillSize = toFiniteNumber(draft.sglang_chunked_prefill_size);
+  if (
+    sglangChunkedPrefillSize != null
+    && hasLoadConstraint(model, 'sglang_chunked_prefill_size')
+    && Math.trunc(sglangChunkedPrefillSize) !== toFiniteNumber(
+      getEffectiveLoadValue(model, 'sglang_chunked_prefill_size')
+    )
+  ) {
+    payload.sglang_chunked_prefill_size = Math.trunc(sglangChunkedPrefillSize);
+  }
+
+  if (
+    Object.prototype.hasOwnProperty.call(draft, 'sglang_kv_cache_dtype')
+    && hasLoadConstraint(model, 'sglang_kv_cache_dtype')
+  ) {
+    const draftValue = String(draft.sglang_kv_cache_dtype || '').trim();
+    const effectiveValue = String(
+      getEffectiveLoadValue(model, 'sglang_kv_cache_dtype') || ''
+    ).trim();
+    if (draftValue && draftValue !== effectiveValue) {
+      payload.sglang_kv_cache_dtype = draftValue;
+    }
+  }
+
+  ['sglang_speculative_algorithm'].forEach((key) => {
+    if (
+      !Object.prototype.hasOwnProperty.call(draft, key)
+      || !hasLoadConstraint(model, key)
+    ) return;
+    const draftValue = normalizeNullableStringValue(draft[key]);
+    const effectiveValue = normalizeNullableStringValue(getEffectiveLoadValue(model, key));
+    if (draftValue !== effectiveValue) {
+      payload[key] = draftValue;
+    }
+  });
 
   const llamaServerNctx = toPositiveInt(draft.llama_server_n_ctx);
   if (
@@ -1997,7 +2556,10 @@ function parseLoadSettingControlValue(key, rawValue) {
   if (isStringLoadSettingKey(key)) {
     return normalizeNullableStringValue(rawValue);
   }
-  if (key === 'llama_server_spec_draft_p_min') {
+  if (
+    key === 'llama_server_spec_draft_p_min'
+    || key === 'sglang_mem_fraction_static'
+  ) {
     return toFiniteNumber(rawValue) ?? undefined;
   }
   const parsed = Number(rawValue);
@@ -2011,5 +2573,7 @@ function isStringLoadSettingKey(key) {
     || key === 'vllm_speculative_model'
     || key === 'vllm_speculative_moe_backend'
     || key === 'vllm_speculative_attention_backend'
+    || key === 'sglang_speculative_algorithm'
+    || key === 'sglang_speculative_draft_model'
   );
 }
