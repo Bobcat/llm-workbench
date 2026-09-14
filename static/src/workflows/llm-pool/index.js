@@ -1461,7 +1461,7 @@ function buildLoadSettingsMarkup(model, draft, runtimeState) {
     ));
     if (sglangSpeculativeTopk === 1) {
       notes.push(buildLoadSettingNoteMarkup(
-        'With top-k 1, SGLang derives MTP draft tokens as MTP steps + 1.'
+        'With top-k 1, llm-pool derives MTP draft tokens as MTP steps + 1.'
       ));
     }
   }
