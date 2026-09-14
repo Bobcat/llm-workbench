@@ -778,6 +778,17 @@ function buildLocalDefinitionFields(model, definition, backend) {
   }
 
   if (normalizedBackend === 'sglang_serve') {
+    const speculativeNumSteps = toPositiveInt(
+      definition.sglang_speculative_num_steps
+    );
+    const speculativeEagleTopk = toPositiveInt(
+      definition.sglang_speculative_eagle_topk
+    );
+    const speculativeNumDraftTokens = (
+      speculativeEagleTopk === 1 && speculativeNumSteps != null
+        ? speculativeNumSteps + 1
+        : definition.sglang_speculative_num_draft_tokens
+    );
     return [
       { label: 'Path', value: definition.model_path, code: true, optional: true },
       { label: 'Backend', value: formatBackendLabel(backend) },
@@ -793,7 +804,7 @@ function buildLocalDefinitionFields(model, definition, backend) {
       { label: 'MTP algorithm', value: definition.sglang_speculative_algorithm, optional: true },
       { label: 'MTP assistant', value: definition.sglang_speculative_draft_model, code: true, optional: true },
       { label: 'MTP steps', value: definition.sglang_speculative_num_steps, optional: true },
-      { label: 'MTP draft tokens', value: definition.sglang_speculative_num_draft_tokens, optional: true },
+      { label: 'MTP draft tokens', value: speculativeNumDraftTokens, optional: true },
       { label: 'MTP top-k', value: definition.sglang_speculative_eagle_topk, optional: true },
       { label: 'Binary', value: definition.sglang_serve_binary, code: true },
       { label: 'Prompt format', value: definition.prompt_format },
