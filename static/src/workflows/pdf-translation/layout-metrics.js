@@ -84,7 +84,8 @@ export function createLayoutMetricsInspector(host) {
       try {
         if (statusOnly) {
           const status = await api.getPdfArtifactJson(id, 'omnidoc-layout-metrics-status', { signal: controller.signal });
-          if (current === generation) host.textContent = `Layout measurements unavailable: ${status.error || status.status}`;
+          if (current === generation) host.textContent = `Layout measurements unavailable: ${status.status === 'complete'
+            ? 'The profile could not be loaded. See the service log for the reason.' : status.error || status.status}`;
           return;
         }
         const [loaded, source] = await Promise.all([

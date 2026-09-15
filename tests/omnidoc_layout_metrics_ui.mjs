@@ -62,6 +62,11 @@ metricsTestApi.getPdfArtifactJson = async () => ({ status: 'failed', error: 'inv
 await inspector.show('request', { statusOnly: true });
 assert.match(container.textContent, /invalid metric input/);
 
+metricsTestApi.getPdfArtifactJson = async () => ({ status: 'complete', artifact: 'profile.json' });
+await inspector.show('request', { statusOnly: true });
+assert.match(container.textContent, /profile could not be loaded.*service log/);
+assert.doesNotMatch(container.textContent, /unavailable: complete/);
+
 const pending = [];
 metricsTestApi.getPdfArtifactJson = (_id, name) => new Promise((resolve) => pending.push(() =>
   resolve(name === 'omnidoc' ? canonicalSource : artifact)));
