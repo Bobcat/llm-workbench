@@ -1,6 +1,7 @@
 import { api } from '../../api-client.js';
 import { createOmnidocInspector } from './omnidoc.js';
 import { createPlacementPlanInspector } from './placement-plan.js';
+import { createLayoutMetricsInspector } from './layout-metrics.js';
 import { escapeAttr, escapeHtml, formatApiError } from '../../shared/ui-helpers.js';
 import { TRANSLATION_LANGUAGES } from '../../shared/translation-languages.js';
 import { publishWorkflowBusy } from '../../shared/workflow-activity.js';
@@ -89,6 +90,7 @@ export function createPdfTranslationView() {
                     <iframe id="pdfOutputPreview" title="Translated PDF" hidden></iframe>
                     <div id="pdfOmnidoc" class="omnidoc-inspector" hidden></div>
                     <div id="pdfPlacementPlan" class="omnidoc-inspector" hidden></div>
+                    <div id="pdfLayoutMetrics" class="omnidoc-inspector" hidden></div>
                     <div id="pdfOutputEmpty" class="translation-preview-empty">No output yet</div>
                     <div id="pdfOutputPending" class="translation-preview-pending" hidden>
                       <div class="translation-spinner" aria-hidden="true"></div>
@@ -402,6 +404,7 @@ export function createPdfTranslationView() {
   const inputEmpty = container.querySelector('#pdfInputEmpty');
   const outputPreview = container.querySelector('#pdfOutputPreview');
   const omnidocInspector = createOmnidocInspector(container.querySelector('#pdfOmnidoc'));
+  const layoutMetricsInspector = createLayoutMetricsInspector(container.querySelector('#pdfLayoutMetrics'));
   const placementPlanInspector = createPlacementPlanInspector(
     container.querySelector('#pdfPlacementPlan')
   );
@@ -1265,6 +1268,7 @@ export function createPdfTranslationView() {
         ...(fontCallCount > 0 ? [['Font detection (VLM)', sum('font_detection_wall_ms')]] : []),
         ['Persist page analyses', m.analysis_persist_wall_ms_total],
         ['Build Omnidoc', m.omnidoc_wall_ms],
+        ['Measure Omnidoc layout', m.omnidoc_layout_metrics_wall_ms],
         ['Load page analyses', m.analysis_load_wall_ms_total],
         ['Translation', sum('translation_wall_ms')],
         ['Build target Omnidoc', m.target_omnidoc_wall_ms],
@@ -1569,6 +1573,7 @@ export function createPdfTranslationView() {
   function clearOutputPreview() {
     omnidocInspector.hide();
     placementPlanInspector.hide();
+    layoutMetricsInspector.hide();
     outputPreview.hidden = true;
     outputPreview.removeAttribute('src');
     downloadLink.hidden = true;
@@ -1689,7 +1694,8 @@ export function createPdfTranslationView() {
     outputPending.hidden = true;
     outputEmpty.hidden = !outputPreview.hidden
       || !container.querySelector('#pdfOmnidoc').hidden
-      || !container.querySelector('#pdfPlacementPlan').hidden;
+      || !container.querySelector('#pdfPlacementPlan').hidden
+      || !container.querySelector('#pdfLayoutMetrics').hidden;
   }
 
   // Every finished document this run produced, in the order the selector offers them: the
@@ -1697,6 +1703,8 @@ export function createPdfTranslationView() {
   const ARTIFACT_LABELS = {
     omnidoc: 'Omnidoc · source representation',
     'omnidoc-target': 'Omnidoc · target representation',
+    'omnidoc-layout-metrics': 'Omnidoc · layout measurements',
+    'omnidoc-layout-metrics-status': 'Omnidoc · layout measurement failed',
     'omnidoc-placement-plan': 'Omnidoc · placement plan',
     'omnidoc-preview': 'Omnidoc · placement preview',
     'omnidoc-coverage': 'Omnidoc · analysis incomplete',
@@ -1723,11 +1731,13 @@ export function createPdfTranslationView() {
     const names = Object.keys(artifacts).filter((name) => {
       const artifact = artifacts[name] || {};
       return name === 'omnidoc' || name === 'omnidoc-target' || name === 'omnidoc-placement-plan'
+        || name === 'omnidoc-layout-metrics'
+        || (name === 'omnidoc-layout-metrics-status' && !artifacts['omnidoc-layout-metrics'])
         || (name === 'omnidoc-coverage' && !artifacts.omnidoc)
         || (name !== 'input' && String(artifact.mime_type || '').toLowerCase().includes('pdf'));
     });
     const artifactOrder = [
-      'rendered', 'omnidoc-preview', 'omnidoc', 'omnidoc-target', 'omnidoc-placement-plan', 'paddleocr-v5', 'doclayout', 'doclayout-plus-l', 'doclayout-v3',
+      'rendered', 'omnidoc-preview', 'omnidoc', 'omnidoc-target', 'omnidoc-placement-plan', 'omnidoc-layout-metrics', 'omnidoc-layout-metrics-status', 'paddleocr-v5', 'doclayout', 'doclayout-plus-l', 'doclayout-v3',
     ];
     const rank = (name) => {
       const index = artifactOrder.indexOf(name);
@@ -1769,12 +1779,17 @@ export function createPdfTranslationView() {
     const url = `/api/pdf-translation/requests/${encodeURIComponent(requestId)}/artifacts/${encodeURIComponent(artifactName)}?ts=${Date.now()}`;
     omnidocInspector.hide();
     placementPlanInspector.hide();
+    layoutMetricsInspector.hide();
     const isOmnidoc = artifactName === 'omnidoc' || artifactName === 'omnidoc-target'
       || artifactName === 'omnidoc-coverage';
     const isPlacementPlan = artifactName === 'omnidoc-placement-plan';
-    const isInspector = isOmnidoc || isPlacementPlan;
+    const isLayoutMetrics = artifactName === 'omnidoc-layout-metrics' || artifactName === 'omnidoc-layout-metrics-status';
+    const isInspector = isOmnidoc || isPlacementPlan || isLayoutMetrics;
     outputPreview.hidden = isInspector;
-    if (isPlacementPlan) {
+    if (isLayoutMetrics) {
+      outputPreview.removeAttribute('src');
+      layoutMetricsInspector.show(requestId, { statusOnly: artifactName === 'omnidoc-layout-metrics-status' });
+    } else if (isPlacementPlan) {
       outputPreview.removeAttribute('src');
       placementPlanInspector.show(requestId);
     } else if (isOmnidoc) {
@@ -1791,7 +1806,9 @@ export function createPdfTranslationView() {
     const base = (selectedFile()?.name || historicalFilename || 'document').replace(/\.[^.]+$/, '') || 'document';
     const lang = String(lastTargetLang || '').toLowerCase() || 'out';
     downloadLink.href = url;
-    const downloadName = artifactName === 'omnidoc-coverage'
+    const downloadName = isLayoutMetrics
+      ? `${base}_${artifactName}.json`
+      : artifactName === 'omnidoc-coverage'
       ? `${base}_omnidoc_coverage.json`
       : artifactName === 'omnidoc'
         ? `${base}_omnidoc.json`
@@ -1973,6 +1990,7 @@ export function createPdfTranslationView() {
   container.__destroy = () => {
     omnidocInspector.hide();
     placementPlanInspector.hide();
+    layoutMetricsInspector.hide();
     stopPolling();
     if (inputObjectUrl) {
       URL.revokeObjectURL(inputObjectUrl);
