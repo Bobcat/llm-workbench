@@ -431,23 +431,29 @@ export function createChatView() {
         ...efforts.map((effort) => `<option value="${escapeAttr(effort)}">${escapeHtml(effort)}</option>`),
       ].join('');
       reasoningEffortInput.value = efforts.includes(lastReasoningEffort) ? lastReasoningEffort : '';
+    } else {
+      reasoningEffortInput.innerHTML = '';
+      reasoningEffortInput.value = '';
     }
     reasoningEffortInput.disabled = isBusy || efforts.length === 0;
 
-    const maximum = model?.thinkingBudgetMaximum;
-    thinkingBudgetField.hidden = maximum === null || maximum === undefined;
-    if (maximum !== null && maximum !== undefined) {
+    const maximum = effectiveThinkingBudgetMaximum();
+    thinkingBudgetField.hidden = maximum === null;
+    if (maximum !== null) {
       thinkingBudgetInput.max = String(maximum);
-      thinkingBudgetInput.value = lastThinkingBudget;
+      const value = Number(lastThinkingBudget);
+      thinkingBudgetInput.value = Number.isInteger(value) && value >= 1 && value <= maximum
+        ? String(value)
+        : '';
     }
-    thinkingBudgetInput.disabled = isBusy || maximum === null || maximum === undefined
+    thinkingBudgetInput.disabled = isBusy || maximum === null
       || selectedThinkingMode() !== 'enabled';
   }
 
   function selectedThinkingMode() {
-    const effort = reasoningEffortInput.value;
+    const effort = selectedReasoningEffort();
     if (effort === 'none') return 'disabled';
-    if (effort !== '') return 'enabled';
+    if (effort !== undefined) return 'enabled';
     if (!selectedModelSupportsThinking()) return 'default';
     return enableThinkingInput.checked ? 'enabled' : 'disabled';
   }
@@ -459,10 +465,18 @@ export function createChatView() {
   }
 
   function selectedThinkingBudget() {
-    const maximum = selectedModel()?.thinkingBudgetMaximum;
+    const maximum = effectiveThinkingBudgetMaximum();
     if (!maximum || selectedThinkingMode() !== 'enabled') return undefined;
     const value = Number(thinkingBudgetInput.value);
     return Number.isInteger(value) && value >= 1 && value <= maximum ? value : undefined;
+  }
+
+  function effectiveThinkingBudgetMaximum() {
+    const providerMaximum = selectedModel()?.thinkingBudgetMaximum;
+    if (!providerMaximum) return null;
+    const maxTokens = Math.max(1, Math.min(4096, Number.parseInt(maxTokensInput.value, 10) || 2048));
+    const maximum = Math.min(providerMaximum, maxTokens - 1);
+    return maximum >= 1 ? maximum : null;
   }
 
   function updateWarning() {
@@ -855,7 +869,7 @@ export function createChatView() {
       turns.push({
         role: 'assistant',
         text: String(result?.output_text || ''),
-        reasoningText: thinkingMode === 'enabled' ? String(result?.reasoning_text || '') : '',
+        reasoningText: String(result?.reasoning_text || ''),
         incomplete: result?.finish_reason === 'length',
         responseDetails: {
           request_id: result?.request_id,
@@ -1064,10 +1078,14 @@ export function createChatView() {
     if (!isBusy) clearConversation();
   });
 
-  settingInputs.forEach((el) => el.addEventListener('input', saveChatSettings));
+  settingInputs.forEach((el) => el.addEventListener('input', () => {
+    saveChatSettings();
+    if (el === maxTokensInput) renderThinkingControl();
+  }));
   resetSettingsBtn.addEventListener('click', () => {
     applyChatSettings(DEFAULT_SETTINGS);
     saveChatSettings();
+    renderThinkingControl();
   });
 
   applyChatSettings(loadChatSettings());

@@ -246,6 +246,20 @@ class ChatRunTests(unittest.TestCase):
         self.assertEqual(response.finish_reason, "length")
         self.assertEqual(captured["payload"]["thinking"], "enabled")
 
+    def test_run_chat_exposes_reasoning_from_default_thinking_mode(self) -> None:
+        request = chat.ChatRunRequest(model="m", turns=[_turn("user", "hi")])
+        upstream = {
+            "id": "resp_1",
+            "model": "m",
+            "output_text": "ok",
+            "reasoning_text": "The model used its configured default.",
+            "metrics": {},
+        }
+        with mock.patch.object(chat, "_run_prompt_runner_payload", return_value=(upstream, 12.0)):
+            response = chat.run_chat(request)
+
+        self.assertEqual(response.reasoning_text, "The model used its configured default.")
+
     def test_run_chat_forwards_reasoning_controls(self) -> None:
         captured: dict[str, object] = {}
 

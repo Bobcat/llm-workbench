@@ -221,11 +221,7 @@ def run_text_generation(
     reasoning_text = response_json.get("reasoning_text")
     return TextGenerationRunResponse(
         output_text=str(response_json.get("output_text") or ""),
-        reasoning_text=(
-            reasoning_text
-            if request.thinking == "enabled" and isinstance(reasoning_text, str)
-            else None
-        ),
+        reasoning_text=reasoning_text if isinstance(reasoning_text, str) else None,
         finish_reason=(
             metrics.get("engine_finish_reason")
             if isinstance(metrics.get("engine_finish_reason"), str)

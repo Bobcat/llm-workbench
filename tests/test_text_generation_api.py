@@ -188,6 +188,22 @@ class TextGenerationRunTests(unittest.TestCase):
         self.assertEqual(response.metadata["upstream_response"]["model"], "provider-model")
         self.assertEqual(response.metadata["upstream_response"]["usage"]["new_field"], 4)
 
+    def test_run_exposes_reasoning_from_default_thinking_mode(self) -> None:
+        request = text_generation.TextGenerationRunRequest(model="m", user_prompt="hi")
+        upstream = {
+            "id": "resp_1",
+            "model": "m",
+            "output_text": "ok",
+            "reasoning_text": "The model used its configured default.",
+            "metrics": {},
+        }
+        with mock.patch.object(
+            text_generation, "_run_prompt_runner_payload", return_value=(upstream, 12.0)
+        ):
+            response = text_generation.run_text_generation(request)
+
+        self.assertEqual(response.reasoning_text, "The model used its configured default.")
+
     def test_run_rejects_empty_prompt_without_files_or_images(self) -> None:
         request = text_generation.TextGenerationRunRequest(model="m", user_prompt=" ")
         with self.assertRaises(HTTPException) as ctx:
