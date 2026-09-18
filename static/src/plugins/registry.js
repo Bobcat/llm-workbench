@@ -78,7 +78,17 @@ export async function loadView(route, { retry = 0 } = {}) {
 
   const moduleUrl = new URL(workflow.module, document.baseURI);
   if (retry > 0) moduleUrl.searchParams.set('retry', String(retry));
-  const module = await import(moduleUrl.href);
+
+  let module;
+  try {
+    module = await import(moduleUrl.href);
+  } catch (error) {
+    // The module never evaluated, so a later attempt with a fresh URL may still succeed. The
+    // factory check below is deterministic and stays non-retryable.
+    if (error && typeof error === 'object') error.retryable = true;
+    throw error;
+  }
+
   const factory = module[workflow.factory];
   if (typeof factory !== 'function') {
     throw new Error(

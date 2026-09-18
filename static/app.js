@@ -154,8 +154,9 @@ WORKFLOWS.forEach((wf) => {
           return view;
         })
         .catch((error) => {
-          // The browser memoises the failed URL, so the next attempt needs a new one.
-          failedLoads += 1;
+          // Only a module that never loaded is worth a fresh URL next time; a manifest that names
+          // the wrong factory fails identically forever and would refetch on every visit.
+          if (error?.retryable) failedLoads += 1;
           throw error;
         })
         .finally(() => {
@@ -194,7 +195,8 @@ WORKFLOWS.forEach((wf) => {
       return obtainView().then(
         (view) => {
           if (generation !== mountGeneration) {
-            console.error(`Workflow ${wf.route}: discarded a view that loaded after navigation.`);
+            // Normal: the user navigated on while the module was still loading.
+            console.debug(`Workflow ${wf.route}: discarded a view that loaded after navigation.`);
             return;
           }
           host.innerHTML = '';

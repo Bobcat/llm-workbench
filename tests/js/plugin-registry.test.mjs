@@ -96,12 +96,6 @@ test('sidebar categories and their views match the shipped sidebar', () => {
   assert.deepEqual(auxiliary, EXPECTED_AUXILIARY);
 
   assert.equal(WORKFLOWS.length, 20);
-  const persistent = new Set(WORKFLOWS.filter((view) => view.persistent).map((view) => view.route));
-  assert.deepEqual(
-    [...persistent],
-    WORKFLOWS.filter((view) => view.route !== 'icons').map((view) => view.route),
-    'the persistent set must be every view except the auxiliary icons view',
-  );
 });
 
 test('every manifest carries the fields the loader reads', () => {

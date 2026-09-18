@@ -244,6 +244,73 @@ def verify(base: str, checks: Checks) -> None:
         retry.close()
         checks.note(f"retry: {len(attempts)} module requests, second is a fresh url")
 
+        # --- a module that loads but exports no factory is not retried ---
+        # The module arrives fine; only the manifest is wrong. A fresh URL cannot fix that, so
+        # repeat visits must not keep fetching.
+        stub = browser.new_page()
+        stub_urls: list[str] = []
+
+        def serve_stub(route) -> None:
+            stub_urls.append(route.request.url)
+            route.fulfill(status=200, content_type="text/javascript", body="export const nothing = 1;")
+
+        stub.route(PDF_TESTING_MODULE, serve_stub)
+        stub.goto(f"{base}/#pdf-testing")
+        try:
+            stub.wait_for_selector(".workflow-error", timeout=5000)
+            for _ in range(2):
+                stub.click('li[data-route="chat"] span.link-text')
+                stub.wait_for_selector("#appRoot > *", timeout=10000)
+                stub.click('li[data-route="pdf-testing"] span.link-text')
+                stub.wait_for_selector(".workflow-error", timeout=10000)
+            checks.check(
+                len(stub_urls) == 1,
+                f"a deterministic manifest error refetched the module: {stub_urls}",
+            )
+        except Exception as error:  # noqa: BLE001 - reported as a problem
+            problems.append(f"missing-factory case behaved unexpectedly: {error}")
+        stub.close()
+        checks.note(f"missing factory: {len(stub_urls)} module request(s) across three visits")
+
+        # --- away-and-back during a cold load is normal, not an error ---
+        raced = browser.new_page()
+        held_again: dict = {}
+        loader_errors: list[str] = []
+
+        def collect_loader_errors(message) -> None:
+            if message.type == "error" and (
+                "discarded a view" in message.text or "view load failed after navigation" in message.text
+            ):
+                loader_errors.append(message.text)
+
+        raced.on("console", collect_loader_errors)
+        raced.route(PDF_TESTING_MODULE, lambda route: held_again.setdefault("route", route))
+        try:
+            raced.goto(f"{base}/#pdf-testing")
+            raced.wait_for_selector(".workflow-loading", timeout=5000)
+            raced.click('li[data-route="chat"] span.link-text')
+            raced.wait_for_selector("#appRoot > *", timeout=10000)
+            raced.click('li[data-route="pdf-testing"] span.link-text')
+            if "route" not in held_again:
+                problems.append("race: module request was never intercepted")
+            else:
+                held_again["route"].continue_()
+            raced.wait_for_selector(".workflow-loading", state="detached", timeout=10000)
+            raced.wait_for_selector("#appRoot > *", timeout=10000)
+            checks.check(raced.query_selector(".workflow-error") is None, "race: error panel after away-and-back")
+            checks.check(
+                raced.eval_on_selector_all("#appRoot > *", "els => els.length") == 1,
+                "race: host does not hold exactly one view",
+            )
+            checks.check(
+                not loader_errors,
+                f"a discarded view was logged at error level: {loader_errors}",
+            )
+        except Exception as error:  # noqa: BLE001 - reported as a problem
+            problems.append(f"race away-and-back failed: {error}")
+        raced.close()
+        checks.note("race: away-and-back mounts one view and logs nothing at error level")
+
         checks.check(not page_errors, f"page errors: {page_errors}")
         checks.check(not import_failures, f"dynamic import failures: {import_failures}")
         browser.close()
@@ -273,7 +340,8 @@ def main() -> int:
         for problem in checks.problems:
             print(f"  - {problem}")
         return 1
-    print("\nOK: sidebar, routes, aliases, persistence, theming, placeholder, error panel, retry.")
+    print("\nOK: sidebar, routes, aliases, persistence, theming, placeholder, error panel, retry,")
+    print("    no refetch on a deterministic failure, and no error-level log on a discarded view.")
     return 0
 
 
