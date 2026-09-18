@@ -726,6 +726,11 @@ export function createTextGenerationView() {
   });
 
   thinkingBudgetInput.addEventListener('input', () => {
+    const maximum = effectiveThinkingBudgetMaximum();
+    const value = Number(thinkingBudgetInput.value);
+    if (maximum !== null && Number.isInteger(value)) {
+      thinkingBudgetInput.value = String(Math.min(maximum, Math.max(1, value)));
+    }
     lastThinkingBudget = String(thinkingBudgetInput.value || '');
   });
 
