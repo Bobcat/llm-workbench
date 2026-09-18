@@ -303,6 +303,13 @@ It pins the shipped sidebar (categories, view order, aliases, persistence) and
 resolves every manifest reference, including the icon sprite. Individual ES
 modules can be syntax-checked with `node --input-type=module --check`.
 
+The layout-metrics inspector behind the PDF translation Render panel has its own
+Node test, which needs neither a server nor a browser:
+
+```bash
+node tests/omnidoc_layout_metrics_ui.mjs
+```
+
 The plugin loader's browser behaviour has its own script. It starts the
 workbench on a free port itself, drives it with Playwright, and stops it again,
 so it needs the venv (uvicorn) and a Playwright Chromium build.
