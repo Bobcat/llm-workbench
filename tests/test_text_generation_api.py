@@ -114,6 +114,21 @@ class TextGenerationPayloadTests(unittest.TestCase):
         )
         self.assertEqual(payload["thinking"], "enabled")
 
+    def test_reasoning_controls_are_forwarded(self) -> None:
+        request = _request(
+            thinking="enabled",
+            reasoning_effort="low",
+            thinking_token_budget=256,
+        )
+        payload = text_generation._text_generation_payload(
+            request,
+            model="m",
+            rendered_user_prompt="hi",
+            images=[],
+        )
+        self.assertEqual(payload["reasoning_effort"], "low")
+        self.assertEqual(payload["thinking_token_budget"], 256)
+
 
 class TextGenerationValidationTests(unittest.TestCase):
     def test_no_images_is_allowed(self) -> None:
@@ -150,6 +165,45 @@ class TextGenerationValidationTests(unittest.TestCase):
 
 
 class TextGenerationRunTests(unittest.TestCase):
+    def test_run_exposes_reasoning_when_thinking_is_enabled(self) -> None:
+        request = text_generation.TextGenerationRunRequest(
+            model="m", user_prompt="17 * 23?", thinking="enabled"
+        )
+        upstream = {
+            "id": "resp_1",
+            "model": "m",
+            "output_text": "",
+            "reasoning_text": "17 times 23 is 391.",
+            "metrics": {"engine_finish_reason": "length"},
+            "metadata": {"upstream_response": {"model": "provider-model", "usage": {"new_field": 4}}},
+        }
+        with mock.patch.object(
+            text_generation, "_run_prompt_runner_payload", return_value=(upstream, 12.0)
+        ):
+            response = text_generation.run_text_generation(request)
+
+        self.assertEqual(response.output_text, "")
+        self.assertEqual(response.reasoning_text, "17 times 23 is 391.")
+        self.assertEqual(response.finish_reason, "length")
+        self.assertEqual(response.metadata["upstream_response"]["model"], "provider-model")
+        self.assertEqual(response.metadata["upstream_response"]["usage"]["new_field"], 4)
+
+    def test_run_exposes_reasoning_from_default_thinking_mode(self) -> None:
+        request = text_generation.TextGenerationRunRequest(model="m", user_prompt="hi")
+        upstream = {
+            "id": "resp_1",
+            "model": "m",
+            "output_text": "ok",
+            "reasoning_text": "The model used its configured default.",
+            "metrics": {},
+        }
+        with mock.patch.object(
+            text_generation, "_run_prompt_runner_payload", return_value=(upstream, 12.0)
+        ):
+            response = text_generation.run_text_generation(request)
+
+        self.assertEqual(response.reasoning_text, "The model used its configured default.")
+
     def test_run_rejects_empty_prompt_without_files_or_images(self) -> None:
         request = text_generation.TextGenerationRunRequest(model="m", user_prompt=" ")
         with self.assertRaises(HTTPException) as ctx:
