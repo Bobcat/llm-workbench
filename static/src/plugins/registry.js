@@ -68,12 +68,17 @@ export function getWorkflow(route) {
 
 // Load and construct one view. The module URL is resolved against document.baseURI so the
 // registry keeps working if the app is ever served from a subpath.
-export async function loadView(route) {
+//
+// `retry` is a failed-attempt counter. A browser memoises a failed dynamic import in its module
+// map, so re-importing the same URL rejects again without touching the network; a changed query
+// string is a different URL and therefore a real request.
+export async function loadView(route, { retry = 0 } = {}) {
   const workflow = getWorkflow(route);
   if (!workflow) throw new Error(`Unknown workflow: ${route}`);
 
-  const moduleUrl = new URL(workflow.module, document.baseURI).href;
-  const module = await import(moduleUrl);
+  const moduleUrl = new URL(workflow.module, document.baseURI);
+  if (retry > 0) moduleUrl.searchParams.set('retry', String(retry));
+  const module = await import(moduleUrl.href);
   const factory = module[workflow.factory];
   if (typeof factory !== 'function') {
     throw new Error(

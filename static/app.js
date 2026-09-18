@@ -119,11 +119,12 @@ const router = new RouterCore(appRoot, {
   }
 });
 
-// A view module is fetched on first activation. Three things guard that:
+// A view module is fetched on first activation. Four things guard that:
 //   - an in-flight load is shared, so navigating away and back does not build the view twice;
 //   - a generation counter discards a load that resolves after a newer navigation;
 //   - a failed load renders a visible error instead of leaving the host empty, because
-//     RouterCore ignores the promise mount() returns.
+//     RouterCore ignores the promise mount() returns;
+//   - a failed load is retried on the next activation with a fresh module URL.
 let mountGeneration = 0;
 
 function buildViewError(wf, error) {
@@ -143,17 +144,22 @@ WORKFLOWS.forEach((wf) => {
   let cachedView = null;
   let pendingView = null;
   let activeView = null;
+  let failedLoads = 0;
 
   function obtainView() {
-    if (wf.persistent && cachedView) return Promise.resolve(cachedView);
     if (!pendingView) {
-      pendingView = loadView(wf.route)
+      pendingView = loadView(wf.route, { retry: failedLoads })
         .then((view) => {
           if (wf.persistent) cachedView = view;
           return view;
         })
+        .catch((error) => {
+          // The browser memoises the failed URL, so the next attempt needs a new one.
+          failedLoads += 1;
+          throw error;
+        })
         .finally(() => {
-          pendingView = null;  // a later activation retries after a failure
+          pendingView = null;
         });
     }
     return pendingView;
@@ -172,8 +178,9 @@ WORKFLOWS.forEach((wf) => {
       const generation = ++mountGeneration;
       host.innerHTML = '';
 
-      // A cached view mounts synchronously; only a cold view needs the placeholder. An already
-      // imported module resolves in a microtask, so the placeholder never reaches a paint.
+      // A cached view mounts synchronously; only a cold view needs the placeholder. That
+      // placeholder is usually gone before the next paint, but a non-persistent view whose
+      // module still has to be fetched can keep it on screen for a frame.
       if (wf.persistent && cachedView) {
         activate(host, cachedView);
         return;
@@ -186,12 +193,18 @@ WORKFLOWS.forEach((wf) => {
 
       return obtainView().then(
         (view) => {
-          if (generation !== mountGeneration) return;  // superseded by a newer navigation
+          if (generation !== mountGeneration) {
+            console.error(`Workflow ${wf.route}: discarded a view that loaded after navigation.`);
+            return;
+          }
           host.innerHTML = '';
           activate(host, view);
         },
         (error) => {
-          if (generation !== mountGeneration) return;
+          if (generation !== mountGeneration) {
+            console.error(`Workflow ${wf.route}: view load failed after navigation.`, error);
+            return;
+          }
           host.innerHTML = '';
           host.appendChild(buildViewError(wf, error));
         },

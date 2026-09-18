@@ -303,6 +303,18 @@ It pins the shipped sidebar (categories, view order, aliases, persistence) and
 resolves every manifest reference, including the icon sprite. Individual ES
 modules can be syntax-checked with `node --input-type=module --check`.
 
+The plugin loader's browser behaviour has its own script. It starts the
+workbench on a free port itself, drives it with Playwright, and stops it again,
+so it needs the venv (uvicorn) and a Playwright Chromium build.
+
+```bash
+./.venv/bin/python tests/browser/check_plugin_registry.py
+```
+
+It walks every route and alias and covers the paths that only exist in the
+browser: the loading placeholder, the error panel for a view that cannot be
+fetched, and the retry after such a failure.
+
 ## License
 
 Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE).

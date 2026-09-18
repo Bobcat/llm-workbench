@@ -3,7 +3,7 @@
 // The sidebar, routes and lazy view loader are derived from the manifests in
 // static/src/plugins/. Those manifests reference view modules and factory functions by
 // string, so a rename breaks the app at click time rather than at import time. These tests
-// pin the parity contract and resolve every manifest reference statically.
+// pin the shipped sidebar field by field and resolve every manifest reference statically.
 //
 // Run from the repo root with:  node --test 'tests/js/**/*.test.mjs'
 import test from 'node:test';
@@ -23,47 +23,85 @@ const STATIC = path.resolve(HERE, '..', '..', 'static');
 const registry = await import(pathToFileURL(path.join(STATIC, 'src/plugins', 'registry.js')).href);
 const { PLUGINS, WORKFLOWS, ROUTE_ALIASES, normalizeRoute, getWorkflow } = registry;
 
-// The shipped sidebar, in order. This is the parity contract: a rename or a dropped view must
-// fail here, not silently in the browser.
+// The shipped sidebar, in order. This is a regression pin, not a comparison against the old
+// hardcoded structure: a rename, a reordered or dropped view, a swapped icon, a changed tooltip
+// or a flipped `persistent` flag must fail here rather than silently change the app.
 const EXPECTED_CATEGORIES = [
-  ['Realtime Translation', ['replay-translate']],
-  ['Realtime TTS', ['replay-speak']],
-  ['LLM Pool', ['llm-pool-models', 'text-generation', 'chat']],
-  ['TTS Pool', ['tts-pool-models']],
-  ['Image Pool', ['image-pool-models', 'image-generation', 'image-lora-library', 'image-train']],
-  ['Video Pool', ['video-pool-models', 'video-generation']],
+  ['Realtime Translation', [
+    { id: 'replay-translate', route: 'replay-translate', name: 'Replay & Translate', icon: 'languages', persistent: true },
+  ]],
+  ['Realtime TTS', [
+    { id: 'replay-speak', route: 'replay-speak', name: 'Replay & Speak', icon: 'volume-2', persistent: true },
+  ]],
+  ['LLM Pool', [
+    { id: 'llm-pool-models', route: 'llm-pool-models', name: 'Models', icon: 'pool-llm', persistent: true, tooltip: 'LLM pool models' },
+    { id: 'text-generation', route: 'text-generation', name: 'Text generation', icon: 'file-plus', persistent: true },
+    { id: 'chat', route: 'chat', name: 'Chat', icon: 'messages-square', persistent: true },
+  ]],
+  ['TTS Pool', [
+    { id: 'tts-pool-models', route: 'tts-pool-models', name: 'Models', icon: 'pool-tts', persistent: true, tooltip: 'TTS pool models' },
+  ]],
+  ['Image Pool', [
+    { id: 'image-pool-models', route: 'image-pool-models', name: 'Models', icon: 'pool-image', persistent: true, tooltip: 'Image pool models' },
+    { id: 'image-generation', route: 'image-generation', name: 'Image generation', icon: 'image-plus', persistent: true },
+    { id: 'image-lora-library', route: 'image-lora-library', name: 'LoRA Library', icon: 'layers-3', persistent: true },
+    { id: 'image-train', route: 'image-train', name: 'Tuning', icon: 'sliders-horizontal', persistent: true },
+  ]],
+  ['Video Pool', [
+    { id: 'video-pool-models', route: 'video-pool-models', name: 'Models', icon: 'pool-video', persistent: true, tooltip: 'Video pool models' },
+    { id: 'video-generation', route: 'video-generation', name: 'Video generation', icon: 'video-plus', persistent: true },
+  ]],
   ['Translation Services', [
-    'image-translation',
-    'image-translation-regression',
-    'pdf-translation',
-    'pdf-translation-regression',
-    'pdf-testing',
-    'pdf-anatomy',
-    'prompt-library',
+    { id: 'image-translation', route: 'image-translation', name: 'Image translation', icon: 'image', persistent: true },
+    { id: 'image-translation-regression', route: 'image-translation-regression', name: 'Image regression testing', icon: 'clipboard-check', persistent: true },
+    { id: 'pdf-translation', route: 'pdf-translation', name: 'PDF translation', icon: 'file-text', persistent: true },
+    { id: 'pdf-translation-regression', route: 'pdf-translation-regression', name: 'PDF regression testing', icon: 'clipboard-check', persistent: true },
+    { id: 'pdf-testing', route: 'pdf-testing', name: 'PDF benchmark', icon: 'gauge', persistent: true },
+    { id: 'pdf-anatomy', route: 'pdf-anatomy', name: 'PDF anatomy', icon: 'venetian-mask', persistent: true },
+    { id: 'prompt-library', route: 'prompt-library', name: 'Prompt Library', icon: 'book-open-text', persistent: true },
   ]],
 ];
-const EXPECTED_AUXILIARY = ['icons'];
+const EXPECTED_AUXILIARY = [
+  { id: 'icons', route: 'icons', name: 'Icons', icon: 'shapes', persistent: false },
+];
 const EXPECTED_ALIASES = new Map([
   ['ad-hoc-prompt', 'text-generation'],
   ['vlm-test', 'text-generation'],
   ['translation-requests', 'image-translation'],
   ['translation-regression', 'image-translation-regression'],
 ]);
-const EXPECTED_PERSISTENT = 19;
 
-test('sidebar plugin list matches the shipped categories', () => {
+// Only the fields a user can see, plus the ids the loader and future settings key on.
+function viewShape(view) {
+  const shape = {
+    id: view.id,
+    route: view.route,
+    name: view.name,
+    icon: view.icon,
+    persistent: view.persistent,
+  };
+  if (view.tooltip) shape.tooltip = view.tooltip;
+  return shape;
+}
+
+test('sidebar categories and their views match the shipped sidebar', () => {
   const categories = PLUGINS
     .filter((plugin) => !plugin.auxiliary)
-    .map((plugin) => [plugin.label, plugin.views.map((view) => view.route)]);
+    .map((plugin) => [plugin.label, plugin.views.map(viewShape)]);
   assert.deepEqual(categories, EXPECTED_CATEGORIES);
 
   const auxiliary = PLUGINS
     .filter((plugin) => plugin.auxiliary)
-    .flatMap((plugin) => plugin.views.map((view) => view.route));
+    .flatMap((plugin) => plugin.views.map(viewShape));
   assert.deepEqual(auxiliary, EXPECTED_AUXILIARY);
 
   assert.equal(WORKFLOWS.length, 20);
-  assert.equal(WORKFLOWS.filter((view) => view.persistent).length, EXPECTED_PERSISTENT);
+  const persistent = new Set(WORKFLOWS.filter((view) => view.persistent).map((view) => view.route));
+  assert.deepEqual(
+    [...persistent],
+    WORKFLOWS.filter((view) => view.route !== 'icons').map((view) => view.route),
+    'the persistent set must be every view except the auxiliary icons view',
+  );
 });
 
 test('every manifest carries the fields the loader reads', () => {
