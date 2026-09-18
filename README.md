@@ -277,6 +277,11 @@ The CLI entrypoint is also available:
 ./.venv/bin/python -m app
 ```
 
+Static files are served with `Cache-Control: no-cache`, so an ordinary reload
+picks up frontend edits without clearing anything. There is no build step and no
+asset fingerprinting, so a browser is never told by URL that a module changed;
+revalidation is what keeps that workable.
+
 ## Verification
 
 Run the Python tests:

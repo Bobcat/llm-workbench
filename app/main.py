@@ -12,6 +12,25 @@ from app.realtime_translation.replay.replay import websocket_endpoint
 base_dir = Path(__file__).parent.parent
 static_dir = base_dir / "static"
 
+
+class RevalidatingStaticFiles(StaticFiles):
+    """Static files the browser has to revalidate before reusing.
+
+    The frontend has no build step: a changed module keeps its URL, and nothing in the response
+    tells the browser it is stale. Without a Cache-Control header browsers fall back to
+    heuristic freshness — roughly a fraction of the time since Last-Modified — and may reuse a
+    module for days. That matters because views are imported lazily: a hard reload refreshes the
+    startup graph but not the module fetched when a view is first opened.
+
+    ``no-cache`` means "revalidate", not "do not store": unchanged files still answer 304.
+    """
+
+    def file_response(self, *args, **kwargs):
+        response = super().file_response(*args, **kwargs)
+        response.headers["cache-control"] = "no-cache"
+        return response
+
+
 app = FastAPI(
     title="LLM Workbench",
     description="API for LLM translation workflows",
@@ -32,4 +51,4 @@ async def ws_replay_speak(websocket: WebSocket, session_id: str):
 
 
 if static_dir.exists():
-    app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="static")
+    app.mount("/", RevalidatingStaticFiles(directory=str(static_dir), html=True), name="static")
