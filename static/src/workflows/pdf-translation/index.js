@@ -1,6 +1,7 @@
 import { api } from '../../api-client.js';
 import { createOmnidocInspector } from './omnidoc.js';
 import { createPlacementPlanInspector } from './placement-plan.js';
+import { createLayoutMetricsInspector } from './layout-metrics.js';
 import { escapeAttr, escapeHtml, formatApiError } from '../../shared/ui-helpers.js';
 import { TRANSLATION_LANGUAGES } from '../../shared/translation-languages.js';
 import { publishWorkflowBusy } from '../../shared/workflow-activity.js';
@@ -89,6 +90,7 @@ export function createPdfTranslationView() {
                     <iframe id="pdfOutputPreview" title="Translated PDF" hidden></iframe>
                     <div id="pdfOmnidoc" class="omnidoc-inspector" hidden></div>
                     <div id="pdfPlacementPlan" class="omnidoc-inspector" hidden></div>
+                    <div id="pdfLayoutMetrics" class="omnidoc-inspector" hidden></div>
                     <div id="pdfOutputEmpty" class="translation-preview-empty">No output yet</div>
                     <div id="pdfOutputPending" class="translation-preview-pending" hidden>
                       <div class="translation-spinner" aria-hidden="true"></div>
@@ -134,6 +136,14 @@ export function createPdfTranslationView() {
                   <select id="pdfOmnidocSingleLaneFlow" title="Build a separate experimental PDF. A page is translated in that artifact only when Omnidoc proves one ordinary text lane and the Omnidoc compositor accepts the complete page. Every withheld source page becomes a blank notice page with its reason. The preview never uses the selected legacy page layout as a fallback; Translated PDF continues to use that layout.">
                     <option value="off" selected>off — no placement preview</option>
                     <option value="on">on — build strict preview</option>
+                  </select>
+                </label>
+                <label class="translation-prompts-field">
+                  <span>Omnidoc page layout</span>
+                  <select id="pdfOmnidocPageLayoutMode" title="Only affects the Omnidoc placement preview. Auto flows a proven terminal text lane and keeps other pages bounded. Flowing requests that same route wherever it is proven: terminal text keeps the requested type scale and may continue on another page, while earlier locally bounded text can still shrink. Pages without such a lane remain bounded. Bounded keeps text on its source page and may reduce its size locally. The Translated PDF uses the separate Page layout setting.">
+                    <option value="auto" selected>auto — choose per page</option>
+                    <option value="flowing">flowing — where proven</option>
+                    <option value="bounded">bounded — fit on source pages</option>
                   </select>
                 </label>
                 <label class="translation-prompts-field">
@@ -394,6 +404,7 @@ export function createPdfTranslationView() {
   const structureModeSelect = container.querySelector('#pdfStructureMode');
   const pageLayoutModeSelect = container.querySelector('#pdfPageLayoutMode');
   const omnidocSingleLaneFlowSelect = container.querySelector('#pdfOmnidocSingleLaneFlow');
+  const omnidocPageLayoutModeSelect = container.querySelector('#pdfOmnidocPageLayoutMode');
   const doclayoutOverlaySelect = container.querySelector('#pdfDoclayoutOverlay');
   const paddleocrV5OverlaySelect = container.querySelector('#pdfPaddleocrV5Overlay');
   const artifactSelect = container.querySelector('#pdfArtifact');
@@ -402,6 +413,7 @@ export function createPdfTranslationView() {
   const inputEmpty = container.querySelector('#pdfInputEmpty');
   const outputPreview = container.querySelector('#pdfOutputPreview');
   const omnidocInspector = createOmnidocInspector(container.querySelector('#pdfOmnidoc'));
+  const layoutMetricsInspector = createLayoutMetricsInspector(container.querySelector('#pdfLayoutMetrics'));
   const placementPlanInspector = createPlacementPlanInspector(
     container.querySelector('#pdfPlacementPlan')
   );
@@ -487,6 +499,7 @@ export function createPdfTranslationView() {
     structureModeSelect.disabled = renderLocked;
     pageLayoutModeSelect.disabled = renderLocked;
     omnidocSingleLaneFlowSelect.disabled = renderLocked;
+    omnidocPageLayoutModeSelect.disabled = renderLocked;
     // Always settable, even while the layout mode is still `fit` — the fit path ignores the
     // flag, so the only thing disabling it bought was an ordering trap: this state is
     // recomputed after a render, so picking `typeset` left the scale locked until a render
@@ -513,6 +526,7 @@ export function createPdfTranslationView() {
       omnidoc_single_lane_flow: String(
         omnidocSingleLaneFlowSelect.value || 'off'
       ) === 'on',
+      omnidoc_page_layout_mode: String(omnidocPageLayoutModeSelect.value || 'auto'),
       page_scale: Number(pageScaleSelect.value || 1),
       doclayout_overlay: String(doclayoutOverlaySelect.value || 'off') === 'on',
       paddleocr_v5_overlay: String(paddleocrV5OverlaySelect.value || 'off') === 'on',
@@ -576,6 +590,7 @@ export function createPdfTranslationView() {
       omnidocSingleLaneFlowSelect,
       options?.omnidoc_single_lane_flow ? 'on' : 'off',
     );
+    setSelectValue(omnidocPageLayoutModeSelect, options?.omnidoc_page_layout_mode || 'bounded');
     const pageScale = Number(options?.page_scale ?? 1);
     setSelectValue(
       pageScaleSelect,
@@ -1265,6 +1280,7 @@ export function createPdfTranslationView() {
         ...(fontCallCount > 0 ? [['Font detection (VLM)', sum('font_detection_wall_ms')]] : []),
         ['Persist page analyses', m.analysis_persist_wall_ms_total],
         ['Build Omnidoc', m.omnidoc_wall_ms],
+        ['Measure Omnidoc layout', m.omnidoc_layout_metrics_wall_ms],
         ['Load page analyses', m.analysis_load_wall_ms_total],
         ['Translation', sum('translation_wall_ms')],
         ['Build target Omnidoc', m.target_omnidoc_wall_ms],
@@ -1569,6 +1585,7 @@ export function createPdfTranslationView() {
   function clearOutputPreview() {
     omnidocInspector.hide();
     placementPlanInspector.hide();
+    layoutMetricsInspector.hide();
     outputPreview.hidden = true;
     outputPreview.removeAttribute('src');
     downloadLink.hidden = true;
@@ -1689,7 +1706,8 @@ export function createPdfTranslationView() {
     outputPending.hidden = true;
     outputEmpty.hidden = !outputPreview.hidden
       || !container.querySelector('#pdfOmnidoc').hidden
-      || !container.querySelector('#pdfPlacementPlan').hidden;
+      || !container.querySelector('#pdfPlacementPlan').hidden
+      || !container.querySelector('#pdfLayoutMetrics').hidden;
   }
 
   // Every finished document this run produced, in the order the selector offers them: the
@@ -1697,6 +1715,8 @@ export function createPdfTranslationView() {
   const ARTIFACT_LABELS = {
     omnidoc: 'Omnidoc · source representation',
     'omnidoc-target': 'Omnidoc · target representation',
+    'omnidoc-layout-metrics': 'Omnidoc · layout measurements',
+    'omnidoc-layout-metrics-status': 'Omnidoc · layout measurement failed',
     'omnidoc-placement-plan': 'Omnidoc · placement plan',
     'omnidoc-preview': 'Omnidoc · placement preview',
     'omnidoc-coverage': 'Omnidoc · analysis incomplete',
@@ -1715,7 +1735,14 @@ export function createPdfTranslationView() {
       .filter(Boolean);
     if (!statuses.length) return label;
     const admitted = statuses.filter((status) => status.status === 'admitted').length;
-    return `${label} · ${admitted}/${statuses.length} admitted`;
+    const flowing = statuses.filter((status) =>
+      status.status === 'admitted' && status.placement?.layout_policy === 'flowing').length;
+    const bounded = statuses.filter((status) =>
+      status.status === 'admitted' && status.placement?.layout_policy === 'bounded').length;
+    const unreported = admitted - flowing - bounded;
+    const modes = [`${flowing} flowing`, `${bounded} bounded`];
+    if (unreported) modes.push(`${unreported} unreported`);
+    return `${label} · ${admitted}/${statuses.length} admitted (${modes.join(', ')})`;
   }
 
   function pdfArtifactNames(result) {
@@ -1723,11 +1750,13 @@ export function createPdfTranslationView() {
     const names = Object.keys(artifacts).filter((name) => {
       const artifact = artifacts[name] || {};
       return name === 'omnidoc' || name === 'omnidoc-target' || name === 'omnidoc-placement-plan'
+        || name === 'omnidoc-layout-metrics'
+        || (name === 'omnidoc-layout-metrics-status' && !artifacts['omnidoc-layout-metrics'])
         || (name === 'omnidoc-coverage' && !artifacts.omnidoc)
         || (name !== 'input' && String(artifact.mime_type || '').toLowerCase().includes('pdf'));
     });
     const artifactOrder = [
-      'rendered', 'omnidoc-preview', 'omnidoc', 'omnidoc-target', 'omnidoc-placement-plan', 'paddleocr-v5', 'doclayout', 'doclayout-plus-l', 'doclayout-v3',
+      'rendered', 'omnidoc-preview', 'omnidoc', 'omnidoc-target', 'omnidoc-placement-plan', 'omnidoc-layout-metrics', 'omnidoc-layout-metrics-status', 'paddleocr-v5', 'doclayout', 'doclayout-plus-l', 'doclayout-v3',
     ];
     const rank = (name) => {
       const index = artifactOrder.indexOf(name);
@@ -1769,12 +1798,17 @@ export function createPdfTranslationView() {
     const url = `/api/pdf-translation/requests/${encodeURIComponent(requestId)}/artifacts/${encodeURIComponent(artifactName)}?ts=${Date.now()}`;
     omnidocInspector.hide();
     placementPlanInspector.hide();
+    layoutMetricsInspector.hide();
     const isOmnidoc = artifactName === 'omnidoc' || artifactName === 'omnidoc-target'
       || artifactName === 'omnidoc-coverage';
     const isPlacementPlan = artifactName === 'omnidoc-placement-plan';
-    const isInspector = isOmnidoc || isPlacementPlan;
+    const isLayoutMetrics = artifactName === 'omnidoc-layout-metrics' || artifactName === 'omnidoc-layout-metrics-status';
+    const isInspector = isOmnidoc || isPlacementPlan || isLayoutMetrics;
     outputPreview.hidden = isInspector;
-    if (isPlacementPlan) {
+    if (isLayoutMetrics) {
+      outputPreview.removeAttribute('src');
+      layoutMetricsInspector.show(requestId, { statusOnly: artifactName === 'omnidoc-layout-metrics-status' });
+    } else if (isPlacementPlan) {
       outputPreview.removeAttribute('src');
       placementPlanInspector.show(requestId);
     } else if (isOmnidoc) {
@@ -1791,7 +1825,9 @@ export function createPdfTranslationView() {
     const base = (selectedFile()?.name || historicalFilename || 'document').replace(/\.[^.]+$/, '') || 'document';
     const lang = String(lastTargetLang || '').toLowerCase() || 'out';
     downloadLink.href = url;
-    const downloadName = artifactName === 'omnidoc-coverage'
+    const downloadName = isLayoutMetrics
+      ? `${base}_${artifactName}.json`
+      : artifactName === 'omnidoc-coverage'
       ? `${base}_omnidoc_coverage.json`
       : artifactName === 'omnidoc'
         ? `${base}_omnidoc.json`
@@ -1927,7 +1963,7 @@ export function createPdfTranslationView() {
   // value simply rides along on the next translation.
   [renderSizeModeSelect, eraseFillModeSelect, sizeMetricModeSelect, sizeCohortModeSelect,
     widthFitModeSelect, outputModeSelect, structureModeSelect, pageLayoutModeSelect,
-    omnidocSingleLaneFlowSelect, pageScaleSelect, doclayoutOverlaySelect,
+    omnidocSingleLaneFlowSelect, omnidocPageLayoutModeSelect, pageScaleSelect, doclayoutOverlaySelect,
     paddleocrV5OverlaySelect].forEach(
     (select) => select.addEventListener('change', rerenderRequest));
 
@@ -1973,6 +2009,7 @@ export function createPdfTranslationView() {
   container.__destroy = () => {
     omnidocInspector.hide();
     placementPlanInspector.hide();
+    layoutMetricsInspector.hide();
     stopPolling();
     if (inputObjectUrl) {
       URL.revokeObjectURL(inputObjectUrl);
