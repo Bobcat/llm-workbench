@@ -200,7 +200,10 @@ class ChatRunTests(unittest.TestCase):
                 "metrics": {
                     "engine_prompt_tokens": 120,
                     "engine_cached_prompt_tokens": 100,
+                    "engine_finish_reason": "stop",
+                    "future_metric": {"nested": 1},
                 },
+                "metadata": {"upstream_response": {"id": "provider-1", "model": "kimi-k2.6"}},
             }, 12.0
 
         request = chat.ChatRunRequest(
@@ -214,8 +217,36 @@ class ChatRunTests(unittest.TestCase):
         self.assertEqual(captured["payload"]["prompt_cache_key"], "chat-123")
         self.assertEqual(response.metrics["engine_prompt_tokens"], 120)
         self.assertEqual(response.metrics["engine_cached_prompt_tokens"], 100)
+        self.assertEqual(response.metrics["future_metric"], {"nested": 1})
+        self.assertEqual(response.metadata["upstream_response"]["model"], "kimi-k2.6")
 
     def test_run_chat_forwards_thinking_mode(self) -> None:
+        captured: dict[str, object] = {}
+
+        def fake_runner(payload):
+            captured["payload"] = payload
+            return {
+                "id": "resp_1",
+                "model": "m",
+                "output_text": "",
+                "reasoning_text": "Check the answer first.",
+                "metrics": {"engine_finish_reason": "length"},
+            }, 12.0
+
+        request = chat.ChatRunRequest(
+            model="m",
+            turns=[_turn("user", "hi")],
+            thinking="enabled",
+        )
+        with mock.patch.object(chat, "_run_prompt_runner_payload", side_effect=fake_runner):
+            response = chat.run_chat(request)
+
+        self.assertEqual(response.output_text, "")
+        self.assertEqual(response.reasoning_text, "Check the answer first.")
+        self.assertEqual(response.finish_reason, "length")
+        self.assertEqual(captured["payload"]["thinking"], "enabled")
+
+    def test_run_chat_forwards_reasoning_controls(self) -> None:
         captured: dict[str, object] = {}
 
         def fake_runner(payload):
@@ -226,12 +257,14 @@ class ChatRunTests(unittest.TestCase):
             model="m",
             turns=[_turn("user", "hi")],
             thinking="enabled",
+            reasoning_effort="low",
+            thinking_token_budget=256,
         )
         with mock.patch.object(chat, "_run_prompt_runner_payload", side_effect=fake_runner):
-            response = chat.run_chat(request)
+            chat.run_chat(request)
 
-        self.assertEqual(response.output_text, "ok")
-        self.assertEqual(captured["payload"]["thinking"], "enabled")
+        self.assertEqual(captured["payload"]["reasoning_effort"], "low")
+        self.assertEqual(captured["payload"]["thinking_token_budget"], 256)
 
     def test_run_chat_forwards_native_file(self) -> None:
         captured: dict[str, object] = {}

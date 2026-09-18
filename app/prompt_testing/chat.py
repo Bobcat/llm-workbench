@@ -46,6 +46,8 @@ class ChatRunRequest(BaseModel):
     allow_remote: bool = False
     prompt_cache_key: str | None = Field(default=None, min_length=1)
     thinking: Literal["default", "enabled", "disabled"] = "default"
+    reasoning_effort: str | None = Field(default=None, min_length=1, max_length=32)
+    thinking_token_budget: int | None = Field(default=None, ge=1, le=_MAX_OUTPUT_TOKENS)
     max_tokens: int = Field(default=_DEFAULT_OUTPUT_TOKENS, ge=1, le=_MAX_OUTPUT_TOKENS)
     temperature: float | None = Field(default=None, ge=0.0, le=2.0)
     top_p: float | None = Field(default=None, gt=0.0, le=1.0)
@@ -54,10 +56,13 @@ class ChatRunRequest(BaseModel):
 
 class ChatRunResponse(BaseModel):
     output_text: str
+    reasoning_text: str | None = None
+    finish_reason: str | None = None
     model: str
     request_id: str
     multi_turn: bool
-    metrics: dict[str, float | int | None] = Field(default_factory=dict)
+    metrics: dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 def _validate_turns(turns: list[ChatTurnInput]) -> list[ChatTurnInput]:
@@ -196,6 +201,8 @@ def run_chat(request: ChatRunRequest) -> ChatRunResponse:
         "allow_remote": request.allow_remote,
         "stream": False,
         "thinking": request.thinking,
+        "reasoning_effort": request.reasoning_effort,
+        "thinking_token_budget": request.thinking_token_budget,
         "decoding": _decoding(request),
     }
     if request.prompt_cache_key is not None:
@@ -213,20 +220,26 @@ def run_chat(request: ChatRunRequest) -> ChatRunResponse:
     metrics = response_json.get("metrics", {})
     if not isinstance(metrics, dict):
         metrics = {}
+    reasoning_text = response_json.get("reasoning_text")
     return ChatRunResponse(
         output_text=str(response_json.get("output_text") or ""),
+        reasoning_text=(
+            reasoning_text
+            if request.thinking == "enabled" and isinstance(reasoning_text, str)
+            else None
+        ),
+        finish_reason=(
+            metrics.get("engine_finish_reason")
+            if isinstance(metrics.get("engine_finish_reason"), str)
+            else None
+        ),
         model=str(response_json.get("model") or model),
         request_id=str(response_json.get("id") or ""),
         multi_turn=request.multi_turn,
-        metrics={
-            "transport_completed_ms": transport_completed_ms,
-            "engine_tokenize_ms": metrics.get("engine_tokenize_ms"),
-            "gpu_time_to_first_token_ms": metrics.get("gpu_time_to_first_token_ms"),
-            "gpu_generate_total_ms": metrics.get("gpu_generate_total_ms"),
-            "gpu_decode_after_first_token_ms": metrics.get("gpu_decode_after_first_token_ms"),
-            "engine_prompt_tokens": metrics.get("engine_prompt_tokens"),
-            "engine_cached_prompt_tokens": metrics.get("engine_cached_prompt_tokens"),
-            "engine_output_tokens": metrics.get("engine_output_tokens"),
-            "engine_tokens_per_second": metrics.get("engine_tokens_per_second"),
-        },
+        metadata=(
+            response_json.get("metadata")
+            if isinstance(response_json.get("metadata"), dict)
+            else {}
+        ),
+        metrics={**metrics, "transport_completed_ms": transport_completed_ms},
     )

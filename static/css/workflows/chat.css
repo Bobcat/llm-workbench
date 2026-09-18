@@ -127,6 +127,33 @@
   overflow-wrap: anywhere;
 }
 
+.chat-view .chat-bubble-reasoning {
+  margin-bottom: 10px;
+  color: var(--text-subtle);
+}
+
+.chat-view .chat-bubble-reasoning pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.chat-view .chat-bubble-metadata {
+  margin-top: 10px;
+  color: var(--text-subtle);
+}
+
+.chat-view .chat-bubble-metadata pre {
+  max-height: 320px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.chat-view .chat-bubble-incomplete {
+  margin-top: 10px;
+  color: var(--text-subtle);
+}
+
 .chat-view .chat-bubble-user .chat-bubble-text {
   white-space: pre-wrap;
 }

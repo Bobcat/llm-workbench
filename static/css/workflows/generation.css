@@ -35,6 +35,19 @@
   align-items: center;
 }
 
+.text-generation-view .text-generation-reasoning pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+}
+
+.text-generation-view .text-generation-metadata pre {
+  max-height: 320px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .text-generation-view .text-generation-attachment-empty {
   font-size: 0.85rem;
   color: var(--text-subtle);

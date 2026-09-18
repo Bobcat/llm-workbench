@@ -85,6 +85,14 @@ export function createTextGenerationView() {
                   <span>Enable thinking</span>
                 </label>
               </div>
+              <label class="translation-prompts-field" id="textGenerationReasoningEffortField" hidden>
+                <span>Reasoning effort</span>
+                <select id="textGenerationReasoningEffort"></select>
+              </label>
+              <label class="translation-prompts-field" id="textGenerationThinkingBudgetField" hidden>
+                <span>Thinking budget (tokens)</span>
+                <input id="textGenerationThinkingBudget" type="number" min="1" step="1" placeholder="Optional">
+              </label>
             </div>
             <details class="translation-prompts-system-details text-generation-settings-details">
               <summary>System prompt &amp; decoding parameters</summary>
@@ -130,6 +138,10 @@ export function createTextGenerationView() {
               <span>Response</span>
               <textarea id="textGenerationResponse" rows="6" readonly></textarea>
             </label>
+            <details class="text-generation-reasoning" id="textGenerationReasoning" hidden>
+              <summary>Thinking</summary>
+              <pre id="textGenerationReasoningText"></pre>
+            </details>
             <section class="translation-prompts-stats-block">
               <div class="translation-prompts-stats-grid">
                 <div class="translation-prompts-stat">
@@ -158,6 +170,10 @@ export function createTextGenerationView() {
                 </div>
               </div>
             </section>
+            <details class="text-generation-metadata" id="textGenerationMetadata" hidden>
+              <summary>Response metadata</summary>
+              <pre id="textGenerationMetadataText"></pre>
+            </details>
             <label class="translation-prompts-field">
               <span>Rendered user prompt</span>
               <textarea id="textGenerationRenderedUserPrompt" rows="6" readonly></textarea>
@@ -174,6 +190,10 @@ export function createTextGenerationView() {
   const targetLangSelect = container.querySelector('#textGenerationTargetLang');
   const allowRemoteInput = container.querySelector('#textGenerationAllowRemote');
   const enableThinkingInput = container.querySelector('#textGenerationEnableThinking');
+  const reasoningEffortField = container.querySelector('#textGenerationReasoningEffortField');
+  const reasoningEffortInput = container.querySelector('#textGenerationReasoningEffort');
+  const thinkingBudgetField = container.querySelector('#textGenerationThinkingBudgetField');
+  const thinkingBudgetInput = container.querySelector('#textGenerationThinkingBudget');
   const maxTokensInput = container.querySelector('#textGenerationMaxTokens');
   const temperatureInput = container.querySelector('#textGenerationTemperature');
   const topPInput = container.querySelector('#textGenerationTopP');
@@ -187,6 +207,10 @@ export function createTextGenerationView() {
   const statusEl = container.querySelector('#textGenerationStatus');
   const attachmentsEl = container.querySelector('#textGenerationAttachments');
   const responseEl = container.querySelector('#textGenerationResponse');
+  const reasoningEl = container.querySelector('#textGenerationReasoning');
+  const reasoningTextEl = container.querySelector('#textGenerationReasoningText');
+  const metadataEl = container.querySelector('#textGenerationMetadata');
+  const metadataTextEl = container.querySelector('#textGenerationMetadataText');
   const renderedUserPromptEl = container.querySelector('#textGenerationRenderedUserPrompt');
   const statModelEl = container.querySelector('#textGenerationStatModel');
   const statRequestEl = container.querySelector('#textGenerationStatRequest');
@@ -200,6 +224,8 @@ export function createTextGenerationView() {
   let selectedImages = [];
   let isBusy = false;
   let lastThinkingEnabled = false;
+  let lastReasoningEffort = '';
+  let lastThinkingBudget = '';
 
   function normalizeThinkingModes(value) {
     const modes = Array.isArray(value)
@@ -208,6 +234,18 @@ export function createTextGenerationView() {
         .filter((mode) => THINKING_MODES.has(mode))
       : [];
     return modes.includes('default') ? [...new Set(modes)] : ['default', ...new Set(modes)];
+  }
+
+  function normalizeReasoningEfforts(value) {
+    if (!Array.isArray(value)) return [];
+    return [...new Set(value
+      .map((effort) => String(effort).trim().toLowerCase())
+      .filter((effort) => effort !== ''))];
+  }
+
+  function normalizeThinkingBudgetMaximum(value) {
+    const maximum = Number(value?.maximum);
+    return Number.isInteger(maximum) && maximum > 0 ? maximum : null;
   }
 
   function normalizeAdminModelsPayload(payload) {
@@ -228,6 +266,8 @@ export function createTextGenerationView() {
           isRemote: backend === 'openai_remote',
           supportsImage: modalities.includes('image'),
           thinkingModes: normalizeThinkingModes(capabilities.thinking_modes),
+          reasoningEfforts: normalizeReasoningEfforts(capabilities.reasoning_efforts),
+          thinkingBudgetMaximum: normalizeThinkingBudgetMaximum(capabilities.thinking_token_budget),
           imageLimit: parseImageLimit(model?.definition),
           isTranslate: promptFormat === TRANSLATE_PROMPT_FORMAT,
         };
@@ -284,11 +324,51 @@ export function createTextGenerationView() {
     const supportsThinking = selectedModelSupportsThinking();
     enableThinkingInput.checked = supportsThinking ? lastThinkingEnabled : false;
     enableThinkingInput.disabled = isBusy || !supportsThinking;
+    renderReasoningControls();
+  }
+
+  function renderReasoningControls() {
+    const model = selectedModel();
+    const efforts = model?.reasoningEfforts || [];
+    reasoningEffortField.hidden = efforts.length === 0;
+    if (efforts.length > 0) {
+      reasoningEffortInput.innerHTML = [
+        '<option value="">Default</option>',
+        ...efforts.map((effort) => `<option value="${escapeAttr(effort)}">${escapeHtml(effort)}</option>`),
+      ].join('');
+      reasoningEffortInput.value = efforts.includes(lastReasoningEffort) ? lastReasoningEffort : '';
+    }
+    reasoningEffortInput.disabled = isBusy || efforts.length === 0;
+
+    const maximum = model?.thinkingBudgetMaximum;
+    thinkingBudgetField.hidden = maximum === null || maximum === undefined;
+    if (maximum !== null && maximum !== undefined) {
+      thinkingBudgetInput.max = String(maximum);
+      thinkingBudgetInput.value = lastThinkingBudget;
+    }
+    thinkingBudgetInput.disabled = isBusy || maximum === null || maximum === undefined
+      || selectedThinkingMode() !== 'enabled';
   }
 
   function selectedThinkingMode() {
+    const effort = reasoningEffortInput.value;
+    if (effort === 'none') return 'disabled';
+    if (effort !== '') return 'enabled';
     if (!selectedModelSupportsThinking()) return 'default';
     return enableThinkingInput.checked ? 'enabled' : 'disabled';
+  }
+
+  function selectedReasoningEffort() {
+    const efforts = selectedModel()?.reasoningEfforts || [];
+    const effort = String(reasoningEffortInput.value || '');
+    return efforts.includes(effort) ? effort : undefined;
+  }
+
+  function selectedThinkingBudget() {
+    const maximum = selectedModel()?.thinkingBudgetMaximum;
+    if (!maximum || selectedThinkingMode() !== 'enabled') return undefined;
+    const value = Number(thinkingBudgetInput.value);
+    return Number.isInteger(value) && value >= 1 && value <= maximum ? value : undefined;
   }
 
   function attachmentModelIssue() {
@@ -321,6 +401,9 @@ export function createTextGenerationView() {
   }
 
   function clearStats() {
+    metadataTextEl.textContent = '';
+    metadataEl.hidden = true;
+    metadataEl.open = false;
     statModelEl.textContent = '-';
     statRequestEl.textContent = '-';
     statFilesEl.textContent = '-';
@@ -331,6 +414,13 @@ export function createTextGenerationView() {
 
   function applyStats(result) {
     const metrics = result?.metrics || {};
+    metadataTextEl.textContent = JSON.stringify({
+      request_id: result?.request_id,
+      model: result?.model,
+      metrics,
+      metadata: result?.metadata || {},
+    }, null, 2);
+    metadataEl.hidden = false;
     statModelEl.textContent = result?.model || '-';
     statRequestEl.textContent = result?.request_id || '-';
     statFilesEl.textContent = result?.file_count != null ? String(result.file_count) : '-';
@@ -540,8 +630,9 @@ export function createTextGenerationView() {
       return;
     }
 
+    const thinkingMode = selectedThinkingMode();
     setBusy(true);
-    setStatus(selectedThinkingMode() === 'enabled' ? 'Thinking...' : 'Running prompt...');
+    setStatus(thinkingMode === 'enabled' ? 'Thinking...' : 'Running prompt...');
     try {
       const decode = readDecode();
       const translate = selectedModelIsTranslate();
@@ -550,7 +641,9 @@ export function createTextGenerationView() {
         system_prompt: String(systemPromptInput.value || ''),
         user_prompt: String(userPromptInput.value || ''),
         allow_remote: allowRemote,
-        thinking: selectedThinkingMode(),
+        thinking: thinkingMode,
+        reasoning_effort: selectedReasoningEffort(),
+        thinking_token_budget: selectedThinkingBudget(),
         // translategemma_template: send the language codes so the server uses the translate prompt.
         source_lang_code: translate ? String(sourceLangSelect.value || '') : null,
         target_lang_code: translate ? String(targetLangSelect.value || '') : null,
@@ -568,11 +661,20 @@ export function createTextGenerationView() {
         })),
       });
       responseEl.value = String(result?.output_text || '');
+      const reasoning = thinkingMode === 'enabled' ? String(result?.reasoning_text || '') : '';
+      reasoningTextEl.textContent = reasoning;
+      reasoningEl.hidden = !reasoning;
+      reasoningEl.open = Boolean(reasoning);
       renderedUserPromptEl.value = String(result?.rendered_user_prompt ?? renderedPrompt);
       applyStats(result);
-      setStatus('');
+      setStatus(result?.finish_reason === 'length'
+        ? 'Output token limit reached before the final answer. Try a higher limit, a shorter task, or disable thinking.'
+        : '');
     } catch (err) {
       responseEl.value = '';
+      reasoningTextEl.textContent = '';
+      reasoningEl.hidden = true;
+      reasoningEl.open = false;
       clearStats();
       setStatus(formatApiError(err));
     } finally {
@@ -590,7 +692,27 @@ export function createTextGenerationView() {
   enableThinkingInput.addEventListener('change', () => {
     if (!enableThinkingInput.disabled) {
       lastThinkingEnabled = Boolean(enableThinkingInput.checked);
+      if (lastThinkingEnabled && lastReasoningEffort === 'none') {
+        lastReasoningEffort = '';
+      } else if (!lastThinkingEnabled && (selectedModel()?.reasoningEfforts || []).includes('none')) {
+        lastReasoningEffort = 'none';
+      }
+      renderThinkingControl();
     }
+  });
+
+  reasoningEffortInput.addEventListener('change', () => {
+    lastReasoningEffort = String(reasoningEffortInput.value || '');
+    if (lastReasoningEffort === 'none') {
+      lastThinkingEnabled = false;
+    } else if (lastReasoningEffort !== '') {
+      lastThinkingEnabled = true;
+    }
+    renderThinkingControl();
+  });
+
+  thinkingBudgetInput.addEventListener('input', () => {
+    lastThinkingBudget = String(thinkingBudgetInput.value || '');
   });
 
   userPromptInput.addEventListener('input', () => {

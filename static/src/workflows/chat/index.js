@@ -150,6 +150,14 @@ export function createChatView() {
                 <span>Enable thinking</span>
               </label>
             </div>
+            <label class="translation-prompts-field" id="chatReasoningEffortField" hidden>
+              <span>Reasoning effort</span>
+              <select id="chatReasoningEffort"></select>
+            </label>
+            <label class="translation-prompts-field" id="chatThinkingBudgetField" hidden>
+              <span>Thinking budget (tokens)</span>
+              <input id="chatThinkingBudget" type="number" min="1" step="1" placeholder="Optional">
+            </label>
           </div>
           <details class="translation-prompts-system-details">
             <summary>System prompt &amp; decoding parameters</summary>
@@ -209,6 +217,10 @@ export function createChatView() {
   const topPInput = container.querySelector('#chatTopP');
   const topKInput = container.querySelector('#chatTopK');
   const enableThinkingInput = container.querySelector('#chatEnableThinking');
+  const reasoningEffortField = container.querySelector('#chatReasoningEffortField');
+  const reasoningEffortInput = container.querySelector('#chatReasoningEffort');
+  const thinkingBudgetField = container.querySelector('#chatThinkingBudgetField');
+  const thinkingBudgetInput = container.querySelector('#chatThinkingBudget');
   const warningEl = container.querySelector('#chatWarning');
   const streamEl = container.querySelector('#chatStream');
   const attachmentsEl = container.querySelector('#chatAttachments');
@@ -232,6 +244,8 @@ export function createChatView() {
   let pendingTextFiles = [];
   let isBusy = false;
   let lastThinkingEnabled = false;
+  let lastReasoningEffort = '';
+  let lastThinkingBudget = '';
   // Shell-style recall of previously sent prompt text (Up/Down in the composer).
   let promptHistory = [];
   let historyIndex = null; // null = not navigating
@@ -270,6 +284,18 @@ export function createChatView() {
     return modes.includes('default') ? [...new Set(modes)] : ['default', ...new Set(modes)];
   }
 
+  function normalizeReasoningEfforts(value) {
+    if (!Array.isArray(value)) return [];
+    return [...new Set(value
+      .map((effort) => String(effort).trim().toLowerCase())
+      .filter((effort) => effort !== ''))];
+  }
+
+  function normalizeThinkingBudgetMaximum(value) {
+    const maximum = Number(value?.maximum);
+    return Number.isInteger(maximum) && maximum > 0 ? maximum : null;
+  }
+
   function normalizeAdminModelsPayload(payload) {
     const list = Array.isArray(payload?.models) ? payload.models : [];
     return list
@@ -289,6 +315,8 @@ export function createChatView() {
           supportsFiles: capabilities.file_inputs === true,
           multiTurn: capabilities.multi_turn === true,
           thinkingModes: normalizeThinkingModes(capabilities.thinking_modes),
+          reasoningEfforts: normalizeReasoningEfforts(capabilities.reasoning_efforts),
+          thinkingBudgetMaximum: normalizeThinkingBudgetMaximum(capabilities.thinking_token_budget),
           imageLimit: parseImageLimit(model?.definition),
         };
       })
@@ -390,11 +418,51 @@ export function createChatView() {
     const supportsThinking = selectedModelSupportsThinking();
     enableThinkingInput.checked = supportsThinking ? lastThinkingEnabled : false;
     enableThinkingInput.disabled = isBusy || !supportsThinking;
+    renderReasoningControls();
+  }
+
+  function renderReasoningControls() {
+    const model = selectedModel();
+    const efforts = model?.reasoningEfforts || [];
+    reasoningEffortField.hidden = efforts.length === 0;
+    if (efforts.length > 0) {
+      reasoningEffortInput.innerHTML = [
+        '<option value="">Default</option>',
+        ...efforts.map((effort) => `<option value="${escapeAttr(effort)}">${escapeHtml(effort)}</option>`),
+      ].join('');
+      reasoningEffortInput.value = efforts.includes(lastReasoningEffort) ? lastReasoningEffort : '';
+    }
+    reasoningEffortInput.disabled = isBusy || efforts.length === 0;
+
+    const maximum = model?.thinkingBudgetMaximum;
+    thinkingBudgetField.hidden = maximum === null || maximum === undefined;
+    if (maximum !== null && maximum !== undefined) {
+      thinkingBudgetInput.max = String(maximum);
+      thinkingBudgetInput.value = lastThinkingBudget;
+    }
+    thinkingBudgetInput.disabled = isBusy || maximum === null || maximum === undefined
+      || selectedThinkingMode() !== 'enabled';
   }
 
   function selectedThinkingMode() {
+    const effort = reasoningEffortInput.value;
+    if (effort === 'none') return 'disabled';
+    if (effort !== '') return 'enabled';
     if (!selectedModelSupportsThinking()) return 'default';
     return enableThinkingInput.checked ? 'enabled' : 'disabled';
+  }
+
+  function selectedReasoningEffort() {
+    const efforts = selectedModel()?.reasoningEfforts || [];
+    const effort = String(reasoningEffortInput.value || '');
+    return efforts.includes(effort) ? effort : undefined;
+  }
+
+  function selectedThinkingBudget() {
+    const maximum = selectedModel()?.thinkingBudgetMaximum;
+    if (!maximum || selectedThinkingMode() !== 'enabled') return undefined;
+    const value = Number(thinkingBudgetInput.value);
+    return Number.isInteger(value) && value >= 1 && value <= maximum ? value : undefined;
   }
 
   function updateWarning() {
@@ -462,6 +530,16 @@ export function createChatView() {
       ? renderAssistantMarkdown(text)
       : escapeHtml(text);
     const textMarkup = text ? `<div class="chat-bubble-text">${renderedText}</div>` : '';
+    const reasoning = turn.role === 'assistant' ? String(turn.reasoningText || '') : '';
+    const reasoningMarkup = reasoning
+      ? `<details class="chat-bubble-reasoning" open><summary>Thinking</summary><div class="chat-bubble-text">${renderAssistantMarkdown(reasoning)}</div></details>`
+      : '';
+    const incompleteMarkup = turn.incomplete
+      ? '<div class="chat-bubble-incomplete">Output token limit reached before the final answer. Try a higher limit, a shorter task, or disable thinking.</div>'
+      : '';
+    const metadataMarkup = turn.role === 'assistant' && turn.responseDetails
+      ? `<details class="chat-bubble-metadata"><summary>Response metadata</summary><pre>${escapeHtml(JSON.stringify(turn.responseDetails, null, 2))}</pre></details>`
+      : '';
     const copyText = copyableTurnText(turn);
     const copyMarkup = copyText.trim() === ''
       ? ''
@@ -477,7 +555,10 @@ export function createChatView() {
           ${imagesMarkup}
           ${placeholdersMarkup}
           ${filesMarkup}
+          ${reasoningMarkup}
           ${textMarkup}
+          ${incompleteMarkup}
+          ${metadataMarkup}
         </div>
         ${copyMarkup}
       </div>
@@ -624,7 +705,7 @@ export function createChatView() {
   }
 
   function apiTurns() {
-    return turns.map((turn) => ({
+    return turns.filter((turn) => !turn.incomplete).map((turn) => ({
       role: turn.role,
       text: apiTurnText(turn),
       images: (turn.images || []).map((img) => ({ name: img.name, data_url: img.dataUrl })),
@@ -763,13 +844,26 @@ export function createChatView() {
         allow_remote: allowRemote,
         prompt_cache_key: promptCacheKey,
         thinking: thinkingMode,
+        reasoning_effort: selectedReasoningEffort(),
+        thinking_token_budget: selectedThinkingBudget(),
         max_tokens: decode.max_tokens,
         temperature: decode.temperature,
         top_p: decode.top_p,
         top_k: decode.top_k,
         turns: apiTurns(),
       });
-      turns.push({ role: 'assistant', text: String(result?.output_text || '') });
+      turns.push({
+        role: 'assistant',
+        text: String(result?.output_text || ''),
+        reasoningText: thinkingMode === 'enabled' ? String(result?.reasoning_text || '') : '',
+        incomplete: result?.finish_reason === 'length',
+        responseDetails: {
+          request_id: result?.request_id,
+          model: result?.model,
+          metrics: result?.metrics || {},
+          metadata: result?.metadata || {},
+        },
+      });
       setStatus(formatResultStats(result?.metrics || {}));
     } catch (err) {
       // Roll the failed turn back into the composer so it never lingers in the
@@ -867,7 +961,27 @@ export function createChatView() {
   enableThinkingInput.addEventListener('change', () => {
     if (!enableThinkingInput.disabled) {
       lastThinkingEnabled = Boolean(enableThinkingInput.checked);
+      if (lastThinkingEnabled && lastReasoningEffort === 'none') {
+        lastReasoningEffort = '';
+      } else if (!lastThinkingEnabled && (selectedModel()?.reasoningEfforts || []).includes('none')) {
+        lastReasoningEffort = 'none';
+      }
+      renderThinkingControl();
     }
+  });
+
+  reasoningEffortInput.addEventListener('change', () => {
+    lastReasoningEffort = String(reasoningEffortInput.value || '');
+    if (lastReasoningEffort === 'none') {
+      lastThinkingEnabled = false;
+    } else if (lastReasoningEffort !== '') {
+      lastThinkingEnabled = true;
+    }
+    renderThinkingControl();
+  });
+
+  thinkingBudgetInput.addEventListener('input', () => {
+    lastThinkingBudget = String(thinkingBudgetInput.value || '');
   });
 
   sendBtn.addEventListener('click', () => send());
