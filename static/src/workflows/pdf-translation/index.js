@@ -139,6 +139,14 @@ export function createPdfTranslationView() {
                   </select>
                 </label>
                 <label class="translation-prompts-field">
+                  <span>Omnidoc page layout</span>
+                  <select id="pdfOmnidocPageLayoutMode" title="Only affects the Omnidoc placement preview. Auto flows a proven terminal text lane and keeps other pages bounded. Flowing requests that same route wherever it is proven: terminal text keeps the requested type scale and may continue on another page, while earlier locally bounded text can still shrink. Pages without such a lane remain bounded. Bounded keeps text on its source page and may reduce its size locally. The Translated PDF uses the separate Page layout setting.">
+                    <option value="auto" selected>auto — choose per page</option>
+                    <option value="flowing">flowing — where proven</option>
+                    <option value="bounded">bounded — fit on source pages</option>
+                  </select>
+                </label>
+                <label class="translation-prompts-field">
                   <span>Page scale</span>
                   <select id="pdfPageScale" title="typeset only: the type size as a fraction of the source's own. Dutch runs longer than English, so a re-set page takes lines its source did not have; smaller type in the SAME column buys them back. The design solves one scale per document from what its pages have room for; until that solve is wired in, this picks it by hand. The reference system sets the transformer paper at 0.90 of the source size.">
                     <option value="1.0" selected>1.00 — the source's own size</option>
@@ -396,6 +404,7 @@ export function createPdfTranslationView() {
   const structureModeSelect = container.querySelector('#pdfStructureMode');
   const pageLayoutModeSelect = container.querySelector('#pdfPageLayoutMode');
   const omnidocSingleLaneFlowSelect = container.querySelector('#pdfOmnidocSingleLaneFlow');
+  const omnidocPageLayoutModeSelect = container.querySelector('#pdfOmnidocPageLayoutMode');
   const doclayoutOverlaySelect = container.querySelector('#pdfDoclayoutOverlay');
   const paddleocrV5OverlaySelect = container.querySelector('#pdfPaddleocrV5Overlay');
   const artifactSelect = container.querySelector('#pdfArtifact');
@@ -490,6 +499,7 @@ export function createPdfTranslationView() {
     structureModeSelect.disabled = renderLocked;
     pageLayoutModeSelect.disabled = renderLocked;
     omnidocSingleLaneFlowSelect.disabled = renderLocked;
+    omnidocPageLayoutModeSelect.disabled = renderLocked;
     // Always settable, even while the layout mode is still `fit` — the fit path ignores the
     // flag, so the only thing disabling it bought was an ordering trap: this state is
     // recomputed after a render, so picking `typeset` left the scale locked until a render
@@ -516,6 +526,7 @@ export function createPdfTranslationView() {
       omnidoc_single_lane_flow: String(
         omnidocSingleLaneFlowSelect.value || 'off'
       ) === 'on',
+      omnidoc_page_layout_mode: String(omnidocPageLayoutModeSelect.value || 'auto'),
       page_scale: Number(pageScaleSelect.value || 1),
       doclayout_overlay: String(doclayoutOverlaySelect.value || 'off') === 'on',
       paddleocr_v5_overlay: String(paddleocrV5OverlaySelect.value || 'off') === 'on',
@@ -579,6 +590,7 @@ export function createPdfTranslationView() {
       omnidocSingleLaneFlowSelect,
       options?.omnidoc_single_lane_flow ? 'on' : 'off',
     );
+    setSelectValue(omnidocPageLayoutModeSelect, options?.omnidoc_page_layout_mode || 'bounded');
     const pageScale = Number(options?.page_scale ?? 1);
     setSelectValue(
       pageScaleSelect,
@@ -1723,7 +1735,14 @@ export function createPdfTranslationView() {
       .filter(Boolean);
     if (!statuses.length) return label;
     const admitted = statuses.filter((status) => status.status === 'admitted').length;
-    return `${label} · ${admitted}/${statuses.length} admitted`;
+    const flowing = statuses.filter((status) =>
+      status.status === 'admitted' && status.placement?.layout_policy === 'flowing').length;
+    const bounded = statuses.filter((status) =>
+      status.status === 'admitted' && status.placement?.layout_policy === 'bounded').length;
+    const unreported = admitted - flowing - bounded;
+    const modes = [`${flowing} flowing`, `${bounded} bounded`];
+    if (unreported) modes.push(`${unreported} unreported`);
+    return `${label} · ${admitted}/${statuses.length} admitted (${modes.join(', ')})`;
   }
 
   function pdfArtifactNames(result) {
@@ -1944,7 +1963,7 @@ export function createPdfTranslationView() {
   // value simply rides along on the next translation.
   [renderSizeModeSelect, eraseFillModeSelect, sizeMetricModeSelect, sizeCohortModeSelect,
     widthFitModeSelect, outputModeSelect, structureModeSelect, pageLayoutModeSelect,
-    omnidocSingleLaneFlowSelect, pageScaleSelect, doclayoutOverlaySelect,
+    omnidocSingleLaneFlowSelect, omnidocPageLayoutModeSelect, pageScaleSelect, doclayoutOverlaySelect,
     paddleocrV5OverlaySelect].forEach(
     (select) => select.addEventListener('change', rerenderRequest));
 
