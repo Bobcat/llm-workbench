@@ -135,7 +135,10 @@ This repo does not own:
 ### Frontend
 
 - `static/index.html` is the browser entrypoint.
-- `static/app.js` registers sidebar groups and workflow views.
+- `static/app.js` wires the shell: sidebar, routing, theme, and view lifecycle.
+- `static/src/plugins/` contains one manifest per sidebar category plus
+  `registry.js`, which derives the sidebar, the route table, the aliases, and the
+  lazy view loader from those manifests.
 - `static/foundation/spa-foundation/` contains the shared shell, routing, modal,
   and sidebar helpers.
 - `static/src/api-client.js` contains same-origin API helpers and replay
@@ -190,11 +193,14 @@ in memory. Image training datasets and generated training artifacts live under
 The backend does not load AI models directly. Model inference and model
 lifecycle are delegated to local pool or service processes.
 
-The sidebar is currently registered in `static/app.js`. Service base URLs are
-already configurable. The intended direction is to move enabled sidebar groups
-into settings while keeping view implementations in the frontend registry. That
-would allow an installation to expose only the consoles it needs, such as an
-LLM Pool-only workbench.
+The sidebar is derived from the plugin manifests in `static/src/plugins/`. A
+plugin owns one sidebar category and contributes one or more views; each view
+names its module and factory, so a view is loaded on first activation instead of
+at startup. Service base URLs are already configurable. The intended direction is
+to serve the enabled plugin list from settings while keeping view implementations
+where they are. That would allow an installation to expose only the consoles it
+needs, such as an LLM Pool-only workbench; it changes the source of the plugin
+list, not the loader.
 
 ## Configuration
 
@@ -285,9 +291,17 @@ The tests are mostly `unittest`-style tests and can also be run with:
 ./.venv/bin/python -m unittest discover -s tests
 ```
 
-There is no JavaScript build step. If Node is installed, individual ES modules
-can be syntax-checked with `node --input-type=module --check`, but Node is not a
-declared project dependency.
+There is no JavaScript build step. The frontend plugin contract does have a test
+suite, which needs the Node `node --test` runner; Node is not a declared project
+dependency.
+
+```bash
+node --test 'tests/js/**/*.test.mjs'
+```
+
+It pins the shipped sidebar (categories, view order, aliases, persistence) and
+resolves every manifest reference, including the icon sprite. Individual ES
+modules can be syntax-checked with `node --input-type=module --check`.
 
 ## License
 

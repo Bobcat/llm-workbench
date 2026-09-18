@@ -140,3 +140,36 @@
   white-space: nowrap;
   pointer-events: none;
 }
+
+/* View host states: the placeholder shown while a plugin's view module is fetched, and the
+   panel shown when that module cannot be loaded. */
+.workflow-loading {
+  margin: 24px;
+  color: var(--text-quiet);
+  font-size: 0.9rem;
+}
+
+.workflow-error {
+  margin: 24px;
+  padding: 16px 18px;
+  border: 1px solid var(--danger-border);
+  border-radius: 8px;
+  background: var(--danger-bg);
+  color: var(--text-color);
+}
+
+.workflow-error-title {
+  margin: 0 0 6px;
+  color: var(--danger);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.workflow-error-detail {
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}

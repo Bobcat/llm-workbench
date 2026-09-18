@@ -119,20 +119,44 @@ const router = new RouterCore(appRoot, {
   }
 });
 
-// A view module is fetched on first activation. Every mount bumps a generation counter so that
-// a slow module load cannot append itself after the user has already navigated somewhere else.
+// A view module is fetched on first activation. Three things guard that:
+//   - an in-flight load is shared, so navigating away and back does not build the view twice;
+//   - a generation counter discards a load that resolves after a newer navigation;
+//   - a failed load renders a visible error instead of leaving the host empty, because
+//     RouterCore ignores the promise mount() returns.
 let mountGeneration = 0;
+
+function buildViewError(wf, error) {
+  const panel = document.createElement('div');
+  panel.className = 'workflow-error';
+  const title = document.createElement('p');
+  title.className = 'workflow-error-title';
+  title.textContent = `Could not load the "${wf.name}" view`;
+  const detail = document.createElement('p');
+  detail.className = 'workflow-error-detail';
+  detail.textContent = `${wf.module} -> ${wf.factory}()\n${error?.message || String(error)}`;
+  panel.append(title, detail);
+  return panel;
+}
 
 WORKFLOWS.forEach((wf) => {
   let cachedView = null;
+  let pendingView = null;
   let activeView = null;
 
   function obtainView() {
-    if (wf.persistent && cachedView) return cachedView;
-    return loadView(wf.route).then((view) => {
-      if (wf.persistent) cachedView = view;
-      return view;
-    });
+    if (wf.persistent && cachedView) return Promise.resolve(cachedView);
+    if (!pendingView) {
+      pendingView = loadView(wf.route)
+        .then((view) => {
+          if (wf.persistent) cachedView = view;
+          return view;
+        })
+        .finally(() => {
+          pendingView = null;  // a later activation retries after a failure
+        });
+    }
+    return pendingView;
   }
 
   function activate(host, view) {
@@ -147,14 +171,31 @@ WORKFLOWS.forEach((wf) => {
     mount: (host) => {
       const generation = ++mountGeneration;
       host.innerHTML = '';
-      const view = obtainView();
-      if (view && typeof view.then === 'function') {
-        return view.then((resolved) => {
-          if (generation !== mountGeneration) return;  // superseded by a newer navigation
-          activate(host, resolved);
-        });
+
+      // A cached view mounts synchronously; only a cold view needs the placeholder. An already
+      // imported module resolves in a microtask, so the placeholder never reaches a paint.
+      if (wf.persistent && cachedView) {
+        activate(host, cachedView);
+        return;
       }
-      activate(host, view);
+
+      const placeholder = document.createElement('div');
+      placeholder.className = 'workflow-loading';
+      placeholder.textContent = `Loading ${wf.name}…`;
+      host.appendChild(placeholder);
+
+      return obtainView().then(
+        (view) => {
+          if (generation !== mountGeneration) return;  // superseded by a newer navigation
+          host.innerHTML = '';
+          activate(host, view);
+        },
+        (error) => {
+          if (generation !== mountGeneration) return;
+          host.innerHTML = '';
+          host.appendChild(buildViewError(wf, error));
+        },
+      );
     },
     unmount: () => {
       if (activeView && typeof activeView.__onDeactivate === 'function') {
