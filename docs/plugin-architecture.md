@@ -71,17 +71,18 @@ Een plugin-auteur heeft dit nodig.
 | | |
 | --- | --- |
 | factory | moet een DOM-element teruggeven; dat element wordt in de host geplaatst |
-| `__onActivate()` | optioneel; aangeroepen zodra de view in de host staat (`static/app.js:172`) |
-| `__onDeactivate()` | optioneel; aangeroepen bij wegnavigeren (`static/app.js:216`) |
+| `__onActivate()` | optioneel; aangeroepen zodra de view in de host staat (`static/app.js:163`) |
+| `__onDeactivate()` | optioneel; aangeroepen bij wegnavigeren (`static/app.js:207`) |
 | `WORKFLOW_BUSY_EVENT` | optioneel; meldt dat er werk loopt, waarop de sidebar een indicator toont. Vijf views doen dit |
 | `__destroy()` | bestaat in twee views maar wordt door de router **nooit** aangeroepen. Reken er niet op |
 
 Omdat een persistente view blijft bestaan, zijn `__onActivate`/`__onDeactivate` het paar waar
 een view zijn polling start en stopt — niet constructie en opslag.
 
-Replay meldt zijn status via een ouder event (`llm-workbench:replay-status`,
-`static/src/workflows/replay/ui.js:4`) dat de shell apart afhandelt (`static/app.js:294`). Dat
-is de enige view met een eigen signaal, en precies de hardcoding die fase 2 opruimt.
+Replay meldde zijn status eerder via een eigen event (`llm-workbench:replay-status`) dat de shell
+apart afhandelde. Dat is de losse opruiming vóór fase 2 geworden: ook replay publiceert nu
+`WORKFLOW_BUSY_EVENT`, en de shell kent geen enkele view meer bij naam — op de fallback voor een
+lege registry na, die in sectie 4 staat.
 
 ### Registry
 
@@ -109,9 +110,9 @@ Vier dingen bewaken het laden, alle in `static/app.js`:
 
 - een gedeelde `pendingView` per route, zodat weg- en terugklikken tijdens een koude load de
   view niet twee keer bouwt;
-- een generatie-teller (`mountGeneration`, regel 128) die een load weggooit die ná een nieuwere
+- een generatie-teller (`mountGeneration`, regel 119) die een load weggooit die ná een nieuwere
   navigatie binnenkomt; op het succespad logt dat op `debug`, op het faalpad op `error`;
-- een zichtbaar foutpaneel (`buildViewError`, regel 130) in plaats van een lege host, omdat
+- een zichtbaar foutpaneel (`buildViewError`, regel 121) in plaats van een lege host, omdat
   `RouterCore.navigate()` de promise van `mount()` negeert;
 - een retry met een verse module-URL, maar alleen als de `import()` zelf faalde — een manifest
   dat de verkeerde factory noemt wordt niet eindeloos opnieuw opgehaald.
@@ -154,6 +155,13 @@ Contractwijziging:
   koppelen" en "heeft er geen" te onderscheiden zijn. Expliciete mapping, **geen herindeling van
   `app/`**: `app/image_pool/training.py:18` importeert al `app/prompt_testing/pool_client`, dus
   pakketten per plugin herindelen zou het llm-pool-pakket een dependency van image-pool maken.
+- De koppeling wordt **met de hand geschreven**, niet afgeleid uit het gebruik. Een afleiding zou
+  vandaag kunnen — alle 16 routers worden vanuit `api-client.js` aangeroepen — maar fase 4 splitst
+  dat bestand juist op, en dan houdt de afleiding op te bestaan. De declaratie is de bedoeling;
+  het bewijs komt uit een **aparte toets die niet op de declaratie leunt**: loop per view de
+  module-subtree af, verzamel de `/api/...`-paden die hij daadwerkelijk aanroept, en controleer
+  dat elk pad door een gemounte route wordt bediend. Zonder die tweede toets controleert de
+  declaratie alleen of iemand het veld heeft ingevuld.
 - De pluginlijst bereikt de browser als een **gegenereerde `plugins.js`** die één global zet,
   geladen met een blokkerende `<script>` vóór `app.js` — dezelfde vorm als het bestaande
   `window.__LLM_WORKBENCH_INITIAL_SHELL__` in `static/index.html:7-22`. Python blijft de bron van
@@ -168,7 +176,7 @@ Contractwijziging:
 | | |
 | --- | --- |
 | **Scopegrens** | geen enable/disable (fase 3), geen per-plugin assets, geen `api-client.js`-herstructurering (fase 4), geen discovery buiten de repo (fase 5) |
-| **Verificatie** | elke view verwijst naar minstens één router of is expliciet als backend-loos gemarkeerd — het doel en de toets op dezelfde granulariteit. De handgeschreven regressiepin verhuist mee naar Python, waar de bron van waarheid komt; de JS-suite houdt wat alleen JS kan controleren (module resolvet, factory geëxporteerd, icoon in de sprite). Die twee zijn geen duplicaat: de pin ontleent zijn waarde eraan dat hij een onafhankelijke, handgeschreven kopie is. Let op dat de JS-suite de pluginlijst dan niet meer importeert maar de gegenereerde global moet stubben — de tests verhuizen mee met de bron |
+| **Verificatie** | twee toetsen. Ten eerste: elke view verwijst naar minstens één router of is expliciet als backend-loos gemarkeerd — het doel en de toets op dezelfde granulariteit. Ten tweede, onafhankelijk daarvan: elk `/api/...`-pad dat een view-subtree aanroept wordt door een gemounte route bediend, zodat de declaratie geen echo van zichzelf is. De handgeschreven regressiepin verhuist mee naar Python, waar de bron van waarheid komt; de JS-suite houdt wat alleen JS kan controleren (module resolvet, factory geëxporteerd, icoon in de sprite). Die twee zijn geen duplicaat: de pin ontleent zijn waarde eraan dat hij een onafhankelijke, handgeschreven kopie is. Let op dat de JS-suite de pluginlijst dan niet meer importeert maar de gegenereerde global moet stubben — de tests verhuizen mee met de bron |
 
 ### Fase 3 — per-plugin assets en enable/disable ⬜
 
@@ -227,16 +235,17 @@ Deze zijn bewust blijven liggen; ze horen bij een latere fase.
 - Geen enable/disable, dus de hele workbench toont altijd alles.
 - `css/app.css` is één globaal `@import`-manifest van 25 regels en er is één globale
   iconensprite; een plugin kan nog geen eigen assets bijdragen.
-- `static/app.js:93`, `:106`, `:294`, `:327` — de shell hardcodeert `replay-translate`. Dat hoort
-  **vóór** fase 2 als losse opruiming: het is een event-protocol tussen shell en view (vijf views
-  doen het al via `WORKFLOW_BUSY_EVENT`), het is klein, en het haalt een hardcoded id weg voordat
-  de bron van de sidebar verandert. In fase 2 meenemen maakt die diff onnodig groot.
+- ~~De shell hardcodeert `replay-translate`.~~ **Opgelost** als losse opruiming vóór fase 2, in een
+  eigen commit op de fase-2-branch. Replay publiceert nu `WORKFLOW_BUSY_EVENT` zoals de vijf andere
+  views, en `app.js` noemt geen enkele view meer bij naam — op één na: de fallback
+  `WORKFLOWS[0]?.route || 'replay-translate'` voor een lege registry, en dat is het laatste punt
+  in deze lijst.
 - Het manifestveld `id` wordt in runtime nergens gelezen; het is gereserveerd voor fase 3.
-- `static/app.js:60-68` (`pluginItemMarkup`) interpoleert `name`, `tooltip` en `route` ongeëscapet
+- `static/app.js:59-67` (`pluginItemMarkup`) interpoleert `name`, `tooltip` en `route` ongeëscapet
   in `innerHTML`. Nu onschadelijk omdat de data statisch en gecommit is. Zodra manifesten van
   buiten de repo komen is dit een injectiepunt; `escapeHtml`/`escapeAttr` bestaan al in
   `static/src/shared/ui-helpers.js`.
-- De defaultroute is impliciet `WORKFLOWS[0]` (`static/app.js:327`). Zodra plugins uit kunnen,
+- De defaultroute is impliciet `WORKFLOWS[0]` (`static/app.js:311`). Zodra plugins uit kunnen,
   wordt "eerste ingeschakelde plugin" een willekeurige landingspagina.
 
 ## 5. Genomen beslissingen, en wat afviel
@@ -250,20 +259,16 @@ Deze zijn bewust blijven liggen; ze horen bij een latere fase.
 | **Aliassen in het manifest van de plugin die het doel bezit** | Globaal laten in `registry.js`: dan blijft een deel van de configuratie in JS achter, wat fase 2 juist opheft |
 | **`enabled` in settings, niet in het manifest** | In het manifest: dan is het manifest geen statische data meer en kan de regressiepin niets meer vastpinnen |
 | **De `api-client.js`-splitsing als eigen fase** | In fase 3 laten: dat bundelt een herstructurering van 766 regels met enable/disable, en dan is fase 3 te groot om te reviewen |
-| **`replay-translate` uit de shell halen als losse opruiming vóór fase 2** | In fase 2 meenemen: maakt de fase-2-diff groter zonder dat het iets met de bron van waarheid te maken heeft |
+| **`replay-translate` uit de shell halen als losse opruiming vóór fase 2** | In fase 2 meenemen: maakt de fase-2-diff groter zonder dat het iets met de bron van waarheid te maken heeft. Gedaan in een eigen commit op de fase-2-branch |
+| **De koppeling view → routers met de hand schrijven, met een onafhankelijke padaanalyse als bewijs** | Afleiden uit `api-client.js`: dat werkt vandaag, maar fase 4 splitst dat bestand juist op, dus de afleiding verdwijnt precies wanneer je hem nodig hebt |
 | Lazy loading bij eerste activering | Alles eager importeren: geen eerste-klik-kosten, maar ~21k regels JS parsen bij het opstarten |
 | Registry laadt, shell bezit de levenscyclus en de DOM | Registry ook eigenaar van caching en activering: mengt data met DOM-beheer |
 
 ## 6. Nog open
 
-1. Langs welke weg leidt de Python-registratie de koppeling view → routers af: met de hand
-   geschreven, of afgeleid uit het daadwerkelijke gebruik? Alle 16 routers worden vanuit
-   `api-client.js` aangeroepen, dus in principe is die koppeling afleidbaar — maar `api-client.js`
-   is één object zonder herkomstinformatie per methode, en fase 4 splitst het juist op. Een
-   afleiding die op dat bestand rust, houdt dus op te bestaan.
-2. Hoe markeert een view dat hij geen backend heeft: een vlag op de view, of blijft de
+1. Hoe markeert een view dat hij geen backend heeft: een vlag op de view, of blijft de
    auxiliary-vlag op plugin-niveau de uitzondering? Met de toets op viewniveau is dit de enige
    plek waar plugin en view nog door elkaar lopen.
-3. De exacte vorm van de samengevoegde manifest-plus-settings-payload in fase 3.
-4. Is de api-client-splitsing klaar wanneer elke plugin zijn eigen module heeft, of is een
+2. De exacte vorm van de samengevoegde manifest-plus-settings-payload in fase 3.
+3. Is de api-client-splitsing klaar wanneer elke plugin zijn eigen module heeft, of is een
    gedeelde namespace per domein beter?
