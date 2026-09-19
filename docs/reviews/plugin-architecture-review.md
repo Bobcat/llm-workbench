@@ -5,9 +5,12 @@
 - Beoordeeld tegen: `main` @ `0ccb2d6`, `origin/main` @ `a0f79d8`
 - Dit is een ontwerpreview. Er is geen code gewijzigd en geen fase 1-code herbeoordeeld
 
-**Verdict: changes requested** — beperkt tot de afbakening van fase 2 en twee gaten in het
-contract. De feitelijke verificatie komt schoon uit en sectie 1, 2, 5 en het grootste deel van
-sectie 4 kunnen blijven staan.
+**Verdict eerste ronde: changes requested** — beperkt tot de afbakening van fase 2 en twee gaten
+in het contract. De feitelijke verificatie komt schoon uit en sectie 1, 2, 5 en het grootste deel
+van sectie 4 kunnen blijven staan.
+
+**Het document is herzien in `27fb08d`. Alle punten hieronder zijn verwerkt; zie *Tweede ronde*
+onderaan voor de hertoetsing en het eindoordeel.**
 
 De kern: fase 2 belooft dat router-mount en sidebar niet meer uit elkaar kunnen lopen, via *"`app/router.py`
 wordt een lus over dezelfde registry in plaats van 16 `include_router`-regels"*. Die lus kan niet
@@ -278,3 +281,141 @@ manifestvorm — dat is het goede nieuws — maar ze moeten vóór fase 2 beslis
 - Sectie 2 uitbreiden met het view-contract, en sectie 4 met routebotsingen en aliassen.
 - `docs/README.md` dit document als actueel laten markeren, anders geldt het volgens de eigen
   conventie van de map als vrijblijvende notitie.
+
+
+---
+
+# Tweede ronde — `27fb08d`
+
+- Document: `docs/plugin-architecture.md`, 181 → 260 regels
+- Beoordeeld tegen: `main` @ `27fb08d`. Sinds de eerste ronde is er geen code gewijzigd, alleen
+  documentatie (`docs/README.md`, `docs/plugin-architecture.md`, en deze review zelf)
+- Uitgevoerd: elke nieuwe of gewijzigde feitelijke bewering opnieuw nagetrokken; de volledige
+  koppeling van de 16 routers naar de frontend in kaart gebracht; `node --test` opnieuw gedraaid
+
+**Verdict tweede ronde: approve with nits.** Fase 2 kan beginnen, mits bevinding 1 en 3 in de
+tekst worden gecorrigeerd.
+
+## De blokkerende bevinding is opgelost
+
+Fase 2 belooft niet langer een lus over de registry. Het doel is nu **"geen view zonder zijn
+backend"**, met de expliciete constatering dat gelijkschakeling onhaalbaar is, en de
+contractwijziging is een expliciete mapping van plugin naar routers in de Python-registratie in
+plaats van een herindeling van `app/`.
+
+Die keuze is bovendien onderbouwd met een controleerbaar argument dat in de eerste ronde nog niet
+in het document stond: `app/image_pool/training.py:18` importeert `app/prompt_testing/pool_client`.
+Nagemeten — dat is exact regel 18, en het klopt dat pakketten per plugin herindelen daarmee het
+llm-pool-pakket tot dependency van image-pool zou maken. Dat is een sterker argument dan ik in de
+eerste ronde gaf.
+
+## Verwerking van de overige punten
+
+| Punt uit de eerste ronde | Verwerkt |
+| --- | --- |
+| Router-lus onhaalbaar | doel geherformuleerd, expliciete mapping, onderbouwd |
+| Aliassen buiten het contract | verhuizen naar het manifest van de bezittende plugin; ook in de gatenlijst en de beslissingstabel |
+| View-contract ontbreekt | nieuwe subsectie in sectie 2 |
+| Fase 3 te groot | `api-client.js`-splitsing is fase 4 geworden |
+| Routebotsingen ontbreken in sectie 4 | toegevoegd, met de nog te nemen beslissing erbij |
+| `docs/README.md` markeert het document niet | sectie *Current documents* toegevoegd |
+| `registry.js:27-46` één lege regel te breed | nu `27-45`; regel 45 is `];` ✓ |
+| Vraag 3 (fetch faalt) | omgekeerd naar een gegenereerde `plugins.js`-global; het verworpen `/api/plugins` staat in de beslissingstabel |
+| Vraag 4 (pin in Python of JS) | beide, met verschillende taken, inclusief de opmerking dat de JS-suite dan moet stubben |
+| Vraag 5 (drempel niet-isolatie) | concreet gemaakt als scopegrens van fase 5 |
+| Vraag 6 (`replay-translate`) | losse opruiming vóór fase 2, ook in de gatenlijst |
+
+Het view-contract is niet alleen toegevoegd maar ook juist. Nagemeten: `__onActivate` op
+`static/app.js:172`, `__onDeactivate` op `:216`, `WORKFLOW_BUSY_EVENT` in exact vijf views, en
+`__destroy` in exact twee views (`pdf-translation/index.js:2009`,
+`translation-requests/index.js:1191`) zonder enige aanroep in `static/`, router inbegrepen. Dat
+laatste als val documenteren in plaats van weglaten, is meer dan de review vroeg.
+
+Ook de andere nieuwe verwijzingen kloppen exact: `llm-workbench:replay-status` op
+`static/src/workflows/replay/ui.js:4` en de afhandeling op `static/app.js:294`,
+`WORKFLOWS_BY_ROUTE` op `registry.js:58`, `ROUTE_ALIASES` op `registry.js:48-54`, de
+bootstrap-blok op `static/index.html:7-22`, en de vier `replay-translate`-plaatsen
+`:93`, `:106`, `:294`, `:327`. `node --test` is 6/6.
+
+## Nieuwe bevindingen
+
+### Laag — `replay_defaults_router` bedient wél een view
+
+Het document beweert dit twee keer: in de fase 2-inleiding (*"de view `icons` heeft geen backend
+en `replay_defaults_router` heeft geen view"*) en als openstaande vraag 1 (*"`replay_defaults_router`
+bedient geen enkele view; hij zal aan `realtime-translation` gehangen moeten worden, maar dat is
+een aanname"*).
+
+Nagemeten klopt dat niet. De router exposeert `/config/default-model`
+(`app/realtime_translation/replay/defaults.py:7,10`). Dat pad wordt aangeroepen door
+`api.getDefaultModel()` (`static/src/api-client.js:65`), en die methode wordt gebruikt door
+`static/src/workflows/replay/model-options.js:18` en
+`static/src/workflows/replay/view-controls.js:281` — beide onderdeel van de view
+`replay-translate`, eigendom van de plugin `realtime-translation`.
+
+Twee gevolgen:
+
+- **Openstaande vraag 1 is niet open.** Het is geen aanname dat de router aan
+  `realtime-translation` hoort; het is af te leiden uit de aanroepketen. De vraag kan vervallen,
+  of herschreven worden tot de vraag die er wél achter zit: langs welke weg leidt de
+  Python-registratie die koppeling af — met de hand, of uit het daadwerkelijke gebruik?
+- **Het argument op fase 2-regel 140 verliest één van zijn twee benen.** Ik heb alle 16 routers
+  nagelopen: elk van de zestien heeft minstens één aanroep in `api-client.js`. Er is dus géén
+  router zonder view. De asymmetrie loopt maar één kant op: één view zonder backend.
+
+De conclusie zelf blijft staan. `icons` heeft aantoonbaar geen backend —
+`static/src/workflows/icons/index.js` raakt `api-client.js` niet — en dat ene voorbeeld is genoeg
+om volledige gelijkschakeling onmogelijk te maken. Alleen de onderbouwing moet gehalveerd worden.
+
+### Laag — fase 2's toets is grover dan zijn doel
+
+Het doel is een eigenschap per view: *"geen view zonder zijn backend"*. De verificatie in de
+fase 2-tabel is een eigenschap per plugin: *"elke plugin met views heeft routers, behalve de
+auxiliary plugin"*. Die twee vallen niet samen. Een plugin met meerdere views blijft slagen als
+één van die views zijn backend verliest: verdwijnt `app/prompt_testing/chat.py`, dan heeft
+`llm-pool` nog steeds routers via `models.py` en `text_generation.py` en gaat de toets groen,
+terwijl de view `chat` stuk is.
+
+Vandaag houdt het criterium stand — ik heb alle acht plugins nagelopen en elke niet-auxiliary
+plugin heeft minstens één router — dus dit is geen fout, alleen een toets die zwakker is dan de
+zin erboven belooft. Openstaande vraag 2 cirkelt hieromheen maar benoemt het als een eigenaardigheid
+van de auxiliary-vlag. De scherpere formulering is de granulariteit: of de toets moet per view,
+of het doel moet per plugin.
+
+### Nit — `api-client.js` wordt door 19 views gebruikt, niet door 20
+
+Fase 4 zegt *"101 methodes in één object (766 regels) en wordt door alle 20 views gebruikt"*.
+Regels en methodes kloppen allebei; het aantal views niet. `icons` gebruikt `api-client.js` niet —
+dezelfde view die ook geen backend heeft.
+
+### Nit — de ankerformulering is minder precies geworden
+
+Regel 4 luidt nu *"Anker: de fase 1-code staat op `main` sinds `a0f79d8`"*. Fase 1 landde met
+`783f0bd`, dat een voorouder van `a0f79d8` is; `a0f79d8` is een pdf-translation-fix die niets met
+de plugin-architectuur te maken heeft. De oorspronkelijke formulering (*"Anker: `main` @
+`a0f79d8`"*) was eenduidig: het document is tegen die commit geschreven. De nieuwe lezing suggereert
+dat fase 1 daar arriveerde.
+
+## Oordeel per fase
+
+| Fase | Afbakening houdbaar? |
+| --- | --- |
+| 1 | Ja, ongewijzigd |
+| 2 | **Ja.** Doel en middel zijn nu haalbaar en onderbouwd; de toets moet nog wel op viewniveau |
+| 3 | Ja. De drie regels over `enabled` liggen vast en dat is de juiste volgorde |
+| 4 | Ja. Als eigen fase is de api-client-splitsing hanteerbaar |
+| 5 | Ja, met de first-party-voorwaarde expliciet als scopegrens |
+
+Levert het contract na fase 2 nog één bron van waarheid op? **Ja, nu wel.** De twee lekken uit de
+eerste ronde zijn gedicht: de aliassen reizen mee in de payload, en de koppeling plugin → routers
+is een expliciet onderdeel van de Python-registratie in plaats van een impliciete aanname over de
+pakketindeling.
+
+## Samenvatting
+
+- De blokkerende bevinding is opgelost, en beter onderbouwd dan ik in de eerste ronde vroeg.
+- Te corrigeren vóór fase 2: de bewering dat `replay_defaults_router` geen view bedient, inclusief
+  openstaande vraag 1 die erop rust, en de fase 2-toets op viewniveau brengen.
+- Twee tekstuele nits: 19 in plaats van 20 views voor `api-client.js`, en de ankerformulering.
+- Verder is dit document nu wat het beweert te zijn: elke andere bewering die ik kon natrekken,
+  klopt tot op het regelnummer.

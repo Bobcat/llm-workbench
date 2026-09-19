@@ -1,7 +1,9 @@
 # Plugin-architectuur — beslissingen en fase-afbakening
 
 Status: fase 1 is gebouwd, gemerged en gepusht. Fase 2 t/m 5 zijn niet begonnen.
-Anker: de fase 1-code staat op `main` sinds `a0f79d8`.
+Anker: sectie 2 beschrijft de code sinds `783f0bd`, de laatste commit die de plugin-code wijzigde;
+daarna kwam er alleen documentatie bij. De pdf-fix `a0f79d8` staat wel op `main` maar raakt deze
+architectuur niet.
 
 Dit document beschrijft **beslissingen en afbakening**, niet de implementatie. De code is de
 bron van waarheid; waar dit document en de code verschillen, wint de code. Elke fase heeft
@@ -137,16 +139,21 @@ waardoor een gewijzigde view onzichtbaar kon blijven. Dat is server-side opgelos
 ### Fase 2 — Python wordt de bron van waarheid ⬜
 
 **Doel: geen view zonder zijn backend.** Niet "router en sidebar kunnen niet meer uit elkaar
-lopen" — dat is onhaalbaar. De view `icons` heeft geen backend en `replay_defaults_router` heeft
-geen view, dus volledige gelijkschakeling kan niet bestaan. Consistentie is toetsbaar;
-gelijkheid niet. Er is vandaag geen 1:1 op welke as dan ook: 8 plugins, 16 routers, 20 views.
+lopen" — dat is onhaalbaar, want de view `icons` heeft geen backend. Die asymmetrie loopt één
+kant op: alle 16 routers worden vanuit `api-client.js` aangeroepen, dus er is geen router zonder
+view. Consistentie is toetsbaar; gelijkheid niet. Er is vandaag geen 1:1 op welke as dan ook:
+8 plugins, 16 routers, 20 views.
 
 Contractwijziging:
 
-- Een **Python-pluginregistratie** beschrijft per plugin welke routers erbij horen. Expliciete
-  mapping, **geen herindeling van `app/`**: `app/image_pool/training.py:18` importeert al
-  `app/prompt_testing/pool_client`, dus pakketten per plugin herindelen zou het llm-pool-pakket
-  een dependency van image-pool maken.
+- Een **Python-pluginregistratie** beschrijft per **view** welke routers erbij horen. Die
+  granulariteit is bewust: het doel is een eigenschap per view, en een toets per plugin blijft
+  groen als één view van een plugin zijn backend verliest — verdwijnt `app/prompt_testing/chat.py`,
+  dan houdt `llm-pool` routers via `models.py` en `text_generation.py` en zou de view `chat`
+  ongemerkt stuk zijn. Een view zonder backend moet dat expliciet zeggen, zodat "vergeten te
+  koppelen" en "heeft er geen" te onderscheiden zijn. Expliciete mapping, **geen herindeling van
+  `app/`**: `app/image_pool/training.py:18` importeert al `app/prompt_testing/pool_client`, dus
+  pakketten per plugin herindelen zou het llm-pool-pakket een dependency van image-pool maken.
 - De pluginlijst bereikt de browser als een **gegenereerde `plugins.js`** die één global zet,
   geladen met een blokkerende `<script>` vóór `app.js` — dezelfde vorm als het bestaande
   `window.__LLM_WORKBENCH_INITIAL_SHELL__` in `static/index.html:7-22`. Python blijft de bron van
@@ -161,7 +168,7 @@ Contractwijziging:
 | | |
 | --- | --- |
 | **Scopegrens** | geen enable/disable (fase 3), geen per-plugin assets, geen `api-client.js`-herstructurering (fase 4), geen discovery buiten de repo (fase 5) |
-| **Verificatie** | elke plugin met views heeft routers, behalve de auxiliary plugin — de toetsbare vorm van "geen view zonder zijn backend". De handgeschreven regressiepin verhuist mee naar Python, waar de bron van waarheid komt; de JS-suite houdt wat alleen JS kan controleren (module resolvet, factory geëxporteerd, icoon in de sprite). Die twee zijn geen duplicaat: de pin ontleent zijn waarde eraan dat hij een onafhankelijke, handgeschreven kopie is. Let op dat de JS-suite de pluginlijst dan niet meer importeert maar de gegenereerde global moet stubben — de tests verhuizen mee met de bron |
+| **Verificatie** | elke view verwijst naar minstens één router of is expliciet als backend-loos gemarkeerd — het doel en de toets op dezelfde granulariteit. De handgeschreven regressiepin verhuist mee naar Python, waar de bron van waarheid komt; de JS-suite houdt wat alleen JS kan controleren (module resolvet, factory geëxporteerd, icoon in de sprite). Die twee zijn geen duplicaat: de pin ontleent zijn waarde eraan dat hij een onafhankelijke, handgeschreven kopie is. Let op dat de JS-suite de pluginlijst dan niet meer importeert maar de gegenereerde global moet stubben — de tests verhuizen mee met de bron |
 
 ### Fase 3 — per-plugin assets en enable/disable ⬜
 
@@ -184,9 +191,9 @@ Regels die nu al vastliggen:
 ### Fase 4 — de gedeelde api-client opsplitsen ⬜
 
 Losgetrokken van fase 3 op advies van de review. `static/src/api-client.js` is 101 methodes in
-één object (766 regels) en wordt door alle 20 views gebruikt. Dat is een herstructurering die
-niets met enable/disable te maken heeft; zit hij in fase 3, dan is fase 3 de fase waarin het
-misgaat.
+één object (766 regels) en wordt door 19 van de 20 views gebruikt — alleen `icons` raakt hem
+niet. Dat is een herstructurering die niets met enable/disable te maken heeft; zit hij in fase 3,
+dan is fase 3 de fase waarin het misgaat.
 
 | | |
 | --- | --- |
@@ -249,12 +256,14 @@ Deze zijn bewust blijven liggen; ze horen bij een latere fase.
 
 ## 6. Nog open
 
-1. Welke plugin bezit een router zonder view? `replay_defaults_router` bedient geen enkele view;
-   hij zal aan `realtime-translation` gehangen moeten worden, maar dat is een aanname.
-2. Is "elke plugin met views heeft routers, behalve de auxiliary plugin" genoeg als toets, of
-   moet een view kunnen declareren dat hij geen backend nodig heeft? De auxiliary-vlag is nu de
-   enige uitzondering, en dat is een plugin-eigenschap die toevallig samenvalt met een
-   view-eigenschap.
+1. Langs welke weg leidt de Python-registratie de koppeling view → routers af: met de hand
+   geschreven, of afgeleid uit het daadwerkelijke gebruik? Alle 16 routers worden vanuit
+   `api-client.js` aangeroepen, dus in principe is die koppeling afleidbaar — maar `api-client.js`
+   is één object zonder herkomstinformatie per methode, en fase 4 splitst het juist op. Een
+   afleiding die op dat bestand rust, houdt dus op te bestaan.
+2. Hoe markeert een view dat hij geen backend heeft: een vlag op de view, of blijft de
+   auxiliary-vlag op plugin-niveau de uitzondering? Met de toets op viewniveau is dit de enige
+   plek waar plugin en view nog door elkaar lopen.
 3. De exacte vorm van de samengevoegde manifest-plus-settings-payload in fase 3.
 4. Is de api-client-splitsing klaar wanneer elke plugin zijn eigen module heeft, of is een
    gedeelde namespace per domein beter?
