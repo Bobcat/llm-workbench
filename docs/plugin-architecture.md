@@ -1,9 +1,9 @@
 # Plugin-architectuur — beslissingen en fase-afbakening
 
 Status: fase 1 is gebouwd, gemerged en gepusht. Fase 2 t/m 5 zijn niet begonnen.
-Anker: sectie 2 beschrijft de code sinds `783f0bd`, de laatste commit die de plugin-code wijzigde;
-daarna kwam er alleen documentatie bij. De pdf-fix `a0f79d8` staat wel op `main` maar raakt deze
-architectuur niet.
+Anker: sectie 2 beschrijft de code op deze branch. Fase 1 landde met `783f0bd` en de
+replay-opruiming met `8d73503`; de pdf-fix `a0f79d8` staat op `main` maar raakt deze architectuur
+niet.
 
 Dit document beschrijft **beslissingen en afbakening**, niet de implementatie. De code is de
 bron van waarheid; waar dit document en de code verschillen, wint de code. Elke fase heeft
@@ -176,7 +176,33 @@ Contractwijziging:
 | | |
 | --- | --- |
 | **Scopegrens** | geen enable/disable (fase 3), geen per-plugin assets, geen `api-client.js`-herstructurering (fase 4), geen discovery buiten de repo (fase 5) |
-| **Verificatie** | twee toetsen. Ten eerste: elke view verwijst naar minstens één router of is expliciet als backend-loos gemarkeerd — het doel en de toets op dezelfde granulariteit. Ten tweede, onafhankelijk daarvan: elk `/api/...`-pad dat een view-subtree aanroept wordt door een gemounte route bediend, zodat de declaratie geen echo van zichzelf is. De handgeschreven regressiepin verhuist mee naar Python, waar de bron van waarheid komt; de JS-suite houdt wat alleen JS kan controleren (module resolvet, factory geëxporteerd, icoon in de sprite). Die twee zijn geen duplicaat: de pin ontleent zijn waarde eraan dat hij een onafhankelijke, handgeschreven kopie is. Let op dat de JS-suite de pluginlijst dan niet meer importeert maar de gegenereerde global moet stubben — de tests verhuizen mee met de bron |
+| **Verificatie** | twee toetsen en een verhuizing, hieronder uitgewerkt |
+
+**Verificatie van fase 2.**
+
+1. *De declaratie.* Elke view verwijst naar minstens één router of is expliciet als backend-loos
+   gemarkeerd — het doel en de toets op dezelfde granulariteit.
+2. *Het bewijs, onafhankelijk van de declaratie.* Lees uit `static/src/api-client.js` de tabel
+   methode → pad; alle 101 methodes hebben een statisch pad. Verzamel vervolgens in de **eigen**
+   bestanden van de view de aangeroepen `api.<methode>()`-namen en controleer dat elk gevonden pad
+   door een gemounte route wordt bediend.
+
+   De gedeelde client moet buiten die verzameling blijven. Hij zit in elke view-subtree — elke view
+   importeert hem — dus een wandeling over de subtree vindt in *elke* view alle 101 paden, waarmee
+   de toets per view niets meer zegt. De paden staan niet in de views zelf: die roepen
+   `api.runChatPrompt()` aan. Gemeten over de 20 views levert de toets zoals hier beschreven
+   **0 paden voor `icons`** en **2 tot 15 paden voor de andere 19**, wat precies is wat je wilt
+   zien.
+
+   Tot fase 4 rust deze toets op `api-client.js`. Daarna liggen de paden in de subtree van de
+   plugin zelf en wordt de toets wat hij zegt. Dat is tijdelijk, en het hoort er te staan: het
+   wringt met de motivering hierboven, waar een afleiding uit `api-client.js` juist wordt
+   afgewezen omdat fase 4 dat bestand opsplitst.
+3. *De pin verhuist.* De handgeschreven regressiepin gaat mee naar Python, waar de bron van
+   waarheid komt; de JS-suite houdt wat alleen JS kan controleren (module resolvet, factory
+   geëxporteerd, icoon in de sprite). Die twee zijn geen duplicaat: de pin ontleent zijn waarde
+   eraan dat hij een onafhankelijke, handgeschreven kopie is. Let op dat de JS-suite de pluginlijst
+   dan niet meer importeert maar de gegenereerde global moet stubben.
 
 ### Fase 3 — per-plugin assets en enable/disable ⬜
 

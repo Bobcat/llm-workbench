@@ -296,6 +296,9 @@ manifestvorm — dat is het goede nieuws — maar ze moeten vóór fase 2 beslis
 **Verdict tweede ronde: approve with nits.** Fase 2 kan beginnen, mits bevinding 1 en 3 in de
 tekst worden gecorrigeerd.
 
+**Verwerkt in `435d00b`, `8d73503` en `d67a260`; zie *Derde ronde* onderaan voor de hertoetsing en
+het eindoordeel over de startvraag.**
+
 ## De blokkerende bevinding is opgelost
 
 Fase 2 belooft niet langer een lus over de registry. Het doel is nu **"geen view zonder zijn
@@ -419,3 +422,136 @@ pakketindeling.
 - Twee tekstuele nits: 19 in plaats van 20 views voor `api-client.js`, en de ankerformulering.
 - Verder is dit document nu wat het beweert te zijn: elke andere bewering die ik kon natrekken,
   klopt tot op het regelnummer.
+
+
+---
+
+# Derde ronde — `435d00b`, `8d73503`, `d67a260`
+
+- Branch: `feature/plugin-registry-phase-2` @ `d67a260`, nog niet gepusht
+- Gestelde vraag: **kan fase 2 nu echt beginnen?**
+- Beoordeeld: de opruimcommit `8d73503` (code) plus de twee documentcommits eromheen
+- Uitgevoerd: de codewijziging op gedragsequivalentie getoetst in Chromium, inclusief de helft die
+  de meegeleverde test niet dekt; alle door de codewijziging verschoven regelnummers opnieuw
+  nagemeten; de haalbaarheid van de nieuw voorgestelde fase 2-toets gemeten; `node --test`,
+  de browsercheck en `pytest` gedraaid
+- Werkkopie schoon na afloop, geen servers blijven draaien
+
+**Verdict derde ronde: approve with nits — ja, fase 2 kan beginnen.** Eén verificatiestap moet
+eerst anders worden opgeschreven, en dat is tekstwerk, geen ontwerpwerk.
+
+## `8d73503` — replay uit de shell
+
+Dit is de opruiming die de eerste ronde vóór fase 2 plaatste. Hij is compleet: `replayIsRunning`,
+`updateReplaySidebarState()`, de listener op `llm-workbench:replay-status` en de skip in
+`updateWorkflowRunningState()` zijn alle vier weg, en `static/app.js` noemt geen enkele view meer
+bij naam — op de lege-registry-fallback na, die als los punt in sectie 4 blijft staan. Zestien
+regels eruit, geen nieuwe abstractie erin.
+
+Gedragsequivalentie is nagemeten, niet afgeleid. De meegeleverde browsercheck stuurt synthetische
+events en dekt daarmee tweemaal de shell-helft; de view-helft — dat replay het gedeelde event
+werkelijk publiceert — is apart getoetst door `static/src/workflows/replay/ui.js` in de draaiende
+app te importeren en `setStatusBadge()` aan te roepen:
+
+```
+events uit de echte view : [{workflow: 'replay-translate', busy: true},
+                            {workflow: 'replay-translate', busy: false}]
+oud event nog uitgezonden: []
+sidebar bij 'playing'    : gemarkeerd      bij 'idle': gewist
+markering blijft zichtbaar vanaf een andere view: ja
+```
+
+Die laatste regel is de eigenschap waarvoor de status in de shell zit, en die overleeft de
+verhuizing. Verder klopt de randafhandeling: `if (!badge) return;` staat nog steeds vóór de
+publicatie, precies waar `broadcastReplayStatus()` stond, en `renderWorkflows()` wordt maar één
+keer aangeroepen (`static/app.js:300`), dus het schrappen van `updateReplaySidebarState()` uit
+`onRouteDidMount` verliest niets. Van het oude event resteert in runtime-code niets meer.
+
+| | |
+| --- | --- |
+| `node --test 'tests/js/**/*.test.mjs'` | 6 pass, 0 fail |
+| `tests/browser/check_plugin_registry.py` | exit 0, groen, inclusief de nieuwe busy-checks |
+| `pytest` | 120 passed, 5 failed — dezelfde vijf replay-failures |
+
+## Verwerking van de tweede ronde
+
+| Punt uit de tweede ronde | Verwerkt |
+| --- | --- |
+| `replay_defaults_router` bedient wél een view | bewering weg; het argument leunt nu alleen op `icons`, en de constatering dat er geen router zonder view is, is overgenomen |
+| Openstaande vraag 1 rustte op die bewering | vervallen, niet doorgeschoven; de resterende vragen zijn hernummerd |
+| Fase 2-toets grover dan zijn doel | de registratie beschrijft nu per **view** welke routers erbij horen, met de redenering erbij |
+| `api-client.js` door 20 views gebruikt | nu "19 van de 20 views — alleen `icons` raakt hem niet" |
+| Ankerformulering | herschreven, maar daarmee een nieuwe onnauwkeurigheid geïntroduceerd; zie hieronder |
+
+De door `8d73503` verschoven regelnummers zijn in `d67a260` ververst en kloppen alle zes exact
+nagemeten: `__onActivate` op `:163`, `__onDeactivate` op `:207`, `mountGeneration` op `:119`,
+`buildViewError` op `:121`, `pluginItemMarkup` op `59-67`, en de defaultroute op `:311`. De
+onveranderde verwijzingen (`app/image_pool/training.py:18`, `static/index.html:7-22`) staan nog
+waar ze stonden.
+
+## Bevindingen
+
+### Laag — de nieuwe onafhankelijke toets is zoals beschreven bijna leeg
+
+`d67a260` voegt aan fase 2 een tweede, onafhankelijke controle toe, en de redenering eronder is
+goed: een handgeschreven declaratie die zichzelf verifieert, controleert alleen of iemand een veld
+heeft ingevuld. De uitvoering klopt alleen niet met de code. Het document stelt voor om *"per view
+de module-subtree af te lopen, de `/api/...`-paden te verzamelen die hij daadwerkelijk aanroept, en
+te controleren dat elk pad door een gemounte route wordt bediend"*.
+
+Views bevatten die paden niet. Ze roepen `api.runChatPrompt()` aan; alle 101 paden staan in
+`static/src/api-client.js`. Gemeten over de 20 view-subtrees:
+
+- **14 van de 20 bevatten geen enkel literal `/api/`-pad.** Daaronder `chat`, dat aantoonbaar
+  `app/prompt_testing/chat.py` nodig heeft;
+- de overige zes bevatten er één of twee, en dat zijn brokstukken voor downloads en streams
+  (`/api/pdf-benchmark/runs/`, `/api/replay/`, …), niet het backendoppervlak van die view.
+
+De toets zou voor 14 views nul paden vinden en groen worden. Een controle die niets verifieert maar
+er wel uitziet als bewijs, is slechter dan geen controle — en juist dit is de stap die het bewijs
+moest leveren.
+
+De reparatie is klein en de redenering blijft intact: de toets moet `api.method()` via
+`api-client.js` naar een pad opzoeken. Dat blijft onafhankelijk van de declaratie, wat het hele
+punt was. Wel wringt het met de motivering ernaast: afleiding uit `api-client.js` wordt afgewezen
+omdat fase 4 dat bestand opsplitst, waarna de voorgestelde toets er zelf op blijkt te rusten. Dat
+is tijdelijk — ná fase 4 liggen de paden in de subtree van de plugin zelf en wordt de toets wél
+wat er staat — maar dat hoort erbij te staan, anders leest het als iets dat vandaag te bouwen is.
+
+### Nit — de ankerzin is achterhaald door de commit ernaast
+
+Regel 4-5 luidt: *"sectie 2 beschrijft de code sinds `783f0bd`, de laatste commit die de
+plugin-code wijzigde; daarna kwam er alleen documentatie bij."* Op deze branch is dat niet meer
+waar: `8d73503` wijzigt `static/app.js`, `static/src/workflows/replay/ui.js` en
+`static/src/shared/workflow-activity.js`. Het is bovendien precies de commit die de regelnummers
+deed schuiven die `d67a260` daarna moest verversen — de zin is dus achterhaald door het werk in
+dezelfde serie.
+
+### Nit — de test dekt de shell-helft twee keer en de view-helft niet
+
+`tests/browser/check_plugin_registry.py:314-341` stuurt `workflow-busy` en het ingetrokken
+`replay-status` als synthetische events. Dat pint hoe de shell reageert, tweemaal. Dat
+`setStatusBadge()` het gedeelde event nu publiceert — de eigenlijke wijziging in `replay/ui.js` —
+wordt nergens vastgelegd: draai die regel terug en de suite blijft groen. Het fragment dat voor
+deze review is gedraaid (module importeren, `setStatusBadge()` aanroepen, het event opvangen) is
+een tiental regels en past in dezelfde check.
+
+## Antwoord op de startvraag
+
+**Ja, fase 2 kan beginnen.** De voorwaarde die de eerste ronde stelde — replay uit de shell vóór
+fase 2, zodat de bron van de sidebar verandert terwijl er geen view meer bij naam bekend is — is
+vervuld en geverifieerd. De blokkerende bevinding uit de eerste ronde en de twee uit de tweede zijn
+alle drie echt opgelost, niet weggeschreven.
+
+Wat vóór de eerste fase-2-commit geregeld moet zijn, is tekst, geen ontwerp: de tweede
+verificatiestap moet beschrijven wat hij werkelijk doet, inclusief dat hij tot fase 4 via
+`api-client.js` loopt. Zou die stap ongewijzigd gebouwd worden, dan levert fase 2 een groene toets
+op die voor 14 van de 20 views niets aantoont — en dat is precies het soort schijnzekerheid dat
+dit document verder overal vermijdt.
+
+| Fase | Startklaar? |
+| --- | --- |
+| 2 | Ja, na herformulering van de tweede verificatiestap |
+| 3 | Onveranderd; de drie regels over `enabled` liggen vast |
+| 4 | Onveranderd |
+| 5 | Onveranderd, met de first-party-voorwaarde als scopegrens |

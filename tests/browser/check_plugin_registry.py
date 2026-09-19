@@ -338,8 +338,70 @@ def verify(base: str, checks: Checks) -> None:
             "is-running" not in legacy,
             "the retired replay-status event still marks the sidebar item",
         )
+
+        # The shell half above is synthetic. This is the view half: drive the replay view's own
+        # status function and watch what it publishes. Without this, reverting the line that
+        # replaced the retired event would leave the suite green.
+        view_half = busy.evaluate("""
+          async () => {
+            const emitted = [];
+            const retired = [];
+            const onBusy = (event) => emitted.push(event.detail);
+            const onRetired = () => retired.push(1);
+            window.addEventListener('llm-workbench:workflow-busy', onBusy);
+            window.addEventListener('llm-workbench:replay-status', onRetired);
+            const { setStatusBadge } = await import('/src/workflows/replay/ui.js');
+            const itemClass = () =>
+              document.querySelector('li[data-route="replay-translate"]').className;
+
+            const container = document.createElement('div');
+            const badge = document.createElement('span');
+            badge.id = 'replayStatusBadge';
+            container.append(badge);
+
+            setStatusBadge(container, 'playing');
+            const marked = itemClass();
+            setStatusBadge(container, 'paused');
+            const paused = itemClass();
+            setStatusBadge(container, 'idle');
+            const cleared = itemClass();
+            // No badge in the container: the guard must stay in front of the publication.
+            const before = emitted.length;
+            setStatusBadge(document.createElement('div'), 'playing');
+            const guarded = emitted.length === before;
+
+            window.removeEventListener('llm-workbench:workflow-busy', onBusy);
+            window.removeEventListener('llm-workbench:replay-status', onRetired);
+            return { emitted, retired: retired.length, marked, paused, cleared, guarded };
+          }
+        """)
+        checks.check(
+            view_half["emitted"] == [
+                {"workflow": "replay-translate", "busy": True},
+                {"workflow": "replay-translate", "busy": False},
+                {"workflow": "replay-translate", "busy": False},
+            ],
+            f"the replay view published unexpected busy events: {view_half['emitted']}",
+        )
+        checks.check(view_half["retired"] == 0, "the replay view still emits the retired event")
+        checks.check(
+            "is-running" in view_half["marked"],
+            "the replay view's own status did not mark the sidebar item",
+        )
+        checks.check(
+            "is-running" not in view_half["paused"],
+            "a paused replay is reported as busy",
+        )
+        checks.check(
+            "is-running" not in view_half["cleared"],
+            "the replay view did not clear the sidebar item",
+        )
+        checks.check(
+            view_half["guarded"],
+            "a container without the status badge still published a busy event",
+        )
         busy.close()
-        checks.note("busy indicator: the shared event marks and clears, the retired event is ignored")
+        checks.note("busy indicator: shell and view halves both covered, retired event is gone")
 
         checks.check(not page_errors, f"page errors: {page_errors}")
         checks.check(not import_failures, f"dynamic import failures: {import_failures}")
