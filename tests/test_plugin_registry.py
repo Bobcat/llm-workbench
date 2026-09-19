@@ -152,6 +152,11 @@ def _called_paths(entry: Path, methods: dict[str, str]) -> tuple[set[str], set[s
 
     Literals are returned as prefixes, because a hand-built URL is usually a base the view appends
     to; the ``${...}`` part of a template is cut off.
+
+    The price of that shortcut: only the base is checked, so an endpoint underneath it can be
+    renamed without this analysis noticing. Measured with two pdf-regression endpoints that two
+    views really call. Resolving the rest would mean running the JavaScript, which this suite does
+    not do.
     """
     paths: set[str] = set()
     prefixes: set[str] = set()
@@ -479,10 +484,13 @@ class DocumentedLineReferenceTests(unittest.TestCase):
 
     - a shift inside the same symbol's span, for example from an ``if`` line to the call on the
       next line. A shift to unrelated code does fail.
-    - a reference with a wide span: ``static/index.html:7-22`` covers a sixteen-line block, so half
-      the file's positions would still contain its anchor. The tightest references leave under 1%.
+    - a reference with a wide span: ``static/index.html:7-22`` covers a sixteen-line block, so
+      roughly two thirds of the file's positions would still contain its anchor. The tightest
+      references leave under 1%.
     - it reads prose with a heuristic, so it verifies that *a* symbol matches, not that the right
-      one does. The most-specific rule is what keeps a generic word like ``name`` from deciding.
+      one does. The anchor is the longest symbol the window names, which is what keeps a generic
+      word like ``name`` from deciding — not the occurrence count the selection key looks like it
+      uses.
     """
 
     def _references(self) -> list[tuple[int, str, int, int, str | None]]:
@@ -524,9 +532,13 @@ class DocumentedLineReferenceTests(unittest.TestCase):
                     f"line {number}: the prose around {path}:{first} names no symbol that {path} contains"
                 )
                 continue
-            # The most specific anchor carries the check: the symbol occurring least in the file.
-            # Without this, a generic word like `name` decides, and a wide span around it matches
-            # half the file.
+            # The anchor is the longest symbol the prose names. The key starts with
+            # `source.count(candidate)`, but `source` is a list of lines, so that counts lines equal
+            # to the candidate — always zero — and the length decides. A real occurrence count was
+            # tried and rejected: it makes `debug` beat `buildViewError` as soon as one
+            # console.debug disappears, failing a reference that is correct. Anchoring on the
+            # symbol sitting on the reference's own line is the cleaner fix if this is revisited;
+            # the reasoning is in docs/reviews/pr-16-plugin-registry-phase-2-review-findings-4.md.
             anchor = min(anchors, key=lambda candidate: (source.count(candidate), -len(candidate)))
             if anchor not in "\n".join(source[first - 1:last]):
                 problems.append(
