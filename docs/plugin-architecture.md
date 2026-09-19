@@ -1,6 +1,6 @@
 # Plugin-architectuur — beslissingen en fase-afbakening
 
-Status: fase 1 is gebouwd, gemerged en gepusht. Fase 2 t/m 5 zijn niet begonnen.
+Status: fase 1 en 2 zijn gebouwd. Fase 3 t/m 5 zijn niet begonnen.
 Anker: sectie 2 beschrijft de code op deze branch. Fase 1 landde met `783f0bd` en de
 replay-opruiming met `8d73503`; de pdf-fix `a0f79d8` staat op `main` maar raakt deze architectuur
 niet.
@@ -33,13 +33,13 @@ Niet, en dat is een bewuste grens:
 - **geen package-manager.** Fase 5 gebruikt pip entry points voor discovery, niet als
   distributiemechanisme met versie-eisen.
 
-## 2. Het contract zoals het nu is (fase 1)
+## 2. Het contract zoals het nu is
 
-### Manifest
+### De registratie
 
-`static/src/plugins/<id>/manifest.js`, data-only: strings, booleans en arrays, geen
-geïmporteerde functies. Dat is de kern van het ontwerp — alleen een datavorm kan later door
-Python geserveerd worden.
+`app/plugins.py` is de bron van waarheid. Twee dingen komen daaruit voort: `app/router.py` mount
+de routers die erin genoemd staan, en FastAPI genereert `/plugins.js` uit dezelfde gegevens.
+Daardoor kunnen de routetabel en de sidebar niet uit elkaar lopen zonder dat een test het merkt.
 
 | Plugin-veld | Betekenis |
 | --- | --- |
@@ -58,10 +58,19 @@ Python geserveerd worden.
 | `persistent` | view blijft in de DOM bij wegnavigeren |
 | `module` | pad onder de static root, geresolveerd tegen `document.baseURI` |
 | `factory` | geëxporteerde functienaam in die module; levert het view-element |
+| `routers` | de routers die deze view bedienen; één router mag door meerdere views gedeeld worden |
+| `aliases` | gepensioneerde routenamen die naar deze view wijzen |
+| `backend` | `false` voor een view die aantoonbaar geen API heeft; alleen `icons` |
 
 `module` en `factory` zijn strings en geen directe functies. Dat kost statische
 verifieerbaarheid — een typefout breekt pas bij een klik — en dat is de prijs voor een vorm die
-Python kan uitserveren. De testsuite compenseert dat.
+de backend kan uitserveren. De JS-testsuite compenseert dat.
+
+Naar de browser gaat alleen data: `frontend_payload()` laat `routers` en `backend` weg, want de
+frontend heeft ze niet nodig. `/plugins.js` zet die payload als één global,
+`window.__LLM_WORKBENCH_PLUGINS__`, en `static/index.html` laadt dat bestand met een blokkerende
+`<script>` vóór `app.js`. Een fetch zou niets opleveren — de lijst verandert niet tijdens een
+sessie — en wel een lege-sidebar-toestand om gedrag voor te verzinnen.
 
 ### View-contract
 
@@ -86,16 +95,17 @@ lege registry na, die in sectie 4 staat.
 
 ### Registry
 
-`static/src/plugins/registry.js` is de enige plek die weet wat er bestaat:
+`static/src/plugins/registry.js` leest die gegenereerde lijst en leidt er de sidebar, de
+routetabel en de loader uit af:
 
 | Export | Regel | Rol |
 | --- | --- | --- |
-| `PLUGINS` | 36 | de pluginlijst, in sidebar-volgorde |
-| `ROUTE_ALIASES` | 48 | oude routenamen die blijven werken; **hoort in fase 2 naar de manifesten** |
-| `WORKFLOWS` | 56 | alle views, plat |
-| `normalizeRoute` | 60 | alias → routenaam |
-| `getWorkflow` | 65 | route → view-descriptor |
-| `loadView` | 75 | laadt de module en roept de factory aan; `retry` zet `?retry=<n>` |
+| `PLUGINS` | 38 | de pluginlijst uit de gegenereerde global; ontbreekt die, dan gooit de module een fout |
+| `ROUTE_ALIASES` | 42 | oude routenamen, opgebouwd uit de `aliases` per view |
+| `WORKFLOWS` | 48 | alle views, plat |
+| `normalizeRoute` | 52 | alias → routenaam |
+| `getWorkflow` | 57 | route → view-descriptor |
+| `loadView` | 67 | laadt de module en roept de factory aan; `retry` zet `?retry=<n>` |
 
 De registry **laadt** views; hij bezit ze niet. Caching, activering en de DOM blijven van de
 shell (`static/app.js`). Die grens is bewust: de registry is dan puur data + laden en hoeft geen
@@ -114,8 +124,8 @@ Vier dingen bewaken het laden, alle in `static/app.js`:
   navigatie binnenkomt; op het succespad logt dat op `debug`, op het faalpad op `error`;
 - een zichtbaar foutpaneel (`buildViewError`, regel 121) in plaats van een lege host, omdat
   `RouterCore.navigate()` de promise van `mount()` negeert;
-- een retry met een verse module-URL, maar alleen als de `import()` zelf faalde — een manifest
-  dat de verkeerde factory noemt wordt niet eindeloos opnieuw opgehaald.
+- een retry met een verse module-URL, maar alleen als de `import()` zelf faalde — een registratie
+  die de verkeerde factory noemt wordt niet eindeloos opnieuw opgehaald.
 
 ### Waarom lazy loading
 
@@ -137,41 +147,38 @@ waardoor een gewijzigde view onzichtbaar kon blijven. Dat is server-side opgelos
 | **Verificatie** | `node --test 'tests/js/**/*.test.mjs'` (6 tests, mutatie-geverifieerd), `./.venv/bin/python tests/browser/check_plugin_registry.py`, `pytest` onveranderd |
 | **Hertoetsing** | drie reviewrondes: `docs/reviews/refactor-plugin-registry.md`, `docs/reviews/plugin-registry-hardening.md` |
 
-### Fase 2 — Python wordt de bron van waarheid ⬜
+### Fase 2 — Python wordt de bron van waarheid ✅
 
 **Doel: geen view zonder zijn backend.** Niet "router en sidebar kunnen niet meer uit elkaar
 lopen" — dat is onhaalbaar, want de view `icons` heeft geen backend. Die asymmetrie loopt één
 kant op: alle 16 routers worden vanuit `api-client.js` aangeroepen, dus er is geen router zonder
-view. Consistentie is toetsbaar; gelijkheid niet. Er is vandaag geen 1:1 op welke as dan ook:
+view. Consistentie is toetsbaar; gelijkheid niet. Er is geen 1:1 op welke as dan ook:
 8 plugins, 16 routers, 20 views.
 
-Contractwijziging:
+Gebouwd:
 
-- Een **Python-pluginregistratie** beschrijft per **view** welke routers erbij horen. Die
-  granulariteit is bewust: het doel is een eigenschap per view, en een toets per plugin blijft
-  groen als één view van een plugin zijn backend verliest — verdwijnt `app/prompt_testing/chat.py`,
-  dan houdt `llm-pool` routers via `models.py` en `text_generation.py` en zou de view `chat`
-  ongemerkt stuk zijn. Een view zonder backend moet dat expliciet zeggen, zodat "vergeten te
-  koppelen" en "heeft er geen" te onderscheiden zijn. Expliciete mapping, **geen herindeling van
-  `app/`**: `app/image_pool/training.py:18` importeert al `app/prompt_testing/pool_client`, dus
-  pakketten per plugin herindelen zou het llm-pool-pakket een dependency van image-pool maken.
-- De koppeling wordt **met de hand geschreven**, niet afgeleid uit het gebruik. Een afleiding zou
-  vandaag kunnen — alle 16 routers worden vanuit `api-client.js` aangeroepen — maar fase 4 splitst
-  dat bestand juist op, en dan houdt de afleiding op te bestaan. De declaratie is de bedoeling;
-  het bewijs komt uit een **aparte toets die niet op de declaratie leunt**: loop per view de
-  module-subtree af, verzamel de `/api/...`-paden die hij daadwerkelijk aanroept, en controleer
-  dat elk pad door een gemounte route wordt bediend. Zonder die tweede toets controleert de
-  declaratie alleen of iemand het veld heeft ingevuld.
-- De pluginlijst bereikt de browser als een **gegenereerde `plugins.js`** die één global zet,
-  geladen met een blokkerende `<script>` vóór `app.js` — dezelfde vorm als het bestaande
-  `window.__LLM_WORKBENCH_INITIAL_SHELL__` in `static/index.html:7-22`. Python blijft de bron van
-  waarheid en de sidebar rendert synchroon. Geen fetch: de lijst verandert niet tijdens een
-  sessie, dus een endpoint zou alleen een lege-sidebar-toestand en een async bootstrap toevoegen.
-- **Aliassen verhuizen naar het manifest** van de plugin die het doel bezit. Dan reist een alias
-  mee met de payload en verdwijnt hij automatisch met zijn plugin. Nu staan ze als globale
-  constante in `registry.js:48-54` en blijven ze in JS achter zodra `PLUGINS` uit Python komt;
-  in fase 3 zou een alias van een uitgeschakelde plugin naar een route wijzen die
-  `getWorkflow()` niet kan oplossen, waarna de gebruiker stil op de defaultroute landt.
+- **`app/plugins.py`** is de registratie: per plugin het label en de views, per view de routers die
+  hem bedienen, zijn aliassen, en of hij überhaupt een backend heeft. De mapping is met de hand
+  geschreven en per **view**, niet per plugin — een toets per plugin blijft groen als één view van
+  een plugin zijn backend verliest: verdwijnt `app/prompt_testing/chat.py`, dan houdt `llm-pool`
+  routers via `models.py` en `text_generation.py` en zou de view `chat` ongemerkt stuk zijn. Een
+  view zonder backend zegt dat expliciet (`backend=False`; alleen `icons`), zodat "vergeten te
+  koppelen" en "heeft er geen" te onderscheiden zijn. Geen herindeling van `app/`:
+  `app/image_pool/training.py:18` importeert al `app/prompt_testing/pool_client`, dus pakketten per
+  plugin herindelen zou het llm-pool-pakket een dependency van image-pool maken.
+- **`/plugins.js`** wordt uit die registratie gegenereerd en met een blokkerende `<script>` vóór
+  `app.js` geladen — dezelfde vorm als het bestaande `window.__LLM_WORKBENCH_INITIAL_SHELL__` in
+  `static/index.html:7-22`. Python blijft de bron van waarheid en de sidebar rendert synchroon.
+  Naar de browser gaat alleen data: `routers` en `backend` blijven thuis.
+- **`app/router.py`** mount de routers uit de registratie in plaats van zestien handgeschreven
+  `include_router`-regels. Gemeten: het enige verschil in het API-oppervlak is de nieuwe
+  `GET /plugins.js`; alle 116 bestaande routes zijn identiek.
+- **Aliassen** staan op de view die ze vervangen. Ze reizen mee met de payload en verdwijnen met
+  hun plugin. Stonden ze globaal in `registry.js`, dan zou in fase 3 een alias van een
+  uitgeschakelde plugin naar een route wijzen die `getWorkflow()` niet kan oplossen, waarna de
+  gebruiker stil op de defaultroute landt.
+- **`static/src/plugins/*/manifest.js` is weg.** `registry.js` leest de gegenereerde global en
+  gooit een fout als die ontbreekt, in plaats van een lege sidebar te tonen.
 
 | | |
 | --- | --- |
@@ -198,11 +205,18 @@ Contractwijziging:
    plugin zelf en wordt de toets wat hij zegt. Dat is tijdelijk, en het hoort er te staan: het
    wringt met de motivering hierboven, waar een afleiding uit `api-client.js` juist wordt
    afgewezen omdat fase 4 dat bestand opsplitst.
-3. *De pin verhuist.* De handgeschreven regressiepin gaat mee naar Python, waar de bron van
-   waarheid komt; de JS-suite houdt wat alleen JS kan controleren (module resolvet, factory
+3. *De pin is verhuisd.* De handgeschreven regressiepin staat nu in Python, waar de bron van
+   waarheid is; de JS-suite houdt wat alleen JS kan controleren (module resolvet, factory
    geëxporteerd, icoon in de sprite). Die twee zijn geen duplicaat: de pin ontleent zijn waarde
-   eraan dat hij een onafhankelijke, handgeschreven kopie is. Let op dat de JS-suite de pluginlijst
-   dan niet meer importeert maar de gegenereerde global moet stubben.
+   eraan dat hij een onafhankelijke, handgeschreven kopie is. De JS-suite haalt de pluginlijst via
+   een subprocess bij `app/plugins.py` en stubt daarmee de global, want een tweede kopie in JS is
+   precies wat deze fase opheft.
+
+Deze drie zitten in `tests/test_plugin_registry.py` (17 tests) en
+`tests/js/plugin-registry.test.mjs` (4 tests). Allebei de pins zijn mutatie-gecontroleerd: één
+router niet mounten laat drie tests falen, waaronder de onafhankelijke padaanalyse; een
+sidebarlabel hernoemen laat de pin falen. De browsercheck controleert daarnaast dat de sidebar
+écht uit de gegenereerde global komt.
 
 ### Fase 3 — per-plugin assets en enable/disable ⬜
 
@@ -210,9 +224,9 @@ Contractwijziging:
 
 Regels die nu al vastliggen:
 
-- **`enabled` hoort niet in het manifest.** Een manifest beschrijft wat er *bestaat*, settings
+- **`enabled` hoort niet in de registratie.** De registratie beschrijft wat er *bestaat*, settings
   beschrijven wat *aan* staat. Twee payloads, bij het serveren samengevoegd. Zitten ze in één
-  bestand, dan is het manifest geen statische data meer en verliest de regressiepin zijn betekenis.
+  bestand, dan is de registratie geen statische data meer en verliest de regressiepin zijn betekenis.
 - Afwezig betekent aan.
 - Plugin-uit wint van view-aan.
 
@@ -246,18 +260,20 @@ dan is fase 3 de fase waarin het misgaat.
 
 Deze zijn bewust blijven liggen; ze horen bij een latere fase.
 
-- `static/src/plugins/registry.js:27-45` — de 8 manifesten worden **handmatig** geïmporteerd en in
-  een handmatige `PLUGINS`-array gezet. Een plugin toevoegen is dus map + import + arrayregel.
-  Geen discovery. Fase 2 haalt dit weg.
-- `app/router.py` heeft 16 handgeschreven `include_router`-regels, zonder enige koppeling met de
-  plugin-indeling. Fase 2 maakt die koppeling expliciet.
-- `ROUTE_ALIASES` staat globaal in `registry.js:48-54` in plaats van bij de plugin die het doel
-  bezit. Fase 2 verplaatst ze.
-- **Routebotsingen hebben geen gedefinieerd gedrag.** `WORKFLOWS_BY_ROUTE` (`registry.js:58`) laat
-  bij een dubbele route stil de laatste winnen. De testsuite vangt dat voor de gecommitte set,
-  maar vanaf fase 3 (settings) en zeker fase 5 (packages buiten de repo) is een botsing een
-  runtime-geval zonder afgesproken uitkomst. Er moet een regel komen: weigeren bij het laden, of
-  eerste-wint met een waarschuwing.
+- ~~`registry.js` importeert de manifesten handmatig, `app/router.py` heeft 16 handgeschreven
+  `include_router`-regels, en `ROUTE_ALIASES` staat globaal.~~ **Opgelost in fase 2.** De
+  registratie in `app/plugins.py` is één bron voor de sidebar én de routetabel, en de aliassen
+  hangen aan de view die ze vervangen.
+- **Routebotsingen hebben geen gedefinieerd gedrag.** `WORKFLOWS_BY_ROUTE`
+  (`registry.js:50`) laat bij een dubbele route stil de laatste winnen. De testsuite vangt dat voor
+  de gecommitte set, maar vanaf fase 3 (settings) en zeker fase 5 (packages buiten de repo) is een
+  botsing een runtime-geval zonder afgesproken uitkomst. Er moet een regel komen: weigeren bij het
+  laden, of eerste-wint met een waarschuwing.
+- **Een view mag endpoints van een andere plugin gebruiken.** `image-train` (image-pool) haalt zijn
+  modellenlijst uit `/api/models/admin`, dat van llm-pool is. In fase 3 betekent dat: zet je
+  llm-pool uit, dan verliest een image-pool-view een deel van zijn backend. Dat is een echte
+  ontwerpvraag voor enable/disable, geen detail, en hij staat hier zodat hij niet pas bij het
+  bouwen opduikt.
 - Geen enable/disable, dus de hele workbench toont altijd alles.
 - `css/app.css` is één globaal `@import`-manifest van 25 regels en er is één globale
   iconensprite; een plugin kan nog geen eigen assets bijdragen.
@@ -266,9 +282,9 @@ Deze zijn bewust blijven liggen; ze horen bij een latere fase.
   views, en `app.js` noemt geen enkele view meer bij naam — op één na: de fallback
   `WORKFLOWS[0]?.route || 'replay-translate'` voor een lege registry, en dat is het laatste punt
   in deze lijst.
-- Het manifestveld `id` wordt in runtime nergens gelezen; het is gereserveerd voor fase 3.
+- Het registratieveld `id` wordt in runtime nergens gelezen; het is gereserveerd voor fase 3.
 - `static/app.js:59-67` (`pluginItemMarkup`) interpoleert `name`, `tooltip` en `route` ongeëscapet
-  in `innerHTML`. Nu onschadelijk omdat de data statisch en gecommit is. Zodra manifesten van
+  in `innerHTML`. Nu onschadelijk omdat de data statisch en gecommit is. Zodra plugins van
   buiten de repo komen is dit een injectiepunt; `escapeHtml`/`escapeAttr` bestaan al in
   `static/src/shared/ui-helpers.js`.
 - De defaultroute is impliciet `WORKFLOWS[0]` (`static/app.js:311`). Zodra plugins uit kunnen,
@@ -282,19 +298,18 @@ Deze zijn bewust blijven liggen; ze horen bij een latere fase.
 | **Python als bron van waarheid via een gegenereerde `plugins.js`-global** | **Een endpoint `/api/plugins`** — dit document koos dat eerst, en de ontwerpreview keerde het om: de lijst verandert niet tijdens een sessie, dus een fetch levert niets op en voegt een lege-sidebar-toestand plus een async bootstrap toe. Een gedeeld JSON-bestand viel eerder al af omdat het de koppeling met de echte routers en settings verliest |
 | **Expliciete mapping van plugin naar routers in de Python-registratie** | **`app/` herindelen zodat elk pakket één plugin is** — dan wordt `prompt_testing` gedeeld tussen llm-pool en image-pool, en dus een cross-plugin dependency |
 | Data-only manifesten, `module`/`factory` als strings | Factory-functies direct importeren: werkt, maar valt niet uit te serveren |
-| **Aliassen in het manifest van de plugin die het doel bezit** | Globaal laten in `registry.js`: dan blijft een deel van de configuratie in JS achter, wat fase 2 juist opheft |
+| **Aliassen in de registratie, op de view die het doel bezit** | Globaal laten in `registry.js`: dan blijft een deel van de configuratie in JS achter, wat fase 2 juist opheft |
 | **`enabled` in settings, niet in het manifest** | In het manifest: dan is het manifest geen statische data meer en kan de regressiepin niets meer vastpinnen |
 | **De `api-client.js`-splitsing als eigen fase** | In fase 3 laten: dat bundelt een herstructurering van 766 regels met enable/disable, en dan is fase 3 te groot om te reviewen |
 | **`replay-translate` uit de shell halen als losse opruiming vóór fase 2** | In fase 2 meenemen: maakt de fase-2-diff groter zonder dat het iets met de bron van waarheid te maken heeft. Gedaan in een eigen commit op de fase-2-branch |
 | **De koppeling view → routers met de hand schrijven, met een onafhankelijke padaanalyse als bewijs** | Afleiden uit `api-client.js`: dat werkt vandaag, maar fase 4 splitst dat bestand juist op, dus de afleiding verdwijnt precies wanneer je hem nodig hebt |
+| **Een view zonder backend zegt dat zelf: `backend=False` op de view** | De auxiliary-vlag op plugin-niveau als uitzondering gebruiken: dat is een plugin-eigenschap die toevallig samenvalt met een view-eigenschap, en dan lopen plugin en view door elkaar op de enige plek waar de toets ze wil scheiden |
 | Lazy loading bij eerste activering | Alles eager importeren: geen eerste-klik-kosten, maar ~21k regels JS parsen bij het opstarten |
 | Registry laadt, shell bezit de levenscyclus en de DOM | Registry ook eigenaar van caching en activering: mengt data met DOM-beheer |
 
 ## 6. Nog open
 
-1. Hoe markeert een view dat hij geen backend heeft: een vlag op de view, of blijft de
-   auxiliary-vlag op plugin-niveau de uitzondering? Met de toets op viewniveau is dit de enige
-   plek waar plugin en view nog door elkaar lopen.
-2. De exacte vorm van de samengevoegde manifest-plus-settings-payload in fase 3.
-3. Is de api-client-splitsing klaar wanneer elke plugin zijn eigen module heeft, of is een
+1. De exacte vorm van de samengevoegde registratie-plus-settings-payload in fase 3, en wat
+   enable/disable doet met een view die endpoints van een andere plugin gebruikt (zie sectie 4).
+2. Is de api-client-splitsing klaar wanneer elke plugin zijn eigen module heeft, of is een
    gedeelde namespace per domein beter?

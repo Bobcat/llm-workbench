@@ -136,9 +136,11 @@ This repo does not own:
 
 - `static/index.html` is the browser entrypoint.
 - `static/app.js` wires the shell: sidebar, routing, theme, and view lifecycle.
-- `static/src/plugins/` contains one manifest per sidebar category plus
-  `registry.js`, which derives the sidebar, the route table, the aliases, and the
-  lazy view loader from those manifests.
+- `app/plugins.py` is the plugin registry: which sidebar categories and views
+  exist, which routers serve them, and which retired route names still resolve.
+  It is what `app/router.py` mounts and what `/plugins.js` is generated from.
+- `static/src/plugins/registry.js` turns the generated list into the sidebar, the
+  route table and the lazy view loader.
 - `static/foundation/spa-foundation/` contains the shared shell, routing, modal,
   and sidebar helpers.
 - `static/src/api-client.js` contains same-origin API helpers and replay
@@ -193,11 +195,11 @@ in memory. Image training datasets and generated training artifacts live under
 The backend does not load AI models directly. Model inference and model
 lifecycle are delegated to local pool or service processes.
 
-The sidebar is derived from the plugin manifests in `static/src/plugins/`. A
-plugin owns one sidebar category and contributes one or more views; each view
-names its module and factory, so a view is loaded on first activation instead of
-at startup. Service base URLs are already configurable. The intended direction is
-to serve the enabled plugin list from settings while keeping view implementations
+The sidebar comes from `app/plugins.py`: the registry names each plugin's views
+and the routers behind them, and FastAPI serves it as a generated `/plugins.js`
+that `static/index.html` loads before `app.js`. A view is loaded on first
+activation instead of at startup. Service base URLs are already configurable. The
+intended direction is to serve the enabled plugin list from settings while keeping view implementations
 where they are. That would allow an installation to expose only the consoles it
 needs, such as an LLM Pool-only workbench; it changes the source of the plugin
 list, not the loader.
@@ -304,9 +306,10 @@ dependency.
 node --test 'tests/js/**/*.test.mjs'
 ```
 
-It pins the shipped sidebar (categories, view order, aliases, persistence) and
-resolves every manifest reference, including the icon sprite. Individual ES
-modules can be syntax-checked with `node --input-type=module --check`.
+It resolves every view module and factory named by `app/plugins.py`, and checks
+that every icon is in the sprite. It needs the venv: it reads the plugin list from
+Python so the two never drift. Individual ES modules can be syntax-checked with
+`node --input-type=module --check`.
 
 The layout-metrics inspector behind the PDF translation Render panel has its own
 Node test, which needs neither a server nor a browser:
