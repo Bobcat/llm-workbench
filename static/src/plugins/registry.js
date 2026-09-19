@@ -27,15 +27,19 @@
 const PLUGIN_GLOBAL = '__LLM_WORKBENCH_PLUGINS__';
 
 const payload = globalThis[PLUGIN_GLOBAL];
-if (!Array.isArray(payload)) {
-  throw new Error(
+
+// Exported rather than thrown: app.js has to keep running to be able to show it. A module-level
+// throw leaves the user looking at an empty shell with the reason only in the console, because
+// the inline boot script in index.html has already revealed the shell by the time this runs.
+export const pluginLoadError = Array.isArray(payload)
+  ? null
+  : new Error(
     `Plugin list missing: globalThis.${PLUGIN_GLOBAL} is not set. static/index.html loads the `
     + 'generated /plugins.js before this module; if you are importing this outside a browser, '
     + 'stub that global first.',
   );
-}
 
-export const PLUGINS = payload;
+export const PLUGINS = Array.isArray(payload) ? payload : [];
 
 // Retired route names stay reachable so existing bookmarks keep working. They travel with the
 // view that replaced them, so disabling a plugin also retires its aliases.

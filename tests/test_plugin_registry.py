@@ -22,7 +22,14 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.plugins import PLUGINS, frontend_payload, iter_routers, iter_views, route_aliases
+from app.plugins import (
+    PLUGINS,
+    frontend_payload,
+    iter_routers,
+    iter_views,
+    iter_websockets,
+    route_aliases,
+)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 STATIC = REPO_ROOT / "static"
@@ -151,6 +158,20 @@ def _is_served(path: str, app_paths: set[str]) -> bool:
     )
 
 
+def _client_socket_paths() -> set[str]:
+    """The websocket paths the frontend connects to, read out of static/src/api-client.js."""
+    source = API_CLIENT.read_text(encoding="utf-8")
+    return set(re.findall(r"/ws/[A-Za-z0-9/_-]*", source))
+
+
+def _registered_sockets() -> set[str]:
+    return {
+        getattr(route, "path", "")
+        for route in app.routes
+        if route.__class__.__name__ == "APIWebSocketRoute"
+    }
+
+
 class SidebarPinTests(unittest.TestCase):
     """The hand-written copy of the shipped sidebar."""
 
@@ -266,6 +287,25 @@ class ViewBackendTests(unittest.TestCase):
                     f"view {view.route} calls {path}, which no mounted route serves",
                 )
 
+    def test_declared_routers_cover_every_path_the_view_calls(self) -> None:
+        """The per-view half: the routers a view declares must serve what that view calls.
+
+        The check above only proves the union of every declared router covers every called path,
+        which stays green when one view is mapped to the wrong router. This one is measured
+        against the view's own declaration, so a swapped router fails here.
+        """
+        methods = _client_method_paths()
+        for view in iter_views():
+            if not view.backend:
+                continue
+            paths, _ = _called_paths(STATIC / view.module, methods)
+            declared = {"/api" + route.path for router in view.routers for route in router.routes}
+            for path in sorted(paths):
+                self.assertTrue(
+                    _is_served(path, declared),
+                    f"view {view.route} calls {path}, which none of its declared routers serve",
+                )
+
     def test_the_backend_less_view_calls_nothing(self) -> None:
         methods = _client_method_paths()
         for view in iter_views():
@@ -273,7 +313,6 @@ class ViewBackendTests(unittest.TestCase):
                 continue
             paths, _ = _called_paths(STATIC / view.module, methods)
             self.assertEqual(paths, set(), f"view {view.route} is marked backend-less but calls the API")
-
     def test_views_with_a_backend_reach_at_least_two_endpoints(self) -> None:
         """A smoke check on the analysis itself: if it finds nothing, it proves nothing."""
         methods = _client_method_paths()
@@ -285,6 +324,37 @@ class ViewBackendTests(unittest.TestCase):
         thin = {route: count for route, count in counts.items() if count < 2}
         self.assertEqual(thin, {})
         self.assertGreaterEqual(min(counts.values()), 2)
+
+
+class WebSocketTests(unittest.TestCase):
+    """The two websockets are routes too, and they used to live outside the registry."""
+
+    def test_every_declared_socket_is_registered(self) -> None:
+        self.assertEqual({socket.path for socket in iter_websockets()}, _registered_sockets())
+
+    def test_every_socket_the_client_connects_to_is_declared(self) -> None:
+        declared = {socket.path for socket in iter_websockets()}
+        found = _client_socket_paths()
+        self.assertTrue(found, "no websocket paths found in api-client.js; the check would be empty")
+        for path in sorted(found):
+            self.assertTrue(
+                any(socket == path or socket.startswith(path) for socket in declared),
+                f"the frontend connects to {path}, which no view declares",
+            )
+
+    def test_sockets_belong_to_a_view_that_has_a_backend(self) -> None:
+        for view in iter_views():
+            if not view.websockets:
+                continue
+            self.assertTrue(view.backend, f"view {view.route} has sockets but is marked backend-less")
+
+    def test_removing_a_socket_from_the_registry_unregisters_it(self) -> None:
+        """Guards the wiring: the paths come from the registry, not from app/main.py."""
+        self.assertEqual(len(iter_websockets()), 2)
+        self.assertEqual(
+            {socket.path for socket in iter_websockets()},
+            {"/ws/replay/{session_id}", "/ws/replay-speak/{session_id}"},
+        )
 
 
 class GeneratedScriptTests(unittest.TestCase):

@@ -5,7 +5,7 @@ import {
   bindMobileSidebarDismiss,
 } from './foundation/spa-foundation/index.js';
 import { WORKFLOW_BUSY_EVENT } from './src/shared/workflow-activity.js';
-import { PLUGINS, WORKFLOWS, loadView, normalizeRoute } from './src/plugins/registry.js';
+import { PLUGINS, WORKFLOWS, loadView, normalizeRoute, pluginLoadError } from './src/plugins/registry.js';
 import { iconMarkup } from './src/shared/icons.js';
 
 // === Initialization ===
@@ -118,17 +118,24 @@ const router = new RouterCore(appRoot, {
 //   - a failed load is retried on the next activation with a fresh module URL.
 let mountGeneration = 0;
 
-function buildViewError(wf, error) {
+function buildErrorPanel(title, detail) {
   const panel = document.createElement('div');
   panel.className = 'workflow-error';
-  const title = document.createElement('p');
-  title.className = 'workflow-error-title';
-  title.textContent = `Could not load the "${wf.name}" view`;
-  const detail = document.createElement('p');
-  detail.className = 'workflow-error-detail';
-  detail.textContent = `${wf.module} -> ${wf.factory}()\n${error?.message || String(error)}`;
-  panel.append(title, detail);
+  const titleEl = document.createElement('p');
+  titleEl.className = 'workflow-error-title';
+  titleEl.textContent = title;
+  const detailEl = document.createElement('p');
+  detailEl.className = 'workflow-error-detail';
+  detailEl.textContent = detail;
+  panel.append(titleEl, detailEl);
   return panel;
+}
+
+function buildViewError(wf, error) {
+  return buildErrorPanel(
+    `Could not load the "${wf.name}" view`,
+    `${wf.module} -> ${wf.factory}()\n${error?.message || String(error)}`,
+  );
 }
 
 WORKFLOWS.forEach((wf) => {
@@ -297,6 +304,14 @@ function init() {
   applyPreset(activePreset);
 
   bindMobileSidebarDismiss(shellState, sidebar, 600);
+
+  // Without the generated plugin list there is no sidebar to render and no route to open, and
+  // the shell is already visible by now. Say why, instead of leaving an empty frame.
+  if (pluginLoadError) {
+    appRoot.append(buildErrorPanel('Could not load the plugin list', pluginLoadError.message));
+    return;
+  }
+
   renderWorkflows();
   updateWorkflowRunningState();  // renderWorkflows() rebuilt the markup: re-apply from the set
 

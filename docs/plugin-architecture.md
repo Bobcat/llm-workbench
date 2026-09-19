@@ -58,7 +58,8 @@ Daardoor kunnen de routetabel en de sidebar niet uit elkaar lopen zonder dat een
 | `persistent` | view blijft in de DOM bij wegnavigeren |
 | `module` | pad onder de static root, geresolveerd tegen `document.baseURI` |
 | `factory` | geëxporteerde functienaam in die module; levert het view-element |
-| `routers` | de routers die deze view bedienen; één router mag door meerdere views gedeeld worden |
+| `routers` | **elke** router die een endpoint bedient dat deze view aanroept, ook routers van een andere plugin; één router mag door meerdere views gedeeld worden |
+| `websockets` | de websockets die deze view gebruikt; de enige routes buiten `/api` |
 | `aliases` | gepensioneerde routenamen die naar deze view wijzen |
 | `backend` | `false` voor een view die aantoonbaar geen API heeft; alleen `icons` |
 
@@ -80,8 +81,8 @@ Een plugin-auteur heeft dit nodig.
 | | |
 | --- | --- |
 | factory | moet een DOM-element teruggeven; dat element wordt in de host geplaatst |
-| `__onActivate()` | optioneel; aangeroepen zodra de view in de host staat (`static/app.js:163`) |
-| `__onDeactivate()` | optioneel; aangeroepen bij wegnavigeren (`static/app.js:207`) |
+| `__onActivate()` | optioneel; aangeroepen zodra de view in de host staat (`static/app.js:170`) |
+| `__onDeactivate()` | optioneel; aangeroepen bij wegnavigeren (`static/app.js:214`) |
 | `WORKFLOW_BUSY_EVENT` | optioneel; meldt dat er werk loopt, waarop de sidebar een indicator toont. Vijf views doen dit |
 | `__destroy()` | bestaat in twee views maar wordt door de router **nooit** aangeroepen. Reken er niet op |
 
@@ -100,18 +101,18 @@ routetabel en de loader uit af:
 
 | Export | Regel | Rol |
 | --- | --- | --- |
-| `PLUGINS` | 38 | de pluginlijst uit de gegenereerde global; ontbreekt die, dan gooit de module een fout |
-| `ROUTE_ALIASES` | 42 | oude routenamen, opgebouwd uit de `aliases` per view |
-| `WORKFLOWS` | 48 | alle views, plat |
-| `normalizeRoute` | 52 | alias → routenaam |
-| `getWorkflow` | 57 | route → view-descriptor |
-| `loadView` | 67 | laadt de module en roept de factory aan; `retry` zet `?retry=<n>` |
+| `PLUGINS` | 42 | de pluginlijst uit de gegenereerde global; ontbreekt die, dan staat `pluginLoadError` gezet |
+| `ROUTE_ALIASES` | 46 | oude routenamen, opgebouwd uit de `aliases` per view |
+| `WORKFLOWS` | 52 | alle views, plat |
+| `normalizeRoute` | 56 | alias → routenaam |
+| `getWorkflow` | 61 | route → view-descriptor |
+| `loadView` | 71 | laadt de module en roept de factory aan; `retry` zet `?retry=<n>` |
 
 De registry **laadt** views; hij bezit ze niet. Caching, activering en de DOM blijven van de
 shell (`static/app.js`). Die grens is bewust: de registry is dan puur data + laden en hoeft geen
 levenscyclus te kennen.
 
-`WORKFLOWS_BY_ROUTE` (regel 58) is een `Map` over de routes: bij een dubbele route wint stil de
+`WORKFLOWS_BY_ROUTE` (regel 50) is een `Map` over de routes: bij een dubbele route wint stil de
 laatste. Zie sectie 4.
 
 ### Loadergedrag in de shell
@@ -122,7 +123,7 @@ Vier dingen bewaken het laden, alle in `static/app.js`:
   view niet twee keer bouwt;
 - een generatie-teller (`mountGeneration`, regel 119) die een load weggooit die ná een nieuwere
   navigatie binnenkomt; op het succespad logt dat op `debug`, op het faalpad op `error`;
-- een zichtbaar foutpaneel (`buildViewError`, regel 121) in plaats van een lege host, omdat
+- een zichtbaar foutpaneel (`buildViewError`, regel 134) in plaats van een lege host, omdat
   `RouterCore.navigate()` de promise van `mount()` negeert;
 - een retry met een verse module-URL, maar alleen als de `import()` zelf faalde — een registratie
   die de verkeerde factory noemt wordt niet eindeloos opnieuw opgehaald.
@@ -133,7 +134,7 @@ Views worden pas bij eerste activering geïmporteerd in plaats van alle 20 bij h
 Prijs: een koude view kost een networkrequest en kan even een placeholder tonen. Tweede prijs,
 en die kostte een middag zoeken: een dynamic import valt buiten de cache-bypass van Ctrl+F5,
 waardoor een gewijzigde view onzichtbaar kon blijven. Dat is server-side opgelost met
-`Cache-Control: no-cache` (`app/main.py`, `RevalidatingStaticFiles`, regel 16).
+`Cache-Control: no-cache` (`app/main.py`, `RevalidatingStaticFiles`, regel 17).
 
 ## 3. Fasen
 
@@ -172,13 +173,22 @@ Gebouwd:
   Naar de browser gaat alleen data: `routers` en `backend` blijven thuis.
 - **`app/router.py`** mount de routers uit de registratie in plaats van zestien handgeschreven
   `include_router`-regels. Gemeten: het enige verschil in het API-oppervlak is de nieuwe
-  `GET /plugins.js`; alle 116 bestaande routes zijn identiek.
+  `GET /plugins.js`; de 113 `/api`-routes zijn identiek, en de twee websockets worden nu ook uit de
+  registratie geregistreerd.
 - **Aliassen** staan op de view die ze vervangen. Ze reizen mee met de payload en verdwijnen met
   hun plugin. Stonden ze globaal in `registry.js`, dan zou in fase 3 een alias van een
   uitgeschakelde plugin naar een route wijzen die `getWorkflow()` niet kan oplossen, waarna de
   gebruiker stil op de defaultroute landt.
 - **`static/src/plugins/*/manifest.js` is weg.** `registry.js` leest de gegenereerde global en
-  gooit een fout als die ontbreekt, in plaats van een lege sidebar te tonen.
+  meldt een fout als die ontbreekt — als `pluginLoadError`, die `app.js` in de host toont, in
+  plaats van een module-level throw die de gebruiker met een lege schil achterlaat.
+- **Na de review van PR #16 (ronde 1)** zijn drie dingen aangescherpt. `routers` op een view is nu
+  elke router die een door die view aangeroepen endpoint bedient, inclusief routers van andere
+  plugins; daarmee is het veld kloppend en wordt een verwisselde router door een toets gevangen in
+  plaats van erdoor te glippen. De twee websockets komen uit de registratie in plaats van met de
+  hand uit `app/main.py`, zodat ook dat oppervlak onder het doel valt. En een ontbrekende
+  pluginlijst is nu zichtbaar op het scherm: de laadorde was al gegarandeerd, maar de faalmodus was
+  alleen in de console te zien.
 
 | | |
 | --- | --- |
@@ -189,10 +199,16 @@ Gebouwd:
 
 1. *De declaratie.* Elke view verwijst naar minstens één router of is expliciet als backend-loos
    gemarkeerd — het doel en de toets op dezelfde granulariteit.
-2. *Het bewijs, onafhankelijk van de declaratie.* Lees uit `static/src/api-client.js` de tabel
-   methode → pad; alle 101 methodes hebben een statisch pad. Verzamel vervolgens in de **eigen**
-   bestanden van de view de aangeroepen `api.<methode>()`-namen en controleer dat elk gevonden pad
-   door een gemounte route wordt bediend.
+2. *Het bewijs, in twee stappen.* Lees uit `static/src/api-client.js` de tabel methode → pad; alle
+   101 methodes hebben een statisch pad. Verzamel vervolgens in de **eigen** bestanden van de view
+   de aangeroepen `api.<methode>()`-namen en controleer twee dingen: dat elk gevonden pad door een
+   *gemounte* route wordt bediend, en dat elk pad door een router wordt bediend die **deze view
+   zelf declareert**.
+
+   Die tweede stap is er na de review van PR #16 bijgekomen. Alleen tegen de gemounte app meten
+   bleek te grof: vervang je bij `pdf-anatomy` de router door die van `chat`, dan blijven beide
+   routers gemount en bleef de suite groen. Tegen de eigen declaratie meten vangt dat, en het is
+   dezelfde granulariteit als het doel.
 
    De gedeelde client moet buiten die verzameling blijven. Hij zit in elke view-subtree — elke view
    importeert hem — dus een wandeling over de subtree vindt in *elke* view alle 101 paden, waarmee
@@ -212,11 +228,13 @@ Gebouwd:
    een subprocess bij `app/plugins.py` en stubt daarmee de global, want een tweede kopie in JS is
    precies wat deze fase opheft.
 
-Deze drie zitten in `tests/test_plugin_registry.py` (17 tests) en
-`tests/js/plugin-registry.test.mjs` (4 tests). Allebei de pins zijn mutatie-gecontroleerd: één
-router niet mounten laat drie tests falen, waaronder de onafhankelijke padaanalyse; een
-sidebarlabel hernoemen laat de pin falen. De browsercheck controleert daarnaast dat de sidebar
-écht uit de gegenereerde global komt.
+Deze drie zitten in `tests/test_plugin_registry.py` (22 tests) en
+`tests/js/plugin-registry.test.mjs` (4 tests). Alle toetsen zijn mutatie-gecontroleerd: één router
+niet mounten laat drie tests falen, waaronder de padaanalyse tegen de gemounte app; een router
+verwisselen voor die van een andere view faalt op de padaanalyse tegen de eigen declaratie; een
+sidebarlabel hernoemen faalt op de pin. De browsercheck controleert daarnaast dat de sidebar écht
+uit de gegenereerde global komt, en dat een pluginlijst die niet aankomt zichtbaar op het scherm
+komt in plaats van als lege schil.
 
 ### Fase 3 — per-plugin assets en enable/disable ⬜
 
@@ -269,11 +287,13 @@ Deze zijn bewust blijven liggen; ze horen bij een latere fase.
   de gecommitte set, maar vanaf fase 3 (settings) en zeker fase 5 (packages buiten de repo) is een
   botsing een runtime-geval zonder afgesproken uitkomst. Er moet een regel komen: weigeren bij het
   laden, of eerste-wint met een waarschuwing.
-- **Een view mag endpoints van een andere plugin gebruiken.** `image-train` (image-pool) haalt zijn
-  modellenlijst uit `/api/models/admin`, dat van llm-pool is. In fase 3 betekent dat: zet je
-  llm-pool uit, dan verliest een image-pool-view een deel van zijn backend. Dat is een echte
-  ontwerpvraag voor enable/disable, geen detail, en hij staat hier zodat hij niet pas bij het
-  bouwen opduikt.
+- **Een view mag endpoints van een andere plugin gebruiken, en dat is het normale geval.** Zes views
+  buiten llm-pool halen hun modellenlijst uit `/api/models` of `/api/models/admin`, en
+  `pdf-translation` gebruikt routers van translation-services, pdf-benchmark en pdf-regression. De
+  registratie noteert dat sinds de review van PR #16 volledig: `routers` op een view is elke router
+  die een door die view aangeroepen endpoint bedient. Wat daarmee blijft liggen is de fase-3-vraag:
+  zet je llm-pool uit, dan verliezen views in vier andere plugins een deel van hun backend. De
+  registratie maakt dat zichtbaar, er is nog geen regel voor.
 - Geen enable/disable, dus de hele workbench toont altijd alles.
 - `css/app.css` is één globaal `@import`-manifest van 25 regels en er is één globale
   iconensprite; een plugin kan nog geen eigen assets bijdragen.
@@ -287,7 +307,7 @@ Deze zijn bewust blijven liggen; ze horen bij een latere fase.
   in `innerHTML`. Nu onschadelijk omdat de data statisch en gecommit is. Zodra plugins van
   buiten de repo komen is dit een injectiepunt; `escapeHtml`/`escapeAttr` bestaan al in
   `static/src/shared/ui-helpers.js`.
-- De defaultroute is impliciet `WORKFLOWS[0]` (`static/app.js:311`). Zodra plugins uit kunnen,
+- De defaultroute is impliciet `WORKFLOWS[0]` (`static/app.js:326`). Zodra plugins uit kunnen,
   wordt "eerste ingeschakelde plugin" een willekeurige landingspagina.
 
 ## 5. Genomen beslissingen, en wat afviel

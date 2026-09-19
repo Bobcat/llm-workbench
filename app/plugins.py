@@ -1,25 +1,31 @@
 """The plugin registry: which sidebar categories and views exist, and what serves them.
 
-This is the source of truth for the frontend sidebar. ``app/plugins.js`` (served at
-``/plugins.js``) is generated from :func:`frontend_payload`, and ``app/router.py`` mounts the
-routers from :func:`iter_routers`, so the route table and the sidebar cannot drift apart
-without the tests in ``tests/test_plugin_registry.py`` noticing.
+This is the source of truth for the frontend sidebar. ``/plugins.js`` is generated from
+:func:`frontend_payload`, and ``app/main.py`` mounts the routers and websockets from
+:func:`iter_routers` and :func:`iter_websockets`, so the route table and the sidebar cannot drift
+apart without the tests in ``tests/test_plugin_registry.py`` noticing.
 
 Decisions behind the shape, and what was rejected, are in ``docs/plugin-architecture.md``.
-Two of them matter when reading this file:
+Three of them matter when reading this file:
 
-- ``routers`` on a view is the backend the view itself is served by, written by hand. It is not
-  derived from the frontend: the frontend calls ``api.runChatPrompt()`` and the path lives in
-  ``static/src/api-client.js``, which phase 4 splits up. A second, independent check in the
-  tests verifies that the endpoints a view actually calls are served.
-- One router can serve several views. ``iter_routers`` deduplicates by identity, so sharing one
-  is not a mistake here.
+- ``routers`` on a view is **every** router serving an endpoint that view calls, including
+  routers that belong to another plugin: ``image-train`` reads its model list from
+  ``llm_pool_router``, so that router is listed there too. A complete list is what makes "does
+  this view have its backend" answerable per view, and it is what phase 3 needs to see which
+  views lose something when a plugin is switched off.
+- The list is written by hand rather than derived. Deriving it from the frontend would work
+  today, but the frontend calls ``api.runChatPrompt()`` and the path lives in
+  ``static/src/api-client.js``, which phase 4 splits up. A second check in the tests verifies
+  that the declared routers really do cover what the view calls.
+- One router can serve several views. :func:`iter_routers` deduplicates by identity, so sharing
+  one is not a mistake here.
 """
 
 from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from typing import Awaitable, Callable
 
 from fastapi import APIRouter
 
@@ -32,7 +38,9 @@ from app.prompt_testing.text_generation import router as text_generation_router
 from app.realtime_translation.prompt_library.prompts import router as prompt_library_router
 from app.realtime_translation.replay.defaults import router as replay_defaults_router
 from app.realtime_translation.replay.replay import router as replay_router
+from app.realtime_translation.replay.replay import websocket_endpoint as replay_socket_endpoint
 from app.realtime_tts.replay import router as realtime_tts_router
+from app.realtime_tts.replay import websocket_endpoint as replay_speak_socket_endpoint
 from app.translation_services.benchmark import router as pdf_benchmark_router
 from app.translation_services.pdf import router as pdf_translation_router
 from app.translation_services.pdf_regression import router as pdf_regression_router
@@ -44,12 +52,24 @@ FRONTEND_GLOBAL = "__LLM_WORKBENCH_PLUGINS__"
 
 
 @dataclass(frozen=True)
+class ViewSocket:
+    """A websocket a view connects to. These two are the routes outside /api."""
+
+    path: str
+    endpoint: Callable[..., Awaitable[None]]
+
+
+@dataclass(frozen=True)
 class View:
     """One sidebar entry and the frontend module that renders it.
 
     ``backend`` is False only for a view that genuinely has no API behind it. Saying so
     explicitly is what lets the tests tell "has no backend" apart from "someone forgot to map
     one".
+
+    ``routers`` and ``websockets`` together are everything the view talks to. Listing a router
+    that belongs to another plugin is intentional and expected: the model dropdowns are served
+    by llm-pool from six other plugins' views.
     """
 
     id: str
@@ -59,6 +79,7 @@ class View:
     module: str
     factory: str
     routers: tuple[APIRouter, ...] = ()
+    websockets: tuple[ViewSocket, ...] = ()
     aliases: tuple[str, ...] = ()
     tooltip: str | None = None
     persistent: bool = True
@@ -87,7 +108,8 @@ PLUGINS: tuple[Plugin, ...] = (
                 icon="languages",
                 module="src/workflows/replay/index.js",
                 factory="createReplayView",
-                routers=(replay_router, replay_defaults_router),
+                routers=(replay_router, replay_defaults_router, llm_pool_router, translation_router),
+                websockets=(ViewSocket("/ws/replay/{session_id}", replay_socket_endpoint),),
             ),
         ),
     ),
@@ -102,7 +124,8 @@ PLUGINS: tuple[Plugin, ...] = (
                 icon="volume-2",
                 module="src/workflows/replay-speak/index.js",
                 factory="createReplaySpeakView",
-                routers=(realtime_tts_router,),
+                routers=(realtime_tts_router, tts_pool_router),
+                websockets=(ViewSocket("/ws/replay-speak/{session_id}", replay_speak_socket_endpoint),),
             ),
         ),
     ),
@@ -127,7 +150,7 @@ PLUGINS: tuple[Plugin, ...] = (
                 icon="file-plus",
                 module="src/workflows/text-generation/index.js",
                 factory="createTextGenerationView",
-                routers=(text_generation_router,),
+                routers=(text_generation_router, llm_pool_router),
                 aliases=("ad-hoc-prompt", "vlm-test"),
             ),
             View(
@@ -137,7 +160,7 @@ PLUGINS: tuple[Plugin, ...] = (
                 icon="messages-square",
                 module="src/workflows/chat/index.js",
                 factory="createChatView",
-                routers=(chat_router,),
+                routers=(chat_router, llm_pool_router),
             ),
         ),
     ),
@@ -178,7 +201,7 @@ PLUGINS: tuple[Plugin, ...] = (
                 icon="image-plus",
                 module="src/workflows/image-generation/index.js",
                 factory="createImageGenerationView",
-                routers=(image_pool_router,),
+                routers=(image_pool_router, image_pool_loras_router),
             ),
             View(
                 id="image-lora-library",
@@ -196,7 +219,7 @@ PLUGINS: tuple[Plugin, ...] = (
                 icon="sliders-horizontal",
                 module="src/workflows/image-train/index.js",
                 factory="createImageTrainView",
-                routers=(image_pool_training_router,),
+                routers=(image_pool_training_router, llm_pool_router),
             ),
         ),
     ),
@@ -236,7 +259,7 @@ PLUGINS: tuple[Plugin, ...] = (
                 icon="image",
                 module="src/workflows/translation-requests/index.js",
                 factory="createTranslationRequestsView",
-                routers=(translation_router,),
+                routers=(translation_router, llm_pool_router),
                 aliases=("translation-requests",),
             ),
             View(
@@ -256,7 +279,13 @@ PLUGINS: tuple[Plugin, ...] = (
                 icon="file-text",
                 module="src/workflows/pdf-translation/index.js",
                 factory="createPdfTranslationView",
-                routers=(pdf_translation_router,),
+                routers=(
+                    pdf_translation_router,
+                    pdf_benchmark_router,
+                    pdf_regression_router,
+                    translation_router,
+                    llm_pool_router,
+                ),
             ),
             View(
                 id="pdf-translation-regression",
@@ -292,7 +321,7 @@ PLUGINS: tuple[Plugin, ...] = (
                 icon="book-open-text",
                 module="src/workflows/translation-prompts/index.js",
                 factory="createTranslationPromptsView",
-                routers=(prompt_library_router,),
+                routers=(prompt_library_router, translation_router, llm_pool_router),
             ),
         ),
     ),
@@ -332,6 +361,19 @@ def iter_routers() -> tuple[APIRouter, ...]:
             seen.add(id(router))
             routers.append(router)
     return tuple(routers)
+
+
+def iter_websockets() -> tuple[ViewSocket, ...]:
+    """Every websocket the workbench serves, in registry order and without duplicates."""
+    seen: set[str] = set()
+    sockets: list[ViewSocket] = []
+    for view in iter_views():
+        for socket in view.websockets:
+            if socket.path in seen:
+                continue
+            seen.add(socket.path)
+            sockets.append(socket)
+    return tuple(sockets)
 
 
 def route_aliases() -> dict[str, str]:

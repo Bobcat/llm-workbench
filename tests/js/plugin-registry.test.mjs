@@ -76,27 +76,29 @@ test('every view icon exists in the icon sprite', async () => {
   }
 });
 
-test('importing the registry without the generated global fails loudly', () => {
-  // Without /plugins.js the sidebar has nothing to render. That has to be a clear error rather
-  // than a silently empty sidebar, so the guard itself is pinned here.
-  let failure = null;
-  try {
-    execFileSync(
-      process.execPath,
-      [
-        '--input-type=module',
-        '-e',
-        `globalThis.window = {}; await import(${JSON.stringify(pathToFileURL(REGISTRY).href)});`,
-      ],
-      { encoding: 'utf8', stdio: 'pipe' },
-    );
-  } catch (error) {
-    failure = error;
-  }
-  assert.ok(failure, 'importing the registry without the global unexpectedly succeeded');
+test('a missing generated global is reported, not thrown', () => {
+  // app.js has to keep running to be able to show this, so the module reports the problem
+  // instead of throwing at import time. The browser check covers that the report reaches the
+  // screen; this covers that the module still loads and says what is wrong.
+  const script = [
+    'globalThis.window = {};',
+    `const registry = await import(${JSON.stringify(pathToFileURL(REGISTRY).href)});`,
+    'console.log(JSON.stringify({',
+    '  plugins: registry.PLUGINS.length,',
+    '  error: registry.pluginLoadError ? registry.pluginLoadError.message : null,',
+    '}));',
+  ].join('\n');
+
+  const output = execFileSync(process.execPath, ['--input-type=module', '-e', script], {
+    encoding: 'utf8',
+    stdio: 'pipe',
+  });
+  const result = JSON.parse(output.trim().split('\n').pop());
+
+  assert.equal(result.plugins, 0, 'PLUGINS should be empty without the global');
   assert.match(
-    String(failure.stderr),
+    String(result.error),
     /__LLM_WORKBENCH_PLUGINS__/,
-    'the failure does not name the missing global',
+    'the report does not name the missing global',
   );
 });

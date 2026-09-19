@@ -2,13 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import FastAPI, Response, WebSocket
+from fastapi import FastAPI, Response
 from fastapi.staticfiles import StaticFiles
 
-from app.plugins import frontend_script
+from app.plugins import frontend_script, iter_websockets
 from app.router import api_router
-from app.realtime_tts.replay import websocket_endpoint as realtime_tts_websocket_endpoint
-from app.realtime_translation.replay.replay import websocket_endpoint
 
 base_dir = Path(__file__).parent.parent
 static_dir = base_dir / "static"
@@ -40,15 +38,10 @@ app = FastAPI(
 
 app.include_router(api_router)
 
-
-@app.websocket("/ws/replay/{session_id}")
-async def ws_replay(websocket: WebSocket, session_id: str):
-    await websocket_endpoint(websocket, session_id)
-
-
-@app.websocket("/ws/replay-speak/{session_id}")
-async def ws_replay_speak(websocket: WebSocket, session_id: str):
-    await realtime_tts_websocket_endpoint(websocket, session_id)
+# The websockets come from the registry too, so a view and the socket it connects to are
+# declared in the same place. They are the only routes outside /api.
+for _socket in iter_websockets():
+    app.websocket(_socket.path)(_socket.endpoint)
 
 
 @app.get("/plugins.js", include_in_schema=False)

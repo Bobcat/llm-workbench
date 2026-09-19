@@ -423,6 +423,29 @@ def verify(base: str, checks: Checks) -> None:
         served.close()
         checks.note("sidebar: rendered from the generated global, 8 plugins into 7 categories")
 
+        # --- a plugin list that never arrives is visible, not just logged ---
+        # The load order is guaranteed, but the request can still fail. The inline boot script has
+        # already revealed the shell by then, so the reason has to end up on screen.
+        missing = browser.new_page()
+        missing.route("**/plugins.js", lambda route: route.abort())
+        missing.goto(f"{base}/#pdf-anatomy")
+        try:
+            missing.wait_for_selector(".workflow-error", timeout=5000)
+            text = missing.inner_text(".workflow-error")
+            checks.check("plugin list" in text.lower(), f"panel does not name the plugin list: {text!r}")
+            checks.check(
+                "__LLM_WORKBENCH_PLUGINS__" in text,
+                f"panel does not name the missing global: {text!r}",
+            )
+            checks.check(
+                missing.eval_on_selector_all("#workflowList li[data-route]", "els => els.length") == 0,
+                "the sidebar rendered items without a plugin list",
+            )
+        except Exception as error:  # noqa: BLE001 - reported as a problem
+            problems.append(f"a missing plugin list was not shown to the user: {error}")
+        missing.close()
+        checks.note("missing plugin list: visible panel with the reason, no silent empty shell")
+
         checks.check(not page_errors, f"page errors: {page_errors}")
         checks.check(not import_failures, f"dynamic import failures: {import_failures}")
         browser.close()
