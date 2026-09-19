@@ -1736,7 +1736,7 @@ export function createPdfTranslationView() {
     if (!statuses.length) return label;
     const admitted = statuses.filter((status) => status.status === 'admitted').length;
     const flowing = statuses.filter((status) =>
-      status.status === 'admitted' && status.placement?.layout_policy === 'flowing').length;
+      status.status === 'admitted' && status.placement?.layout_policy === 'column-flow').length;
     const bounded = statuses.filter((status) =>
       status.status === 'admitted' && status.placement?.layout_policy === 'bounded').length;
     const unreported = admitted - flowing - bounded;
