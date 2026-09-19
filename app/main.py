@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import FastAPI, WebSocket
+from fastapi import FastAPI, Response, WebSocket
 from fastapi.staticfiles import StaticFiles
 
+from app.plugins import frontend_script
 from app.router import api_router
 from app.realtime_tts.replay import websocket_endpoint as realtime_tts_websocket_endpoint
 from app.realtime_translation.replay.replay import websocket_endpoint
@@ -48,6 +49,21 @@ async def ws_replay(websocket: WebSocket, session_id: str):
 @app.websocket("/ws/replay-speak/{session_id}")
 async def ws_replay_speak(websocket: WebSocket, session_id: str):
     await realtime_tts_websocket_endpoint(websocket, session_id)
+
+
+@app.get("/plugins.js", include_in_schema=False)
+def plugins_js() -> Response:
+    """The plugin list, generated from ``app/plugins.py``.
+
+    ``static/index.html`` loads this with a blocking script tag before ``app.js``, so the sidebar
+    renders synchronously from a list Python owns. Registered before the static mount, which
+    would otherwise serve a file of that name.
+    """
+    return Response(
+        content=frontend_script(),
+        media_type="application/javascript",
+        headers={"Cache-Control": "no-cache"},
+    )
 
 
 if static_dir.exists():

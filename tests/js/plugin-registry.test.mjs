@@ -1,13 +1,15 @@
-// Guards the frontend plugin contract.
+// Guards what only a browser-side test can guard about the plugin contract.
 //
-// The sidebar, routes and lazy view loader are derived from the manifests in
-// static/src/plugins/. Those manifests reference view modules and factory functions by
-// string, so a rename breaks the app at click time rather than at import time. These tests
-// pin the shipped sidebar field by field and resolve every manifest reference statically.
+// The plugin list itself lives in app/plugins.py and reaches the browser as the global that
+// /plugins.js sets. Python owns the pin on its contents (tests/test_plugin_registry.py); this
+// suite covers the half that needs a real ES module: that every view module resolves, exports
+// the named factory, and that every icon exists in the sprite. It also pins the guard that makes
+// a missing /plugins.js fail loudly instead of rendering an empty sidebar.
 //
 // Run from the repo root with:  node --test 'tests/js/**/*.test.mjs'
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -18,120 +20,38 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 globalThis.window = { markdownit: () => ({ renderer: { rules: {} } }) };
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const STATIC = path.resolve(HERE, '..', '..', 'static');
+const REPO_ROOT = path.resolve(HERE, '..', '..');
+const STATIC = path.join(REPO_ROOT, 'static');
+const REGISTRY = path.join(STATIC, 'src', 'plugins', 'registry.js');
 
-const registry = await import(pathToFileURL(path.join(STATIC, 'src/plugins', 'registry.js')).href);
-const { PLUGINS, WORKFLOWS, ROUTE_ALIASES, normalizeRoute, getWorkflow } = registry;
-
-// The shipped sidebar, in order. This is a regression pin, not a comparison against the old
-// hardcoded structure: a rename, a reordered or dropped view, a swapped icon, a changed tooltip
-// or a flipped `persistent` flag must fail here rather than silently change the app.
-const EXPECTED_CATEGORIES = [
-  ['Realtime Translation', [
-    { id: 'replay-translate', route: 'replay-translate', name: 'Replay & Translate', icon: 'languages', persistent: true },
-  ]],
-  ['Realtime TTS', [
-    { id: 'replay-speak', route: 'replay-speak', name: 'Replay & Speak', icon: 'volume-2', persistent: true },
-  ]],
-  ['LLM Pool', [
-    { id: 'llm-pool-models', route: 'llm-pool-models', name: 'Models', icon: 'pool-llm', persistent: true, tooltip: 'LLM pool models' },
-    { id: 'text-generation', route: 'text-generation', name: 'Text generation', icon: 'file-plus', persistent: true },
-    { id: 'chat', route: 'chat', name: 'Chat', icon: 'messages-square', persistent: true },
-  ]],
-  ['TTS Pool', [
-    { id: 'tts-pool-models', route: 'tts-pool-models', name: 'Models', icon: 'pool-tts', persistent: true, tooltip: 'TTS pool models' },
-  ]],
-  ['Image Pool', [
-    { id: 'image-pool-models', route: 'image-pool-models', name: 'Models', icon: 'pool-image', persistent: true, tooltip: 'Image pool models' },
-    { id: 'image-generation', route: 'image-generation', name: 'Image generation', icon: 'image-plus', persistent: true },
-    { id: 'image-lora-library', route: 'image-lora-library', name: 'LoRA Library', icon: 'layers-3', persistent: true },
-    { id: 'image-train', route: 'image-train', name: 'Tuning', icon: 'sliders-horizontal', persistent: true },
-  ]],
-  ['Video Pool', [
-    { id: 'video-pool-models', route: 'video-pool-models', name: 'Models', icon: 'pool-video', persistent: true, tooltip: 'Video pool models' },
-    { id: 'video-generation', route: 'video-generation', name: 'Video generation', icon: 'video-plus', persistent: true },
-  ]],
-  ['Translation Services', [
-    { id: 'image-translation', route: 'image-translation', name: 'Image translation', icon: 'image', persistent: true },
-    { id: 'image-translation-regression', route: 'image-translation-regression', name: 'Image regression testing', icon: 'clipboard-check', persistent: true },
-    { id: 'pdf-translation', route: 'pdf-translation', name: 'PDF translation', icon: 'file-text', persistent: true },
-    { id: 'pdf-translation-regression', route: 'pdf-translation-regression', name: 'PDF regression testing', icon: 'clipboard-check', persistent: true },
-    { id: 'pdf-testing', route: 'pdf-testing', name: 'PDF benchmark', icon: 'gauge', persistent: true },
-    { id: 'pdf-anatomy', route: 'pdf-anatomy', name: 'PDF anatomy', icon: 'venetian-mask', persistent: true },
-    { id: 'prompt-library', route: 'prompt-library', name: 'Prompt Library', icon: 'book-open-text', persistent: true },
-  ]],
-];
-const EXPECTED_AUXILIARY = [
-  { id: 'icons', route: 'icons', name: 'Icons', icon: 'shapes', persistent: false },
-];
-const EXPECTED_ALIASES = new Map([
-  ['ad-hoc-prompt', 'text-generation'],
-  ['vlm-test', 'text-generation'],
-  ['translation-requests', 'image-translation'],
-  ['translation-regression', 'image-translation-regression'],
-]);
-
-// Only the fields a user can see, plus the ids the loader and future settings key on.
-function viewShape(view) {
-  const shape = {
-    id: view.id,
-    route: view.route,
-    name: view.name,
-    icon: view.icon,
-    persistent: view.persistent,
-  };
-  if (view.tooltip) shape.tooltip = view.tooltip;
-  return shape;
-}
-
-test('sidebar categories and their views match the shipped sidebar', () => {
-  const categories = PLUGINS
-    .filter((plugin) => !plugin.auxiliary)
-    .map((plugin) => [plugin.label, plugin.views.map(viewShape)]);
-  assert.deepEqual(categories, EXPECTED_CATEGORIES);
-
-  const auxiliary = PLUGINS
-    .filter((plugin) => plugin.auxiliary)
-    .flatMap((plugin) => plugin.views.map(viewShape));
-  assert.deepEqual(auxiliary, EXPECTED_AUXILIARY);
-
-  assert.equal(WORKFLOWS.length, 20);
-});
-
-test('every manifest carries the fields the loader reads', () => {
-  for (const plugin of PLUGINS) {
-    assert.ok(plugin.id, `plugin without id: ${JSON.stringify(plugin)}`);
-    assert.ok(Array.isArray(plugin.views) && plugin.views.length > 0, `plugin ${plugin.id}: no views`);
-    for (const view of plugin.views) {
-      for (const field of ['id', 'route', 'name', 'icon', 'module', 'factory']) {
-        assert.ok(view[field], `plugin ${plugin.id} / view ${view.id || '?'}: missing ${field}`);
-      }
-      assert.ok(
-        !view.module.startsWith('/') && !view.module.startsWith('.'),
-        `view ${view.route}: module "${view.module}" must be relative to the static root`,
-      );
-      assert.equal(typeof view.persistent, 'boolean', `view ${view.route}: persistent must be boolean`);
+function pythonExecutable() {
+  for (const candidate of [path.join(REPO_ROOT, '.venv', 'bin', 'python'), 'python3']) {
+    try {
+      execFileSync(candidate, ['-c', ''], { stdio: 'ignore' });
+      return candidate;
+    } catch {
+      // try the next candidate
     }
   }
-});
+  throw new Error('no python interpreter found to read the plugin list from app/plugins.py');
+}
 
-test('routes and view ids are unique and do not collide with aliases', () => {
-  const routes = WORKFLOWS.map((view) => view.route);
-  const ids = WORKFLOWS.map((view) => view.id);
-  assert.equal(new Set(routes).size, routes.length, `duplicate route in ${routes}`);
-  assert.equal(new Set(ids).size, ids.length, `duplicate view id in ${ids}`);
-  for (const alias of ROUTE_ALIASES.keys()) {
-    assert.ok(!routes.includes(alias), `alias ${alias} shadows a real route`);
-  }
-});
+// The same payload /plugins.js is generated from, so this suite never keeps a second copy of the
+// sidebar. If Python cannot answer, that is a failure, not a skip.
+const payload = JSON.parse(execFileSync(
+  pythonExecutable(),
+  ['-c', 'import json; from app.plugins import frontend_payload; print(json.dumps(frontend_payload()))'],
+  { cwd: REPO_ROOT, encoding: 'utf8' },
+));
+globalThis.__LLM_WORKBENCH_PLUGINS__ = payload;
 
-test('route aliases resolve to a real view', () => {
-  assert.deepEqual(new Map(ROUTE_ALIASES), EXPECTED_ALIASES);
-  for (const [alias, target] of EXPECTED_ALIASES) {
-    assert.equal(normalizeRoute(alias), target);
-    assert.ok(getWorkflow(alias), `alias ${alias} does not resolve to a workflow`);
-    assert.ok(getWorkflow(target), `alias target ${target} does not exist`);
-  }
+const registry = await import(pathToFileURL(REGISTRY).href);
+const { PLUGINS, WORKFLOWS, ROUTE_ALIASES } = registry;
+
+test('the registry reads the payload Python generated', () => {
+  assert.ok(Array.isArray(PLUGINS) && PLUGINS.length > 0, 'no plugins in the payload');
+  assert.equal(WORKFLOWS.length, payload.flatMap((plugin) => plugin.views).length);
+  assert.ok(ROUTE_ALIASES.size > 0, 'no aliases in the payload');
 });
 
 test('every view module exists and exports its factory', async () => {
@@ -154,4 +74,29 @@ test('every view icon exists in the icon sprite', async () => {
   for (const view of WORKFLOWS) {
     assert.ok(defined.has(view.icon), `view ${view.route}: icon "${view.icon}" is not in icons.svg`);
   }
+});
+
+test('importing the registry without the generated global fails loudly', () => {
+  // Without /plugins.js the sidebar has nothing to render. That has to be a clear error rather
+  // than a silently empty sidebar, so the guard itself is pinned here.
+  let failure = null;
+  try {
+    execFileSync(
+      process.execPath,
+      [
+        '--input-type=module',
+        '-e',
+        `globalThis.window = {}; await import(${JSON.stringify(pathToFileURL(REGISTRY).href)});`,
+      ],
+      { encoding: 'utf8', stdio: 'pipe' },
+    );
+  } catch (error) {
+    failure = error;
+  }
+  assert.ok(failure, 'importing the registry without the global unexpectedly succeeded');
+  assert.match(
+    String(failure.stderr),
+    /__LLM_WORKBENCH_PLUGINS__/,
+    'the failure does not name the missing global',
+  );
 });

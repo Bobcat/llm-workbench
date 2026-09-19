@@ -403,6 +403,26 @@ def verify(base: str, checks: Checks) -> None:
         busy.close()
         checks.note("busy indicator: shell and view halves both covered, retired event is gone")
 
+        # --- the sidebar is rendered from the global that /plugins.js sets ---
+        # Python owns the list; this is the wiring between the two.
+        served = browser.new_page()
+        served.goto(f"{base}/#pdf-anatomy")
+        served.wait_for_selector("#appRoot > *", timeout=10000)
+        wiring = served.evaluate("""
+          () => ({
+            isArray: Array.isArray(window.__LLM_WORKBENCH_PLUGINS__),
+            plugins: (window.__LLM_WORKBENCH_PLUGINS__ || []).length,
+            categories: document.querySelectorAll('#workflowList .sidebar-section-label').length,
+            items: document.querySelectorAll('#workflowList li[data-route]').length,
+          })
+        """)
+        checks.check(wiring["isArray"], "the generated plugin global is not set in the browser")
+        checks.check(wiring["plugins"] == 8, f"payload carries {wiring['plugins']} plugins, expected 8")
+        checks.check(wiring["categories"] == 7, f"sidebar shows {wiring['categories']} categories")
+        checks.check(wiring["items"] == 20, f"sidebar shows {wiring['items']} items")
+        served.close()
+        checks.note("sidebar: rendered from the generated global, 8 plugins into 7 categories")
+
         checks.check(not page_errors, f"page errors: {page_errors}")
         checks.check(not import_failures, f"dynamic import failures: {import_failures}")
         browser.close()

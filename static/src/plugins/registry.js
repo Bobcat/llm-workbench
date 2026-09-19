@@ -1,16 +1,15 @@
-// Plugin registry — the single place that knows which sidebar categories and workflow views
-// exist.
+// Plugin registry — turns the plugin list the backend generated into the sidebar, the route
+// table and a lazy view loader.
 //
-// A plugin owns one sidebar category (or, with `auxiliary: true`, one standalone item at the
-// bottom) and contributes one or more views. Views are loaded lazily from their module URL, so
-// a plugin only costs a network request when the user opens one of its views.
+// The list itself lives in `app/plugins.py` and reaches the browser as `window.<GLOBAL>`, served
+// at `/plugins.js` and loaded with a blocking script tag in static/index.html before this module
+// runs. Python is the source of truth because it is also what mounts the routers, so the route
+// table and the sidebar cannot drift apart.
 //
-// The manifest shape is deliberately data-only — strings, booleans, and arrays, no imported
-// functions. That keeps the door open for serving the same payload from the backend later
-// (a plugin list endpoint) without touching this loader: only the source of PLUGINS changes.
+// The payload is deliberately data-only — strings, booleans and arrays, no functions.
 //
 // Plugin fields:
-//   id          stable plugin id, equal to the folder name
+//   id          stable plugin id
 //   label       sidebar section label; empty for auxiliary plugins
 //   auxiliary   true => rendered as a standalone item at the bottom of the sidebar
 //   views       view descriptors, in sidebar order
@@ -21,37 +20,30 @@
 //   name        sidebar label
 //   icon        symbol id in static/assets/icons.svg
 //   tooltip     optional sidebar tooltip; defaults to `name`
+//   aliases     retired route names that resolve to this view
 //   persistent  keep the mounted view alive while navigating away
 //   module      module path under the static root, resolved against the document base
 //   factory     exported factory name in that module; returns the view element
-import realtimeTranslation from './realtime-translation/manifest.js';
-import realtimeTts from './realtime-tts/manifest.js';
-import llmPool from './llm-pool/manifest.js';
-import ttsPool from './tts-pool/manifest.js';
-import imagePool from './image-pool/manifest.js';
-import videoPool from './video-pool/manifest.js';
-import translationServices from './translation-services/manifest.js';
-import developer from './developer/manifest.js';
+const PLUGIN_GLOBAL = '__LLM_WORKBENCH_PLUGINS__';
 
-export const PLUGINS = [
-  realtimeTranslation,
-  realtimeTts,
-  llmPool,
-  ttsPool,
-  imagePool,
-  videoPool,
-  translationServices,
-  developer,
-];
+const payload = globalThis[PLUGIN_GLOBAL];
+if (!Array.isArray(payload)) {
+  throw new Error(
+    `Plugin list missing: globalThis.${PLUGIN_GLOBAL} is not set. static/index.html loads the `
+    + 'generated /plugins.js before this module; if you are importing this outside a browser, '
+    + 'stub that global first.',
+  );
+}
 
-// Retired route names stay reachable so existing bookmarks keep working.
-export const ROUTE_ALIASES = new Map([
-  ['ad-hoc-prompt', 'text-generation'],
-  ['vlm-test', 'text-generation'],
-  ['translation-requests', 'image-translation'],
-  // Old route from before the image/pdf regression split.
-  ['translation-regression', 'image-translation-regression'],
-]);
+export const PLUGINS = payload;
+
+// Retired route names stay reachable so existing bookmarks keep working. They travel with the
+// view that replaced them, so disabling a plugin also retires its aliases.
+export const ROUTE_ALIASES = new Map(
+  PLUGINS.flatMap((plugin) => plugin.views.flatMap(
+    (view) => (view.aliases || []).map((alias) => [alias, view.route]),
+  )),
+);
 
 export const WORKFLOWS = PLUGINS.flatMap((plugin) => plugin.views);
 

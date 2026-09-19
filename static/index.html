@@ -85,6 +85,9 @@
 
   <script src="vendor/markdown-it-14.3.0.min.js"></script>
   <script src="vendor/dompurify-3.4.12.min.js"></script>
+  <!-- Generated from app/plugins.py. Blocking on purpose: the sidebar renders from it, so a
+       fetch would only add an empty-sidebar state to design for. -->
+  <script src="plugins.js"></script>
   <script type="module" src="app.js"></script>
 </body>
 </html>
