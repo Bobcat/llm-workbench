@@ -1,9 +1,9 @@
 """The plugin registry: which sidebar categories and views exist, and what serves them.
 
 This is the source of truth for the frontend sidebar. ``/plugins.js`` is generated from
-:func:`frontend_payload`, and ``app/main.py`` mounts the routers and websockets from
-:func:`iter_routers` and :func:`iter_websockets`, so the route table and the sidebar cannot drift
-apart without the tests in ``tests/test_plugin_registry.py`` noticing.
+:func:`frontend_payload`, ``app/router.py`` mounts the routers from :func:`iter_routers`, and
+``app/main.py`` registers the websockets from :func:`iter_websockets`, so the route table and the
+sidebar cannot drift apart without the tests in ``tests/test_plugin_registry.py`` noticing.
 
 Decisions behind the shape, and what was rejected, are in ``docs/plugin-architecture.md``.
 Three of them matter when reading this file:
@@ -53,7 +53,7 @@ FRONTEND_GLOBAL = "__LLM_WORKBENCH_PLUGINS__"
 
 @dataclass(frozen=True)
 class ViewSocket:
-    """A websocket a view connects to. These two are the routes outside /api."""
+    """A websocket a view connects to: the only application routes outside /api."""
 
     path: str
     endpoint: Callable[..., Awaitable[None]]

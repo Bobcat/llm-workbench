@@ -306,9 +306,14 @@ function init() {
   bindMobileSidebarDismiss(shellState, sidebar, 600);
 
   // Without the generated plugin list there is no sidebar to render and no route to open, and
-  // the shell is already visible by now. Say why, instead of leaving an empty frame.
+  // the shell is already visible by now. Say why, and say what the reader can do about it — a
+  // technical message alone is written for whoever debugs this, not for whoever hits it.
   if (pluginLoadError) {
-    appRoot.append(buildErrorPanel('Could not load the plugin list', pluginLoadError.message));
+    appRoot.append(buildErrorPanel(
+      'Could not load the plugin list',
+      'Reload the page. If this keeps happening, check that the workbench server is running.\n\n'
+      + pluginLoadError.message,
+    ));
     return;
   }
 

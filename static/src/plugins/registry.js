@@ -34,9 +34,8 @@ const payload = globalThis[PLUGIN_GLOBAL];
 export const pluginLoadError = Array.isArray(payload)
   ? null
   : new Error(
-    `Plugin list missing: globalThis.${PLUGIN_GLOBAL} is not set. static/index.html loads the `
-    + 'generated /plugins.js before this module; if you are importing this outside a browser, '
-    + 'stub that global first.',
+    `Plugin list missing: globalThis.${PLUGIN_GLOBAL} is not set, so /plugins.js did not load `
+    + 'or did not run.',
   );
 
 export const PLUGINS = Array.isArray(payload) ? payload : [];

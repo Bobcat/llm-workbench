@@ -434,6 +434,10 @@ def verify(base: str, checks: Checks) -> None:
             text = missing.inner_text(".workflow-error")
             checks.check("plugin list" in text.lower(), f"panel does not name the plugin list: {text!r}")
             checks.check(
+                "Reload the page" in text,
+                f"panel does not tell the reader what to do: {text!r}",
+            )
+            checks.check(
                 "__LLM_WORKBENCH_PLUGINS__" in text,
                 f"panel does not name the missing global: {text!r}",
             )

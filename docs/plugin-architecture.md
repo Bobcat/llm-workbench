@@ -37,8 +37,9 @@ Niet, en dat is een bewuste grens:
 
 ### De registratie
 
-`app/plugins.py` is de bron van waarheid. Twee dingen komen daaruit voort: `app/router.py` mount
-de routers die erin genoemd staan, en FastAPI genereert `/plugins.js` uit dezelfde gegevens.
+`app/plugins.py` is de bron van waarheid. Drie dingen komen daaruit voort: `app/router.py` mount
+de routers die erin genoemd staan, `app/main.py` registreert er de twee websockets uit, en FastAPI
+genereert `/plugins.js` uit dezelfde gegevens.
 Daardoor kunnen de routetabel en de sidebar niet uit elkaar lopen zonder dat een test het merkt.
 
 | Plugin-veld | Betekenis |
@@ -59,7 +60,7 @@ Daardoor kunnen de routetabel en de sidebar niet uit elkaar lopen zonder dat een
 | `module` | pad onder de static root, geresolveerd tegen `document.baseURI` |
 | `factory` | geëxporteerde functienaam in die module; levert het view-element |
 | `routers` | **elke** router die een endpoint bedient dat deze view aanroept, ook routers van een andere plugin; één router mag door meerdere views gedeeld worden |
-| `websockets` | de websockets die deze view gebruikt; de enige routes buiten `/api` |
+| `websockets` | de websockets die deze view gebruikt; de enige applicatieroutes buiten `/api` |
 | `aliases` | gepensioneerde routenamen die naar deze view wijzen |
 | `backend` | `false` voor een view die aantoonbaar geen API heeft; alleen `icons` |
 
@@ -99,20 +100,20 @@ lege registry na, die in sectie 4 staat.
 `static/src/plugins/registry.js` leest die gegenereerde lijst en leidt er de sidebar, de
 routetabel en de loader uit af:
 
-| Export | Regel | Rol |
+| Export | Regel in `static/src/plugins/registry.js` | Rol |
 | --- | --- | --- |
-| `PLUGINS` | 42 | de pluginlijst uit de gegenereerde global; ontbreekt die, dan staat `pluginLoadError` gezet |
-| `ROUTE_ALIASES` | 46 | oude routenamen, opgebouwd uit de `aliases` per view |
-| `WORKFLOWS` | 52 | alle views, plat |
-| `normalizeRoute` | 56 | alias → routenaam |
-| `getWorkflow` | 61 | route → view-descriptor |
-| `loadView` | 71 | laadt de module en roept de factory aan; `retry` zet `?retry=<n>` |
+| `PLUGINS` | 41 | de pluginlijst uit de gegenereerde global; ontbreekt die, dan staat `pluginLoadError` gezet |
+| `ROUTE_ALIASES` | 45 | oude routenamen, opgebouwd uit de `aliases` per view |
+| `WORKFLOWS` | 51 | alle views, plat |
+| `normalizeRoute` | 55 | alias → routenaam |
+| `getWorkflow` | 60 | route → view-descriptor |
+| `loadView` | 70 | laadt de module en roept de factory aan; `retry` zet `?retry=<n>` |
 
 De registry **laadt** views; hij bezit ze niet. Caching, activering en de DOM blijven van de
 shell (`static/app.js`). Die grens is bewust: de registry is dan puur data + laden en hoeft geen
 levenscyclus te kennen.
 
-`WORKFLOWS_BY_ROUTE` (regel 50) is een `Map` over de routes: bij een dubbele route wint stil de
+`WORKFLOWS_BY_ROUTE` (`static/src/plugins/registry.js:53`) is een `Map` over de routes: bij een dubbele route wint stil de
 laatste. Zie sectie 4.
 
 ### Loadergedrag in de shell
@@ -121,9 +122,9 @@ Vier dingen bewaken het laden, alle in `static/app.js`:
 
 - een gedeelde `pendingView` per route, zodat weg- en terugklikken tijdens een koude load de
   view niet twee keer bouwt;
-- een generatie-teller (`mountGeneration`, regel 119) die een load weggooit die ná een nieuwere
+- een generatie-teller (`static/app.js:119`, `mountGeneration`) die een load weggooit die ná een nieuwere
   navigatie binnenkomt; op het succespad logt dat op `debug`, op het faalpad op `error`;
-- een zichtbaar foutpaneel (`buildViewError`, regel 134) in plaats van een lege host, omdat
+- een zichtbaar foutpaneel (`static/app.js:134`, `buildViewError`) in plaats van een lege host, omdat
   `RouterCore.navigate()` de promise van `mount()` negeert;
 - een retry met een verse module-URL, maar alleen als de `import()` zelf faalde — een registratie
   die de verkeerde factory noemt wordt niet eindeloos opnieuw opgehaald.
@@ -134,7 +135,7 @@ Views worden pas bij eerste activering geïmporteerd in plaats van alle 20 bij h
 Prijs: een koude view kost een networkrequest en kan even een placeholder tonen. Tweede prijs,
 en die kostte een middag zoeken: een dynamic import valt buiten de cache-bypass van Ctrl+F5,
 waardoor een gewijzigde view onzichtbaar kon blijven. Dat is server-side opgelost met
-`Cache-Control: no-cache` (`app/main.py`, `RevalidatingStaticFiles`, regel 17).
+`Cache-Control: no-cache` (`app/main.py:15`, `RevalidatingStaticFiles`).
 
 ## 3. Fasen
 
@@ -228,13 +229,22 @@ Gebouwd:
    een subprocess bij `app/plugins.py` en stubt daarmee de global, want een tweede kopie in JS is
    precies wat deze fase opheft.
 
-Deze drie zitten in `tests/test_plugin_registry.py` (22 tests) en
-`tests/js/plugin-registry.test.mjs` (4 tests). Alle toetsen zijn mutatie-gecontroleerd: één router
+Deze drie zitten in `tests/test_plugin_registry.py` (26 tests) en
+`tests/js/plugin-registry.test.mjs` (4 tests). De padaanalyse wordt in **beide richtingen**
+getoetst — een view die een router mist én een view die een router declareert die ze nooit
+aanroept — en dat geldt ook voor de websockets. Alle toetsen zijn mutatie-gecontroleerd: één router
 niet mounten laat drie tests falen, waaronder de padaanalyse tegen de gemounte app; een router
 verwisselen voor die van een andere view faalt op de padaanalyse tegen de eigen declaratie; een
-sidebarlabel hernoemen faalt op de pin. De browsercheck controleert daarnaast dat de sidebar écht
-uit de gegenereerde global komt, en dat een pluginlijst die niet aankomt zichtbaar op het scherm
-komt in plaats van als lege schil.
+overbodige router of socket erbij zetten faalt op de spiegeltoets; een sidebarlabel hernoemen faalt
+op de pin. De browsercheck controleert daarnaast dat de sidebar écht uit de gegenereerde global
+komt, en dat een pluginlijst die niet aankomt zichtbaar op het scherm komt in plaats van als lege
+schil.
+
+De regelverwijzingen in dit document worden ook getoetst. Drie reviewrondes op rij vonden hier
+verouderde nummers, elke keer doordat een codewijziging in dezelfde commit ze verschoof. Die
+klasse fouten is nu mechanisch: elke `bestand:regel` moet een symbool bevatten dat de tekst
+eromheen noemt. Een verschuiving naar andere code faalt daarmee; een verschuiving binnen de spanne
+van hetzelfde symbool niet — dat staat in de docstring van de toets.
 
 ### Fase 3 — per-plugin assets en enable/disable ⬜
 
@@ -283,16 +293,17 @@ Deze zijn bewust blijven liggen; ze horen bij een latere fase.
   registratie in `app/plugins.py` is één bron voor de sidebar én de routetabel, en de aliassen
   hangen aan de view die ze vervangen.
 - **Routebotsingen hebben geen gedefinieerd gedrag.** `WORKFLOWS_BY_ROUTE`
-  (`registry.js:50`) laat bij een dubbele route stil de laatste winnen. De testsuite vangt dat voor
+  (`static/src/plugins/registry.js:53`) laat bij een dubbele route stil de laatste winnen. De testsuite vangt dat voor
   de gecommitte set, maar vanaf fase 3 (settings) en zeker fase 5 (packages buiten de repo) is een
   botsing een runtime-geval zonder afgesproken uitkomst. Er moet een regel komen: weigeren bij het
   laden, of eerste-wint met een waarschuwing.
-- **Een view mag endpoints van een andere plugin gebruiken, en dat is het normale geval.** Zes views
-  buiten llm-pool halen hun modellenlijst uit `/api/models` of `/api/models/admin`, en
+- **Een view mag endpoints van een andere plugin gebruiken, en dat is het normale geval.** Vijf views
+  buiten llm-pool halen hun modellenlijst uit `/api/models` of `/api/models/admin`
+  (`replay-translate`, `image-train`, `image-translation`, `pdf-translation`, `prompt-library`), en
   `pdf-translation` gebruikt routers van translation-services, pdf-benchmark en pdf-regression. De
   registratie noteert dat sinds de review van PR #16 volledig: `routers` op een view is elke router
   die een door die view aangeroepen endpoint bedient. Wat daarmee blijft liggen is de fase-3-vraag:
-  zet je llm-pool uit, dan verliezen views in vier andere plugins een deel van hun backend. De
+  zet je llm-pool uit, dan verliezen views in drie andere plugins een deel van hun backend. De
   registratie maakt dat zichtbaar, er is nog geen regel voor.
 - Geen enable/disable, dus de hele workbench toont altijd alles.
 - `css/app.css` is één globaal `@import`-manifest van 25 regels en er is één globale
@@ -307,7 +318,7 @@ Deze zijn bewust blijven liggen; ze horen bij een latere fase.
   in `innerHTML`. Nu onschadelijk omdat de data statisch en gecommit is. Zodra plugins van
   buiten de repo komen is dit een injectiepunt; `escapeHtml`/`escapeAttr` bestaan al in
   `static/src/shared/ui-helpers.js`.
-- De defaultroute is impliciet `WORKFLOWS[0]` (`static/app.js:326`). Zodra plugins uit kunnen,
+- De defaultroute is impliciet `WORKFLOWS[0]` (`static/app.js:331`). Zodra plugins uit kunnen,
   wordt "eerste ingeschakelde plugin" een willekeurige landingspagina.
 
 ## 5. Genomen beslissingen, en wat afviel

@@ -35,6 +35,15 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 STATIC = REPO_ROOT / "static"
 API_CLIENT = STATIC / "src" / "api-client.js"
 
+# The design document points at code by file and line. Those references are checked below, because
+# three review rounds in a row found them stale after a code change shifted them.
+ARCHITECTURE_DOC = REPO_ROOT / "docs" / "plugin-architecture.md"
+REGISTRY_RELATIVE = "static/src/plugins/registry.js"
+DOC_REFERENCE = re.compile(r"`([A-Za-z0-9_./-]+\.(?:js|py|html|css)):(\d+)(?:-(\d+))?`")
+DOC_TABLE_ROW = re.compile(r"^\| `[A-Za-z_][A-Za-z0-9_]*` \| (\d+) \|")
+DOC_TOKEN = re.compile(r"`([^`]+)`")
+DOC_LINE_SUFFIX = re.compile(r":\d+")
+
 # route, sidebar label, icon, persistent, tooltip, aliases
 EXPECTED_SIDEBAR: list[tuple[str, list[tuple]]] = [
     ("Realtime Translation", [
@@ -172,6 +181,12 @@ def _registered_sockets() -> set[str]:
     }
 
 
+def _socket_class_name(path: str) -> str:
+    """/ws/replay-speak/{session_id} -> ReplaySpeakWebSocket, the client class a view instantiates."""
+    stem = path.removeprefix("/ws/").split("/")[0]
+    return "".join(part.capitalize() for part in stem.split("-")) + "WebSocket"
+
+
 class SidebarPinTests(unittest.TestCase):
     """The hand-written copy of the shipped sidebar."""
 
@@ -261,8 +276,22 @@ class RegistryInvariantTests(unittest.TestCase):
         for plugin in frontend_payload():
             self.assertEqual(set(plugin), {"id", "label", "auxiliary", "views"})
             for view in plugin["views"]:
-                self.assertNotIn("routers", view)
-                self.assertNotIn("backend", view)
+                # The exact key set, so a field that must not leak — websockets holds Python
+                # callables, routers holds router objects — fails here instead of at json.dumps.
+                self.assertEqual(
+                    set(view),
+                    {
+                        "id",
+                        "route",
+                        "name",
+                        "icon",
+                        "tooltip",
+                        "persistent",
+                        "module",
+                        "factory",
+                        "aliases",
+                    },
+                )
 
 
 class ViewBackendTests(unittest.TestCase):
@@ -306,6 +335,24 @@ class ViewBackendTests(unittest.TestCase):
                     f"view {view.route} calls {path}, which none of its declared routers serve",
                 )
 
+    def test_declared_routers_are_all_actually_used(self) -> None:
+        """The mirror of the check above.
+
+        A router a view never calls overstates what that view loses when its plugin is switched off,
+        and phase 3 reads exactly that from this field. Measured clean when this was added.
+        """
+        methods = _client_method_paths()
+        for view in iter_views():
+            if not view.backend:
+                continue
+            paths, _ = _called_paths(STATIC / view.module, methods)
+            for router in view.routers:
+                router_paths = {"/api" + route.path for route in router.routes}
+                self.assertTrue(
+                    any(_is_served(path, router_paths) for path in paths),
+                    f"view {view.route} declares a router whose endpoints it never calls",
+                )
+
     def test_the_backend_less_view_calls_nothing(self) -> None:
         methods = _client_method_paths()
         for view in iter_views():
@@ -313,6 +360,7 @@ class ViewBackendTests(unittest.TestCase):
                 continue
             paths, _ = _called_paths(STATIC / view.module, methods)
             self.assertEqual(paths, set(), f"view {view.route} is marked backend-less but calls the API")
+
     def test_views_with_a_backend_reach_at_least_two_endpoints(self) -> None:
         """A smoke check on the analysis itself: if it finds nothing, it proves nothing."""
         methods = _client_method_paths()
@@ -348,13 +396,106 @@ class WebSocketTests(unittest.TestCase):
                 continue
             self.assertTrue(view.backend, f"view {view.route} has sockets but is marked backend-less")
 
-    def test_removing_a_socket_from_the_registry_unregisters_it(self) -> None:
-        """Guards the wiring: the paths come from the registry, not from app/main.py."""
-        self.assertEqual(len(iter_websockets()), 2)
+    def test_the_registry_declares_the_expected_two_sockets(self) -> None:
+        """A pin, not a wiring check: that every declared path is registered is the test above."""
         self.assertEqual(
             {socket.path for socket in iter_websockets()},
             {"/ws/replay/{session_id}", "/ws/replay-speak/{session_id}"},
         )
+
+    def test_declared_sockets_are_actually_used(self) -> None:
+        """The mirror: a socket no view connects to should not be declared."""
+        for view in iter_views():
+            for socket in view.websockets:
+                name = _socket_class_name(socket.path)
+                source = "\n".join(
+                    file.read_text(encoding="utf-8", errors="replace")
+                    for file in _module_files(STATIC / view.module)
+                )
+                self.assertIn(
+                    name,
+                    source,
+                    f"view {view.route} declares {socket.path} but never uses {name}",
+                )
+
+class DocumentedLineReferenceTests(unittest.TestCase):
+    """Every file:line reference in the design document must still point at what it claims.
+
+    Three review rounds in a row found stale line numbers in `docs/plugin-architecture.md`, each
+    time because a code change in the same commit shifted them. Checking that by hand does not
+    scale, so the document is read here instead: the referenced range has to contain a symbol the
+    surrounding prose names.
+
+    What it does not catch: a shift that lands inside the same symbol's own span, for example from
+    an ``if`` line to the call on the next line. A shift to unrelated code does fail.
+    """
+
+    def _references(self) -> list[tuple[int, str, int, int, str]]:
+        """(doc line number, path, first line, last line, the doc line itself)."""
+        found = []
+        lines = ARCHITECTURE_DOC.read_text(encoding="utf-8").splitlines()
+        for number, line in enumerate(lines, start=1):
+            for match in DOC_REFERENCE.finditer(line):
+                first = int(match.group(2))
+                last = int(match.group(3)) if match.group(3) else first
+                found.append((number, match.group(1), first, last, line))
+            cell = DOC_TABLE_ROW.match(line)
+            if cell:
+                # The registry table names its file in the header, so the cells hold bare numbers.
+                found.append((number, REGISTRY_RELATIVE, int(cell.group(1)), int(cell.group(1)), line))
+        return found
+
+    def test_the_document_contains_references_to_check(self) -> None:
+        """A check that silently finds nothing proves nothing."""
+        self.assertGreaterEqual(len(self._references()), 12)
+
+    def test_every_reference_resolves_to_the_symbol_it_names(self) -> None:
+        lines = ARCHITECTURE_DOC.read_text(encoding="utf-8").splitlines()
+        problems = []
+        for number, path, first, last, _doc_line in self._references():
+            target = REPO_ROOT / path
+            if not target.exists():
+                problems.append(f"line {number}: {path} does not exist")
+                continue
+            source = target.read_text(encoding="utf-8").splitlines()
+            if last > len(source):
+                problems.append(f"line {number}: {path}:{last} is past the end ({len(source)} lines)")
+                continue
+            anchors = self._anchors(lines, number)
+            if not anchors:
+                continue
+            window = "\n".join(source[first - 1:last])
+            if any(anchor in window for anchor in anchors):
+                continue
+            problems.append(
+                f"line {number}: {path}:{first}{'-' + str(last) if last != first else ''} "
+                f"mentions none of {sorted(anchors)}"
+            )
+        self.assertEqual(problems, [], "\n".join(problems))
+
+    @staticmethod
+    def _anchors(lines: list[str], number: int) -> set[str]:
+        """Symbols the prose around a reference names, used as anchors to check it against.
+
+        The window spans the line before and after, because a reference often ends a sentence whose
+        subject sits on the previous line. Path-shaped tokens are dropped: they name a file, not a
+        symbol, and the file is already part of the reference.
+        """
+        anchors: set[str] = set()
+        for line in lines[max(0, number - 2):number + 1]:
+            for token in DOC_TOKEN.findall(line):
+                token = token.strip().rstrip("()")
+                if len(token) < 3 or DOC_LINE_SUFFIX.search(token):
+                    continue
+                if token.endswith((".js", ".py", ".html", ".css")):
+                    continue
+                for candidate in (token, *token.split()):
+                    candidate = candidate.strip(".,;:")
+                    if len(candidate) < 3:
+                        continue
+                    anchors.add(candidate)
+                    anchors.add(candidate.replace("/", "."))
+        return anchors
 
 
 class GeneratedScriptTests(unittest.TestCase):
