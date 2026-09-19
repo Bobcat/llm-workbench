@@ -40,9 +40,10 @@ API_CLIENT = STATIC / "src" / "api-client.js"
 ARCHITECTURE_DOC = REPO_ROOT / "docs" / "plugin-architecture.md"
 REGISTRY_RELATIVE = "static/src/plugins/registry.js"
 DOC_REFERENCE = re.compile(r"`([A-Za-z0-9_./-]+\.(?:js|py|html|css)):(\d+)(?:-(\d+))?`")
-DOC_TABLE_ROW = re.compile(r"^\| `[A-Za-z_][A-Za-z0-9_]*` \| (\d+) \|")
+DOC_TABLE_ROW = re.compile(r"^\| `([A-Za-z_][A-Za-z0-9_]*)` \| (\d+) \|")
 DOC_TOKEN = re.compile(r"`([^`]+)`")
 DOC_LINE_SUFFIX = re.compile(r":\d+")
+LITERAL_API_PATH = re.compile(r"['\"`](/api/[^'\"`]*)['\"`]")
 
 # route, sidebar label, icon, persistent, tooltip, aliases
 EXPECTED_SIDEBAR: list[tuple[str, list[tuple]]] = [
@@ -140,9 +141,20 @@ def _client_method_paths() -> dict[str, str]:
     return methods
 
 
-def _called_paths(entry: Path, methods: dict[str, str]) -> tuple[set[str], set[str]]:
-    """The API paths a view's own code calls, plus any method name we could not resolve."""
+def _called_paths(entry: Path, methods: dict[str, str]) -> tuple[set[str], set[str], set[str]]:
+    """What a view's own code calls.
+
+    Three things come back: the paths behind the ``api.<method>()`` calls, the hand-built
+    ``/api/...`` literals, and any method name that could not be resolved. Views mostly go through
+    the client, but six of them also build URLs by hand for downloads and streams — and those were
+    invisible to this analysis until a review pointed out that an endpoint could be renamed to a
+    path nobody serves without the suite noticing.
+
+    Literals are returned as prefixes, because a hand-built URL is usually a base the view appends
+    to; the ``${...}`` part of a template is cut off.
+    """
     paths: set[str] = set()
+    prefixes: set[str] = set()
     unknown: set[str] = set()
     for file in _module_files(entry):
         source = file.read_text(encoding="utf-8", errors="replace")
@@ -151,7 +163,24 @@ def _called_paths(entry: Path, methods: dict[str, str]) -> tuple[set[str], set[s
                 paths.add(methods[name])
             else:
                 unknown.add(name)
-    return paths, unknown
+        for literal in LITERAL_API_PATH.findall(source):
+            literal = literal[: literal.find("${")] if "${" in literal else literal
+            literal = literal.rstrip("/")
+            if len(literal) > len("/api/"):
+                prefixes.add(literal)
+    return paths, prefixes, unknown
+
+
+def _prefix_is_served(prefix: str, app_paths: set[str]) -> bool:
+    """A hand-built base URL is served when a route lives underneath it."""
+    return any(
+        candidate == prefix or candidate.startswith(prefix + "/") or candidate.startswith(prefix + "{")
+        for candidate in app_paths
+    )
+
+
+def _router_paths(view) -> set[str]:
+    return {"/api" + route.path for router in view.routers for route in router.routes}
 
 
 def _is_served(path: str, app_paths: set[str]) -> bool:
@@ -179,12 +208,6 @@ def _registered_sockets() -> set[str]:
         for route in app.routes
         if route.__class__.__name__ == "APIWebSocketRoute"
     }
-
-
-def _socket_class_name(path: str) -> str:
-    """/ws/replay-speak/{session_id} -> ReplaySpeakWebSocket, the client class a view instantiates."""
-    stem = path.removeprefix("/ws/").split("/")[0]
-    return "".join(part.capitalize() for part in stem.split("-")) + "WebSocket"
 
 
 class SidebarPinTests(unittest.TestCase):
@@ -308,13 +331,28 @@ class ViewBackendTests(unittest.TestCase):
         app_paths = _app_paths()
         for view in iter_views():
             entry = STATIC / view.module
-            paths, unknown = _called_paths(entry, methods)
+            paths, prefixes, unknown = _called_paths(entry, methods)
             self.assertEqual(unknown, set(), f"view {view.route} calls unknown api methods")
             for path in sorted(paths):
                 self.assertTrue(
                     _is_served(path, app_paths),
                     f"view {view.route} calls {path}, which no mounted route serves",
                 )
+            for prefix in sorted(prefixes):
+                self.assertTrue(
+                    _prefix_is_served(prefix, app_paths),
+                    f"view {view.route} builds {prefix}/..., which no mounted route serves",
+                )
+
+    def test_the_literal_path_analysis_finds_something(self) -> None:
+        """A check on the analysis itself: six views build URLs by hand."""
+        methods = _client_method_paths()
+        with_literals = [
+            view.route
+            for view in iter_views()
+            if _called_paths(STATIC / view.module, methods)[1]
+        ]
+        self.assertGreaterEqual(len(with_literals), 4, f"only found literals in {with_literals}")
 
     def test_declared_routers_cover_every_path_the_view_calls(self) -> None:
         """The per-view half: the routers a view declares must serve what that view calls.
@@ -327,12 +365,17 @@ class ViewBackendTests(unittest.TestCase):
         for view in iter_views():
             if not view.backend:
                 continue
-            paths, _ = _called_paths(STATIC / view.module, methods)
-            declared = {"/api" + route.path for router in view.routers for route in router.routes}
+            paths, prefixes, _ = _called_paths(STATIC / view.module, methods)
+            declared = _router_paths(view)
             for path in sorted(paths):
                 self.assertTrue(
                     _is_served(path, declared),
                     f"view {view.route} calls {path}, which none of its declared routers serve",
+                )
+            for prefix in sorted(prefixes):
+                self.assertTrue(
+                    _prefix_is_served(prefix, declared),
+                    f"view {view.route} builds {prefix}/..., which none of its declared routers serve",
                 )
 
     def test_declared_routers_are_all_actually_used(self) -> None:
@@ -345,11 +388,12 @@ class ViewBackendTests(unittest.TestCase):
         for view in iter_views():
             if not view.backend:
                 continue
-            paths, _ = _called_paths(STATIC / view.module, methods)
+            paths, prefixes, _ = _called_paths(STATIC / view.module, methods)
             for router in view.routers:
                 router_paths = {"/api" + route.path for route in router.routes}
                 self.assertTrue(
-                    any(_is_served(path, router_paths) for path in paths),
+                    any(_is_served(path, router_paths) for path in paths)
+                    or any(_prefix_is_served(prefix, router_paths) for prefix in prefixes),
                     f"view {view.route} declares a router whose endpoints it never calls",
                 )
 
@@ -358,14 +402,16 @@ class ViewBackendTests(unittest.TestCase):
         for view in iter_views():
             if view.backend:
                 continue
-            paths, _ = _called_paths(STATIC / view.module, methods)
+            paths, prefixes, _ = _called_paths(STATIC / view.module, methods)
             self.assertEqual(paths, set(), f"view {view.route} is marked backend-less but calls the API")
+            self.assertEqual(prefixes, set(), f"view {view.route} is marked backend-less but builds URLs")
 
     def test_views_with_a_backend_reach_at_least_two_endpoints(self) -> None:
         """A smoke check on the analysis itself: if it finds nothing, it proves nothing."""
         methods = _client_method_paths()
         counts = {
             view.route: len(_called_paths(STATIC / view.module, methods)[0])
+            + len(_called_paths(STATIC / view.module, methods)[1])
             for view in iter_views()
             if view.backend
         }
@@ -404,18 +450,21 @@ class WebSocketTests(unittest.TestCase):
         )
 
     def test_declared_sockets_are_actually_used(self) -> None:
-        """The mirror: a socket no view connects to should not be declared."""
+        """The mirror: a socket no view connects to should not be declared.
+
+        The client class is named in the registry rather than derived from the path, so renaming a
+        client class does not turn a correct declaration into a failure.
+        """
         for view in iter_views():
             for socket in view.websockets:
-                name = _socket_class_name(socket.path)
                 source = "\n".join(
                     file.read_text(encoding="utf-8", errors="replace")
                     for file in _module_files(STATIC / view.module)
                 )
                 self.assertIn(
-                    name,
+                    socket.client,
                     source,
-                    f"view {view.route} declares {socket.path} but never uses {name}",
+                    f"view {view.route} declares {socket.path} but never uses {socket.client}",
                 )
 
 class DocumentedLineReferenceTests(unittest.TestCase):
@@ -423,26 +472,34 @@ class DocumentedLineReferenceTests(unittest.TestCase):
 
     Three review rounds in a row found stale line numbers in `docs/plugin-architecture.md`, each
     time because a code change in the same commit shifted them. Checking that by hand does not
-    scale, so the document is read here instead: the referenced range has to contain a symbol the
-    surrounding prose names.
+    scale, so the document is read here instead: the referenced range has to contain the most
+    specific symbol the surrounding prose names.
 
-    What it does not catch: a shift that lands inside the same symbol's own span, for example from
-    an ``if`` line to the call on the next line. A shift to unrelated code does fail.
+    What it does not catch, measured rather than assumed:
+
+    - a shift inside the same symbol's span, for example from an ``if`` line to the call on the
+      next line. A shift to unrelated code does fail.
+    - a reference with a wide span: ``static/index.html:7-22`` covers a sixteen-line block, so half
+      the file's positions would still contain its anchor. The tightest references leave under 1%.
+    - it reads prose with a heuristic, so it verifies that *a* symbol matches, not that the right
+      one does. The most-specific rule is what keeps a generic word like ``name`` from deciding.
     """
 
-    def _references(self) -> list[tuple[int, str, int, int, str]]:
-        """(doc line number, path, first line, last line, the doc line itself)."""
+    def _references(self) -> list[tuple[int, str, int, int, str | None]]:
+        """(doc line number, path, first line, last line, the symbol for a table row or None)."""
         found = []
         lines = ARCHITECTURE_DOC.read_text(encoding="utf-8").splitlines()
         for number, line in enumerate(lines, start=1):
             for match in DOC_REFERENCE.finditer(line):
                 first = int(match.group(2))
                 last = int(match.group(3)) if match.group(3) else first
-                found.append((number, match.group(1), first, last, line))
-            cell = DOC_TABLE_ROW.match(line)
-            if cell:
+                found.append((number, match.group(1), first, last, None))
+            row = DOC_TABLE_ROW.match(line)
+            if row:
                 # The registry table names its file in the header, so the cells hold bare numbers.
-                found.append((number, REGISTRY_RELATIVE, int(cell.group(1)), int(cell.group(1)), line))
+                # The anchor is the symbol in that row: a window around a table row is its
+                # neighbouring rows, which made all ten adjacent swaps pass.
+                found.append((number, REGISTRY_RELATIVE, int(row.group(2)), int(row.group(2)), row.group(1)))
         return found
 
     def test_the_document_contains_references_to_check(self) -> None:
@@ -452,7 +509,7 @@ class DocumentedLineReferenceTests(unittest.TestCase):
     def test_every_reference_resolves_to_the_symbol_it_names(self) -> None:
         lines = ARCHITECTURE_DOC.read_text(encoding="utf-8").splitlines()
         problems = []
-        for number, path, first, last, _doc_line in self._references():
+        for number, path, first, last, row_symbol in self._references():
             target = REPO_ROOT / path
             if not target.exists():
                 problems.append(f"line {number}: {path} does not exist")
@@ -461,41 +518,64 @@ class DocumentedLineReferenceTests(unittest.TestCase):
             if last > len(source):
                 problems.append(f"line {number}: {path}:{last} is past the end ({len(source)} lines)")
                 continue
-            anchors = self._anchors(lines, number)
+            anchors = self._anchors(lines, number, row_symbol, source)
             if not anchors:
+                problems.append(
+                    f"line {number}: the prose around {path}:{first} names no symbol that {path} contains"
+                )
                 continue
-            window = "\n".join(source[first - 1:last])
-            if any(anchor in window for anchor in anchors):
-                continue
-            problems.append(
-                f"line {number}: {path}:{first}{'-' + str(last) if last != first else ''} "
-                f"mentions none of {sorted(anchors)}"
-            )
+            # The most specific anchor carries the check: the symbol occurring least in the file.
+            # Without this, a generic word like `name` decides, and a wide span around it matches
+            # half the file.
+            anchor = min(anchors, key=lambda candidate: (source.count(candidate), -len(candidate)))
+            if anchor not in "\n".join(source[first - 1:last]):
+                problems.append(
+                    f"line {number}: {path}:{first}{'-' + str(last) if last != first else ''} "
+                    f"does not mention {anchor!r}"
+                )
         self.assertEqual(problems, [], "\n".join(problems))
 
     @staticmethod
-    def _anchors(lines: list[str], number: int) -> set[str]:
-        """Symbols the prose around a reference names, used as anchors to check it against.
+    def _anchors(
+        lines: list[str],
+        number: int,
+        row_symbol: str | None,
+        source: list[str],
+    ) -> set[str]:
+        """Symbols the prose around a reference names, kept only if the file actually contains them.
 
         The window spans the line before and after, because a reference often ends a sentence whose
         subject sits on the previous line. Path-shaped tokens are dropped: they name a file, not a
         symbol, and the file is already part of the reference.
         """
-        anchors: set[str] = set()
-        for line in lines[max(0, number - 2):number + 1]:
-            for token in DOC_TOKEN.findall(line):
-                token = token.strip().rstrip("()")
-                if len(token) < 3 or DOC_LINE_SUFFIX.search(token):
-                    continue
-                if token.endswith((".js", ".py", ".html", ".css")):
-                    continue
-                for candidate in (token, *token.split()):
-                    candidate = candidate.strip(".,;:")
-                    if len(candidate) < 3:
+        candidates: set[str] = set()
+        if row_symbol:
+            candidates.add(row_symbol)
+        else:
+            # The window spans the line before and after, because a reference often ends a sentence
+            # whose subject sits on the previous line. Table rows are skipped unless they are the
+            # reference's own line: a neighbour row names a different symbol, and a more specific
+            # one at that, so it would decide the check.
+            own = lines[number - 1] if 0 < number <= len(lines) else ""
+            window = [own] + [
+                line
+                for line in lines[max(0, number - 2):number]
+                if not line.startswith("|")
+            ]
+            for line in window:
+                for token in DOC_TOKEN.findall(line):
+                    token = token.strip().rstrip("()")
+                    if len(token) < 3 or DOC_LINE_SUFFIX.search(token):
                         continue
-                    anchors.add(candidate)
-                    anchors.add(candidate.replace("/", "."))
-        return anchors
+                    if token.endswith((".js", ".py", ".html", ".css")):
+                        continue
+                    for candidate in (token, *token.split()):
+                        candidate = candidate.strip(".,;:")
+                        if len(candidate) >= 3:
+                            candidates.add(candidate)
+                            candidates.add(candidate.replace("/", "."))
+        whole = "\n".join(source)
+        return {candidate for candidate in candidates if candidate in whole}
 
 
 class GeneratedScriptTests(unittest.TestCase):

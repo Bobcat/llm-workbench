@@ -229,22 +229,31 @@ Gebouwd:
    een subprocess bij `app/plugins.py` en stubt daarmee de global, want een tweede kopie in JS is
    precies wat deze fase opheft.
 
-Deze drie zitten in `tests/test_plugin_registry.py` (26 tests) en
+Deze drie zitten in `tests/test_plugin_registry.py` (27 tests) en
 `tests/js/plugin-registry.test.mjs` (4 tests). De padaanalyse wordt in **beide richtingen**
 getoetst — een view die een router mist én een view die een router declareert die ze nooit
-aanroept — en dat geldt ook voor de websockets. Alle toetsen zijn mutatie-gecontroleerd: één router
-niet mounten laat drie tests falen, waaronder de padaanalyse tegen de gemounte app; een router
-verwisselen voor die van een andere view faalt op de padaanalyse tegen de eigen declaratie; een
-overbodige router of socket erbij zetten faalt op de spiegeltoets; een sidebarlabel hernoemen faalt
-op de pin. De browsercheck controleert daarnaast dat de sidebar écht uit de gegenereerde global
-komt, en dat een pluginlijst die niet aankomt zichtbaar op het scherm komt in plaats van als lege
-schil.
+aanroept — en dat geldt ook voor de websockets. Ze dekt zowel de `api.<methode>()`-aanroepen als
+de URL's die zes views met de hand bouwen; die laatsten waren onzichtbaar tot een review liet zien
+dat je een endpoint naar een niet-bestaand pad kon hernoemen zonder dat de suite iets zei. Voor de
+websockets draagt de registratie de naam van de clientklasse in plaats van hem uit het pad af te
+leiden: consistent hernoemen blijft groen, alleen in JS hernoemen faalt met de ontbrekende naam
+erbij.
+
+Alle toetsen zijn mutatie-gecontroleerd: één router niet mounten laat drie tests falen, waaronder
+de padaanalyse tegen de gemounte app; een router verwisselen voor die van een andere view faalt op
+de padaanalyse tegen de eigen declaratie; een overbodige router of socket erbij zetten faalt op de
+spiegeltoets; een literaal `/api`-pad naar iets onbestaanbaars faalt; een sidebarlabel hernoemen
+faalt op de pin. De browsercheck controleert daarnaast dat de sidebar écht uit de gegenereerde
+global komt, en dat een pluginlijst die niet aankomt zichtbaar op het scherm komt in plaats van als
+lege schil.
 
 De regelverwijzingen in dit document worden ook getoetst. Drie reviewrondes op rij vonden hier
 verouderde nummers, elke keer doordat een codewijziging in dezelfde commit ze verschoof. Die
-klasse fouten is nu mechanisch: elke `bestand:regel` moet een symbool bevatten dat de tekst
-eromheen noemt. Een verschuiving naar andere code faalt daarmee; een verschuiving binnen de spanne
-van hetzelfde symbool niet — dat staat in de docstring van de toets.
+klasse fouten is nu mechanisch: elke `bestand:regel` moet het meest specifieke symbool bevatten dat
+de tekst eromheen noemt. Dat "meest specifieke" is er omdat een algemeen woord als `name` anders de
+toets zou dragen: de zwakste prose-verwijzing ging daarmee van 56% naar 8% van de posities die een
+verschuiving zouden overleven. Wat de toets niet vangt staat in zijn docstring, met de gemeten
+marges erbij.
 
 ### Fase 3 — per-plugin assets en enable/disable ⬜
 

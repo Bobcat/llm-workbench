@@ -53,10 +53,17 @@ FRONTEND_GLOBAL = "__LLM_WORKBENCH_PLUGINS__"
 
 @dataclass(frozen=True)
 class ViewSocket:
-    """A websocket a view connects to: the only application routes outside /api."""
+    """A websocket a view connects to: the only application routes outside /api.
+
+    ``client`` names the browser class that connects. The check that a declared socket is really
+    used reads that name instead of deriving it from the path: deriving it coupled this registry to
+    a JS naming convention nobody enforces, so renaming ``ReplaySpeakWebSocket`` consistently
+    failed the test while the declaration was still correct.
+    """
 
     path: str
     endpoint: Callable[..., Awaitable[None]]
+    client: str
 
 
 @dataclass(frozen=True)
@@ -109,7 +116,11 @@ PLUGINS: tuple[Plugin, ...] = (
                 module="src/workflows/replay/index.js",
                 factory="createReplayView",
                 routers=(replay_router, replay_defaults_router, llm_pool_router, translation_router),
-                websockets=(ViewSocket("/ws/replay/{session_id}", replay_socket_endpoint),),
+                websockets=(ViewSocket(
+                        "/ws/replay/{session_id}",
+                        replay_socket_endpoint,
+                        client="ReplayWebSocket",
+                    ),),
             ),
         ),
     ),
@@ -125,7 +136,11 @@ PLUGINS: tuple[Plugin, ...] = (
                 module="src/workflows/replay-speak/index.js",
                 factory="createReplaySpeakView",
                 routers=(realtime_tts_router, tts_pool_router),
-                websockets=(ViewSocket("/ws/replay-speak/{session_id}", replay_speak_socket_endpoint),),
+                websockets=(ViewSocket(
+                        "/ws/replay-speak/{session_id}",
+                        replay_speak_socket_endpoint,
+                        client="ReplaySpeakWebSocket",
+                    ),),
             ),
         ),
     ),
