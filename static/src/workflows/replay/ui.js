@@ -1,10 +1,9 @@
 import { createDialogDragController } from '../../../foundation/spa-foundation/index.js';
+import { publishWorkflowBusy } from '../../shared/workflow-activity.js';
 
-function broadcastReplayStatus(status) {
-  window.dispatchEvent(new CustomEvent('llm-workbench:replay-status', {
-    detail: {status: String(status || 'idle').toLowerCase()},
-  }));
-}
+// The sidebar indicator is the shell's business. Announce that a replay is running rather than
+// teaching the shell about this view's status values.
+const REPLAY_WORKFLOW_ID = 'replay-translate';
 
 function formatStatusLabel(status) {
   const normalized = String(status || 'idle').toLowerCase();
@@ -28,7 +27,7 @@ export function setStatusBadge(container, status) {
   const normalized = String(status || 'idle').toLowerCase();
   badge.textContent = formatStatusLabel(normalized);
   badge.className = `replay-status-badge status-${statusClassToken(normalized)}`;
-  broadcastReplayStatus(normalized);
+  publishWorkflowBusy(REPLAY_WORKFLOW_ID, normalized === 'playing');
 }
 
 export function syncSelectTitle(select) {

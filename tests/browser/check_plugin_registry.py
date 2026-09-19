@@ -311,6 +311,36 @@ def verify(base: str, checks: Checks) -> None:
         raced.close()
         checks.note("race: away-and-back mounts one view and logs nothing at error level")
 
+        # --- the sidebar busy indicator runs through the shared event for every view ---
+        # The shell used to special-case the replay view with an event of its own; this pins the
+        # generic path that replaced it, and that the retired event no longer does anything.
+        busy = browser.new_page()
+        busy.goto(f"{base}/#replay-translate")
+        busy.wait_for_selector("#appRoot > *", timeout=10000)
+
+        def dispatch(name: str, detail: dict) -> None:
+            busy.evaluate(
+                "([name, detail]) => window.dispatchEvent(new CustomEvent(name, { detail }))",
+                [name, detail],
+            )
+
+        dispatch("llm-workbench:workflow-busy", {"workflow": "replay-translate", "busy": True})
+        marked = busy.get_attribute('li[data-route="replay-translate"]', "class") or ""
+        checks.check("is-running" in marked, "busy event did not mark the replay sidebar item")
+
+        dispatch("llm-workbench:workflow-busy", {"workflow": "replay-translate", "busy": False})
+        cleared = busy.get_attribute('li[data-route="replay-translate"]', "class") or ""
+        checks.check("is-running" not in cleared, "busy event did not clear the replay sidebar item")
+
+        dispatch("llm-workbench:replay-status", {"status": "playing"})
+        legacy = busy.get_attribute('li[data-route="replay-translate"]', "class") or ""
+        checks.check(
+            "is-running" not in legacy,
+            "the retired replay-status event still marks the sidebar item",
+        )
+        busy.close()
+        checks.note("busy indicator: the shared event marks and clears, the retired event is ignored")
+
         checks.check(not page_errors, f"page errors: {page_errors}")
         checks.check(not import_failures, f"dynamic import failures: {import_failures}")
         browser.close()
@@ -341,7 +371,8 @@ def main() -> int:
             print(f"  - {problem}")
         return 1
     print("\nOK: sidebar, routes, aliases, persistence, theming, placeholder, error panel, retry,")
-    print("    no refetch on a deterministic failure, and no error-level log on a discarded view.")
+    print("    busy indicator, no refetch on a deterministic failure, and no error-level log")
+    print("    on a discarded view.")
     return 0
 
 

@@ -27,7 +27,6 @@ document.body.append(sidebarTooltip);
 const SHELL_STORAGE_KEY = 'llm-workbench.shell';
 const initialShell = window.__LLM_WORKBENCH_INITIAL_SHELL__ || {};
 let activePreset = initialShell.preset === 'dark' ? 'dark' : 'modern';
-let replayIsRunning = false;
 
 // State - start met open sidebar
 const shellState = new ShellState({
@@ -89,12 +88,6 @@ function renderWorkflows() {
   updateSidebarScrollState();
 }
 
-function updateReplaySidebarState() {
-  const replayItem = workflowList.querySelector('[data-route="replay-translate"]');
-  if (!replayItem) return;
-  replayItem.classList.toggle('is-running', replayIsRunning);
-}
-
 // Sidebar entries whose view reported work in flight. Held here rather than in the views: the
 // indicator has to stay correct while you are looking at another view, and renderWorkflows()
 // rebuilds the list markup, so the classes are re-applied from this set afterwards.
@@ -103,7 +96,6 @@ const busyWorkflows = new Set();
 function updateWorkflowRunningState() {
   workflowList.querySelectorAll('[data-route]').forEach((item) => {
     const route = String(item.dataset.route || '');
-    if (route === 'replay-translate') return;  // owns its own signal, below
     item.classList.toggle('is-running', busyWorkflows.has(route));
   });
 }
@@ -115,7 +107,6 @@ const router = new RouterCore(appRoot, {
       const active = item.dataset.route === to.view;
       item.classList.toggle('active', active);
     });
-    updateReplaySidebarState();
   }
 });
 
@@ -291,12 +282,6 @@ workflowList.addEventListener('scroll', () => {
 
 window.addEventListener('resize', updateSidebarScrollState);
 
-window.addEventListener('llm-workbench:replay-status', (event) => {
-  const status = String(event?.detail?.status || 'idle').toLowerCase();
-  replayIsRunning = status === 'playing';
-  updateReplaySidebarState();
-});
-
 window.addEventListener(WORKFLOW_BUSY_EVENT, (event) => {
   const workflow = String(event?.detail?.workflow || '');
   if (!workflow) return;
@@ -313,7 +298,6 @@ function init() {
 
   bindMobileSidebarDismiss(shellState, sidebar, 600);
   renderWorkflows();
-  updateReplaySidebarState();
   updateWorkflowRunningState();  // renderWorkflows() rebuilt the markup: re-apply from the set
 
   router.bindPopState({
