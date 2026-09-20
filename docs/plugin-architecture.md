@@ -1,7 +1,7 @@
 # Plugin-architectuur — beslissingen en fase-afbakening
 
-Status: fase 1, 2 en 3 staan op `main` (fase 3 via PR #17). Fase 4 is op deze branch gebouwd en
-wacht op review; fase 5 is niet begonnen.
+Status: fase 1 tot en met 4 staan op `main` (fase 3 via PR #17, fase 4 via PR #18). Fase 5 is niet
+begonnen.
 Anker: sectie 1 en 2 beschrijven de code op `main`. Fase 1 landde met `783f0bd` en de
 replay-opruiming met `8d73503`; de pdf-fix `a0f79d8` staat op `main` maar raakt deze architectuur
 niet.
