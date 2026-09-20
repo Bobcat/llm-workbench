@@ -302,7 +302,13 @@ Beslissingen:
 
   Een id dat de registratie niet kent is een fout, en een lege lijst ook: een typefout of een
   vergeten lijst ziet er anders uit als een werkende installatie waar toevallig een categorie mist.
-  Geen instellingenvenster.
+  Geen instellingenvenster. `LLM_WORKBENCH_SETTINGS_FILE` wijst naar een ander bestand, met
+  `local.json` daarnaast; dat is voor een deployment die zijn instellingen buiten de repo houdt, en
+  het is hoe de browsercheck tegen de gecommitte default draait in plaats van tegen de machine.
+- **De drie suites zijn hermetisch voor die lokale keuze.** `config/local.json` is gitignored, dus
+  een installatie die categorieën uitzet mag de tests niet rood maken: pytest en de JS-suite lezen
+  een kopie van het gecommitte bestand zonder `local.json` ernaast, en de browsercheck start de
+  workbench met `LLM_WORKBENCH_SETTINGS_FILE` op zo'n kopie.
 - **Alleen hele categorieën**, geen losse views. De regel "plugin-uit wint van view-aan" uit een
   eerdere versie van dit document vervalt daarmee.
 - **De startroute is de eerste view van de eerste categorie die aan staat.** Geen instelling nodig:

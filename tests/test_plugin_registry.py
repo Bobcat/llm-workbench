@@ -21,7 +21,10 @@ from __future__ import annotations
 import contextlib
 import importlib
 import json
+import os
 import re
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -31,7 +34,6 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.plugins import (
-    DEFAULT_SETTINGS_PATH,
     PLUGINS,
     enabled_plugins,
     frontend_payload,
@@ -43,6 +45,10 @@ from app.plugins import (
 REPO_ROOT = Path(__file__).resolve().parent.parent
 STATIC = REPO_ROOT / "static"
 API_CLIENT = STATIC / "src" / "api-client.js"
+# The committed defaults, read directly rather than through app.plugins: that module resolves the
+# path through `LLM_WORKBENCH_SETTINGS_FILE` and merges `config/local.json`, and the pins below are
+# about what ships.
+SHIPPED_SETTINGS = REPO_ROOT / "config" / "settings.json"
 
 # The design document points at code by file and line. Those references are checked below, because
 # three review rounds in a row found them stale after a code change shifted them.
@@ -137,6 +143,16 @@ def _settings(payload: dict[str, object], local: dict[str, object] | None = None
         if local is not None:
             (Path(tmp) / "local.json").write_text(json.dumps(local), encoding="utf-8")
         yield path
+
+
+def _shipped_settings():
+    """The committed settings in a directory of their own, with nothing beside them.
+
+    A machine can switch categories off in `config/local.json`, which is gitignored, or point
+    `LLM_WORKBENCH_SETTINGS_FILE` at another file. The pins below are about what ships, so they
+    must not depend on either: a restricted install is a normal install, not a broken one.
+    """
+    return _settings(json.loads(SHIPPED_SETTINGS.read_text(encoding="utf-8")))
 
 
 def _module_files(entry: Path) -> set[Path]:
@@ -307,7 +323,9 @@ class RegistryInvariantTests(unittest.TestCase):
             self.assertIn(target, routes, f"alias {alias} points at a missing route {target}")
 
     def test_payload_carries_only_frontend_data(self) -> None:
-        for plugin in frontend_payload():
+        with _shipped_settings() as settings_path:
+            payload = frontend_payload(settings_path)
+        for plugin in payload:
             self.assertEqual(set(plugin), {"id", "label", "auxiliary", "views"})
             for view in plugin["views"]:
                 # The exact key set, so a field that cannot be serialised fails here instead of at
@@ -488,11 +506,16 @@ class PluginSwitchTests(unittest.TestCase):
     """
 
     def test_the_shipped_settings_switch_nothing_off(self) -> None:
-        """The committed default: every category in the menu, exactly as before this switch."""
-        committed = json.loads(DEFAULT_SETTINGS_PATH.read_text(encoding="utf-8"))
+        """The committed default: every category in the menu, exactly as before this switch.
+
+        Measured on a copy of the committed file with nothing beside it, so a machine that
+        switched categories off in `config/local.json` does not turn this suite red.
+        """
+        committed = json.loads(SHIPPED_SETTINGS.read_text(encoding="utf-8"))
         self.assertIn("plugins", committed)
         self.assertNotIn("enabled", committed["plugins"])
-        self.assertEqual(enabled_plugins(DEFAULT_SETTINGS_PATH), PLUGINS)
+        with _shipped_settings() as settings_path:
+            self.assertEqual(enabled_plugins(settings_path), PLUGINS)
 
     def test_only_the_named_categories_are_on(self) -> None:
         with _settings({"plugins": {"enabled": ["image-pool"]}}) as settings_path:
@@ -537,6 +560,29 @@ class PluginSwitchTests(unittest.TestCase):
             with self.assertRaises(ValueError) as raised:
                 enabled_plugins(settings_path)
         self.assertIn("empty", str(raised.exception))
+
+    def test_the_settings_file_can_be_pointed_elsewhere(self) -> None:
+        """`LLM_WORKBENCH_SETTINGS_FILE` decides which file is read.
+
+        That is how a deployment keeps its settings outside the repo, and how the browser check
+        drives the workbench against the shipped defaults. A subprocess, because the path is
+        resolved when `app.plugins` is imported.
+        """
+        with _settings({"plugins": {"enabled": ["llm-pool"]}}) as settings_path:
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-c",
+                    "import json; from app.plugins import frontend_payload;"
+                    " print(json.dumps([plugin['id'] for plugin in frontend_payload()]))",
+                ],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                env={**os.environ, "LLM_WORKBENCH_SETTINGS_FILE": str(settings_path)},
+            )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout), ["llm-pool"])
 
     def test_the_generated_script_carries_only_the_enabled_categories(self) -> None:
         with _settings({"plugins": {"enabled": ["image-pool"]}}) as settings_path:

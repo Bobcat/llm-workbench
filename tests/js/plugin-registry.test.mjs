@@ -10,8 +10,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -38,9 +39,23 @@ function pythonExecutable() {
 
 // The same payload /plugins.js is generated from, so this suite never keeps a second copy of the
 // sidebar. If Python cannot answer, that is a failure, not a skip.
+//
+// The payload comes from a copy of config/settings.json with nothing beside it: a machine can
+// switch categories off in config/local.json, and this suite has to cover the shipped list on
+// every machine. A restricted install is a normal install, not a broken one.
+const SHIPPED_SETTINGS_DIR = mkdtempSync(path.join(tmpdir(), 'llm-workbench-plugins-'));
+const SHIPPED_SETTINGS = path.join(SHIPPED_SETTINGS_DIR, 'settings.json');
+copyFileSync(path.join(REPO_ROOT, 'config', 'settings.json'), SHIPPED_SETTINGS);
+process.on('exit', () => rmSync(SHIPPED_SETTINGS_DIR, { recursive: true, force: true }));
+
 const payload = JSON.parse(execFileSync(
   pythonExecutable(),
-  ['-c', 'import json; from app.plugins import frontend_payload; print(json.dumps(frontend_payload()))'],
+  [
+    '-c',
+    'import json, sys; from app.plugins import frontend_payload;'
+    + ' print(json.dumps(frontend_payload(sys.argv[1])))',
+    SHIPPED_SETTINGS,
+  ],
   { cwd: REPO_ROOT, encoding: 'utf8' },
 ));
 globalThis.__LLM_WORKBENCH_PLUGINS__ = payload;
@@ -51,7 +66,14 @@ const { PLUGINS, WORKFLOWS, ROUTE_ALIASES } = registry;
 test('the registry reads the payload Python generated', () => {
   assert.ok(Array.isArray(PLUGINS) && PLUGINS.length > 0, 'no plugins in the payload');
   assert.equal(WORKFLOWS.length, payload.flatMap((plugin) => plugin.views).length);
-  assert.ok(ROUTE_ALIASES.size > 0, 'no aliases in the payload');
+  const expected = payload.flatMap((plugin) => plugin.views.flatMap(
+    (view) => (view.aliases || []).map((alias) => [alias, view.route]),
+  ));
+  assert.deepEqual(
+    [...ROUTE_ALIASES].sort(),
+    expected.sort(),
+    'the alias table does not match the payload',
+  );
 });
 
 test('every view module exists and exports its factory', async () => {

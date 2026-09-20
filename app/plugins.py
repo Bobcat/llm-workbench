@@ -12,9 +12,9 @@ Pool read their model list from ``/api/models`` — and the addresses they need 
 another category's.
 
 Which categories are on is ``plugins.enabled`` in ``config/settings.json``, with
-``config/local.json`` as override. See :func:`enabled_plugins`. Keeping the switch in settings
-rather than here is what lets the regression pin in ``tests/test_plugin_registry.py`` keep pinning
-a constant.
+``config/local.json`` beside it as override; ``LLM_WORKBENCH_SETTINGS_FILE`` points at another file
+altogether. See :func:`enabled_plugins`. Keeping the switch in settings rather than here is what
+lets the regression pin in ``tests/test_plugin_registry.py`` keep pinning a constant.
 
 Decisions behind the shape, and what was rejected, are in ``docs/plugin-architecture.md``.
 """
@@ -22,11 +22,21 @@ Decisions behind the shape, and what was rejected, are in ``docs/plugin-architec
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
 FRONTEND_GLOBAL = "__LLM_WORKBENCH_PLUGINS__"
-DEFAULT_SETTINGS_PATH = Path(__file__).resolve().parents[1] / "config" / "settings.json"
+
+# The environment variable is how a deployment keeps its settings outside the repo, and how the
+# browser check drives the workbench against the shipped defaults on a machine that has switched
+# categories off in config/local.json.
+DEFAULT_SETTINGS_PATH = Path(
+    os.environ.get(
+        "LLM_WORKBENCH_SETTINGS_FILE",
+        str(Path(__file__).resolve().parents[1] / "config" / "settings.json"),
+    )
+)
 
 
 @dataclass(frozen=True)

@@ -3,7 +3,9 @@
 
 Not a pytest test: it needs a running server and a Chromium build, so it is a script you run
 deliberately. It starts the workbench itself on a free port, drives it with Playwright, and
-stops the server again.
+stops the server again. It runs that server against the shipped `config/settings.json`, through
+`LLM_WORKBENCH_SETTINGS_FILE`, so a machine that switched categories off in `config/local.json`
+does not hide the routes this check walks.
 
     ./.venv/bin/python tests/browser/check_plugin_registry.py
 
@@ -13,9 +15,12 @@ and prints every problem it found.
 from __future__ import annotations
 
 import json
+import os
+import shutil
 import socket
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.request
 from pathlib import Path
@@ -513,10 +518,15 @@ def verify(base: str, checks: Checks) -> None:
 def main() -> int:
     port = free_port()
     base = f"http://127.0.0.1:{port}"
+    # The shipped defaults, in a file of their own: see the module docstring.
+    shipped_dir = tempfile.mkdtemp(prefix="llm-workbench-shipped-")
+    shipped = Path(shipped_dir) / "settings.json"
+    shipped.write_bytes((REPO_ROOT / "config" / "settings.json").read_bytes())
     server = subprocess.Popen(
         [sys.executable, "-m", "uvicorn", "app.main:app",
          "--host", "127.0.0.1", "--port", str(port), "--log-level", "warning"],
         cwd=REPO_ROOT,
+        env={**os.environ, "LLM_WORKBENCH_SETTINGS_FILE": str(shipped)},
     )
     checks = Checks()
     try:
@@ -528,6 +538,7 @@ def main() -> int:
             server.wait(timeout=10)
         except subprocess.TimeoutExpired:
             server.kill()
+        shutil.rmtree(shipped_dir, ignore_errors=True)
 
     if checks.problems:
         print(f"\nPROBLEMS ({len(checks.problems)}):")

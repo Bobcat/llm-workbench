@@ -239,7 +239,10 @@ registry order. The ids are `realtime-translation`, `realtime-tts`, `llm-pool`,
 `tts-pool`, `image-pool`, `video-pool`, `translation-services`, and `developer`
 (the Icons item). An unknown id, or an empty list, is refused instead of quietly
 producing a shorter menu. Only whole categories switch, and a page reload is
-enough: the file is read per request.
+enough: the file is read per request. `LLM_WORKBENCH_SETTINGS_FILE` points the
+workbench at another file altogether, with `local.json` looked up beside it;
+that is how a deployment keeps its settings outside the repo, and how
+`tests/browser/check_plugin_registry.py` runs against the shipped defaults.
 
 Configured service connections:
 
@@ -258,6 +261,7 @@ Environment overrides:
 | `TTS_POOL_API_BASE_URL` | `tts_pool.base_url` |
 | `IMAGE_POOL_API_BASE_URL` | `image_pool.base_url` |
 | `TRANSLATION_SERVICES_API_BASE_URL` | `translation_services.base_url` |
+| `LLM_WORKBENCH_SETTINGS_FILE` | which settings file is read, instead of `config/settings.json` |
 
 Replay defaults also live under `replay` in `config/settings.json`.
 
@@ -350,6 +354,8 @@ so it needs the venv (uvicorn) and a Playwright Chromium build.
 It walks every route and alias and covers the paths that only exist in the
 browser: the loading placeholder, the error panel for a view that cannot be
 fetched, the retry after such a failure, and a menu with a single category in it.
+It runs the workbench against the shipped `config/settings.json`, so a machine
+that switched categories off in `config/local.json` does not hide routes from it.
 
 ## License
 
