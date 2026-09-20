@@ -217,26 +217,25 @@ Gebouwd:
 
 1. *De declaratie.* Elke view verwijst naar minstens één router of is expliciet als backend-loos
    gemarkeerd — het doel en de toets op dezelfde granulariteit.
-2. *Het bewijs, in twee stappen.* Lees uit `static/src/api-client.js` de tabel methode → pad; alle
-   101 methodes hebben een statisch pad. Verzamel vervolgens in de **eigen** bestanden van de view
-   de aangeroepen `api.<methode>()`-namen en controleer twee dingen: dat elk gevonden pad door een
-   *gemounte* route wordt bediend, en dat elk pad door een router wordt bediend die **deze view
-   zelf declareert**.
+2. *Het bewijs, in twee stappen.* Het eerste was een tabel methode → pad uit
+   `static/src/api-client.js` — dat bestand bestaat sinds fase 4 niet meer — met voor alle 101
+   methodes een statisch pad. Het tweede verzamelde in de **eigen** bestanden van de view de
+   aangeroepen `api.<methode>()`-namen en controleerde twee dingen: dat elk gevonden pad door een
+   *gemounte* route werd bediend, en dat elk pad door een router werd bediend die **deze view zelf
+   declareerde**.
 
    Die tweede stap is er na de review van PR #16 bijgekomen. Alleen tegen de gemounte app meten
    bleek te grof: vervang je bij `pdf-anatomy` de router door die van `chat`, dan blijven beide
    routers gemount en bleef de suite groen. Tegen de eigen declaratie meten vangt dat, en het is
    dezelfde granulariteit als het doel.
 
-   De gedeelde client moet buiten die verzameling blijven. Hij zit in elke view-subtree — elke view
-   importeert hem — dus een wandeling over de subtree vindt in *elke* view alle 101 paden, waarmee
-   de toets per view niets meer zegt. De paden staan niet in de views zelf: die roepen
-   `api.runChatPrompt()` aan. Gemeten over de 20 views levert de toets zoals hier beschreven
-   **0 paden voor `icons`** en **2 tot 15 paden voor de andere 19**, wat precies is wat je wilt
-   zien.
-
-   Tot fase 4 rustte deze toets op `api-client.js`; die tabel is er in fase 4 uitgehaald, zodat de
-   paden nu in de subtree van de view zelf liggen. Zie de fase-4-sectie.
+   In fase 2 moest de gedeelde client buiten die verzameling blijven — hij zat in elke view-subtree,
+   dus een wandeling vond in *elke* view alle 101 paden. Sinds fase 4 ligt de client van de eigen
+   plugin in de subtree, plus wat die uit `shared/` haalt, dus de analyse vindt de paden die deze
+   view echt gebruikt. Gemeten over de 20 views: **0 paden voor `icons`** en **5 tot 25 paden voor de
+   andere 19**, met `tts-pool-models`, `video-pool-models` en `video-generation` als laagste drie
+   (elk 5). Een view met één client haalt dus de ondergrens en een view met veel endpoints de
+   bovengrens, wat precies is wat je wilt zien.
 3. *De pin is verhuisd.* De handgeschreven regressiepin staat nu in Python, waar de bron van
    waarheid is; de JS-suite houdt wat alleen JS kan controleren (module resolvet, factory
    geëxporteerd, icoon in de sprite). Die twee zijn geen duplicaat: de pin ontleent zijn waarde
@@ -402,7 +401,8 @@ geschreven staat en de toets meet wat hij zegt te meten. Daar is één toets bij
 view haalt de client van een andere plugin binnen.
 
 **Scopegrens:** geen wijziging aan de endpoints zelf, geen wijziging aan de views buiten hun
-imports, geen plugin-pakketten (dat is fase 5), geen bundelstap.
+imports en de aanroepen van de vier gedeelde methoden (veertien regels in elf bestanden), geen
+plugin-pakketten (dat is fase 5), geen bundelstap.
 
 **Open punt dat deze fase zelf raakt:** `getTtsModels` staat in de client maar wordt door geen enkele
 view aangeroepen (gemeten). Die verdwijnt in deze fase in plaats van mee te verhuizen.
