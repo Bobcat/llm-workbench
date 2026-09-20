@@ -3,8 +3,8 @@
 //
 // The list itself lives in `app/plugins.py` and reaches the browser as `window.<GLOBAL>`, served
 // at `/plugins.js` and loaded with a blocking script tag in static/index.html before this module
-// runs. Python is the source of truth because it is also what mounts the routers, so the route
-// table and the sidebar cannot drift apart.
+// runs. Python owns the menu; the routers stay with the core (app/router.py) and are mounted
+// whatever this list holds, so a category can be switched off without breaking another.
 //
 // The payload is deliberately data-only — strings, booleans and arrays, no functions.
 //

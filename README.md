@@ -137,8 +137,9 @@ This repo does not own:
 - `static/index.html` is the browser entrypoint.
 - `static/app.js` wires the shell: sidebar, routing, theme, and view lifecycle.
 - `app/plugins.py` is the plugin registry: which sidebar categories and views
-  exist, which routers serve them, and which retired route names still resolve.
-  It is what `app/router.py` mounts and what `/plugins.js` is generated from.
+  exist, and which retired route names still resolve. It is what `/plugins.js` is
+  generated from. The routers belong to the core: `app/router.py` mounts all of
+  them, always, so switching a category off never removes an endpoint.
 - `static/src/plugins/registry.js` turns the generated list into the sidebar, the
   route table and the lazy view loader.
 - `static/foundation/spa-foundation/` contains the shared shell, routing, modal,
@@ -195,14 +196,16 @@ in memory. Image training datasets and generated training artifacts live under
 The backend does not load AI models directly. Model inference and model
 lifecycle are delegated to local pool or service processes.
 
-The sidebar comes from `app/plugins.py`: the registry names each plugin's views
-and the routers behind them, and FastAPI serves it as a generated `/plugins.js`
-that `static/index.html` loads before `app.js`. A view is loaded on first
-activation instead of at startup. Service base URLs are already configurable. The
-intended direction is to serve the enabled plugin list from settings while keeping view implementations
-where they are. That would allow an installation to expose only the consoles it
-needs, such as an LLM Pool-only workbench; it changes the source of the plugin
-list, not the loader.
+The sidebar comes from `app/plugins.py`: the registry names each plugin's views,
+and FastAPI serves the enabled ones as a generated `/plugins.js` that
+`static/index.html` loads before `app.js`. A view is loaded on first activation
+instead of at startup.
+
+A plugin is a menu entry and nothing more. `app/router.py` mounts every router and
+`app/main.py` registers both websockets, whatever the settings say, so switching a
+category off changes the sidebar and nothing else. An Image Pool-only workbench
+therefore still reaches the LLM Pool service for the model list that five views
+outside LLM Pool use.
 
 ## Configuration
 
@@ -219,6 +222,24 @@ config/local.json
 ```
 
 `config/local.json` is ignored by git.
+
+Which sidebar categories the workbench shows:
+
+```json
+{
+  "plugins": {
+    "enabled": ["image-pool"]
+  }
+}
+```
+
+Leave `plugins.enabled` out and every category is in the menu, so a category
+added to the registry appears by itself. Name the list and only those ids are, in
+registry order. The ids are `realtime-translation`, `realtime-tts`, `llm-pool`,
+`tts-pool`, `image-pool`, `video-pool`, `translation-services`, and `developer`
+(the Icons item). An unknown id, or an empty list, is refused instead of quietly
+producing a shorter menu. Only whole categories switch, and a page reload is
+enough: the file is read per request.
 
 Configured service connections:
 
@@ -328,7 +349,7 @@ so it needs the venv (uvicorn) and a Playwright Chromium build.
 
 It walks every route and alias and covers the paths that only exist in the
 browser: the loading placeholder, the error panel for a view that cannot be
-fetched, and the retry after such a failure.
+fetched, the retry after such a failure, and a menu with a single category in it.
 
 ## License
 

@@ -12,10 +12,12 @@ and prints every problem it found.
 """
 from __future__ import annotations
 
+import json
 import socket
 import subprocess
 import sys
 import time
+import urllib.request
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
@@ -423,6 +425,59 @@ def verify(base: str, checks: Checks) -> None:
         served.close()
         checks.note("sidebar: rendered from the generated global, 8 plugins into 7 categories")
 
+        # --- one category on: the menu shrinks and the landing follows it ---
+        # `plugins.enabled` in config/settings.json can switch every other category off, and the
+        # frontend only ever sees the list that survives. This serves that list: the payload the
+        # running server generated, with only Image Pool left in it. The Python half of the switch
+        # is covered in tests/test_plugin_registry.py.
+        solo = browser.new_page()
+        with urllib.request.urlopen(f"{base}/plugins.js") as response:
+            body = response.read().decode("utf-8")
+        prefix = "window.__LLM_WORKBENCH_PLUGINS__ = "
+        payload = json.loads(body[len(prefix):].rstrip().rstrip(";"))
+        isolated = [plugin for plugin in payload if plugin["id"] == "image-pool"]
+        checks.check(len(isolated) == 1, "the served payload holds no image-pool category to isolate")
+        solo_body = prefix + json.dumps(isolated) + ";\n"
+        solo.route(
+            "**/plugins.js",
+            lambda route: route.fulfill(
+                status=200, content_type="application/javascript", body=solo_body
+            ),
+        )
+        solo.goto(f"{base}/")
+        try:
+            solo.wait_for_selector("#appRoot > *", timeout=10000)
+            solo_labels = solo.eval_on_selector_all(
+                "#workflowList .sidebar-section-label", "els => els.map(e => e.textContent.trim())"
+            )
+            checks.check(solo_labels == ["Image Pool"], f"single-category labels: {solo_labels}")
+            solo_routes = solo.eval_on_selector_all(
+                "#workflowList li[data-route]", "els => els.map(e => e.dataset.route)"
+            )
+            checks.check(
+                solo_routes == [
+                    "image-pool-models", "image-generation", "image-lora-library", "image-train",
+                ],
+                f"single-category routes: {solo_routes}",
+            )
+            landed = solo.get_attribute('li[data-route="image-pool-models"]', "class") or ""
+            checks.check(
+                "active" in landed,
+                "the workbench did not land on the first view of the only category",
+            )
+            checks.check(
+                solo.query_selector(".workflow-error") is None,
+                "a single-category menu rendered an error panel",
+            )
+            checks.check(
+                solo.eval_on_selector_all("#appRoot > *", "els => els.length") == 1,
+                "a single-category menu does not hold exactly one view",
+            )
+        except Exception as error:  # noqa: BLE001 - reported as a problem
+            problems.append(f"a single-category menu did not work: {error}")
+        solo.close()
+        checks.note("single category: one section, four views, lands on its first view")
+
         # --- a plugin list that never arrives is visible, not just logged ---
         # The load order is guaranteed, but the request can still fail. The inline boot script has
         # already revealed the shell by then, so the reason has to end up on screen.
@@ -480,8 +535,8 @@ def main() -> int:
             print(f"  - {problem}")
         return 1
     print("\nOK: sidebar, routes, aliases, persistence, theming, placeholder, error panel, retry,")
-    print("    busy indicator, no refetch on a deterministic failure, and no error-level log")
-    print("    on a discarded view.")
+    print("    busy indicator, a single-category menu, no refetch on a deterministic failure, and")
+    print("    no error-level log on a discarded view.")
     return 0
 
 
