@@ -1,7 +1,7 @@
 # Plugin-architectuur — beslissingen en fase-afbakening
 
-Status: fase 1, 2 en 3 zijn gebouwd en staan op `main` (fase 3 via PR #17). Fase 4 en 5 zijn niet
-begonnen.
+Status: fase 1, 2 en 3 zijn gebouwd en staan op `main` (fase 3 via PR #17). Fase 4 is op deze
+branch ontworpen en nog niet gebouwd; fase 5 is niet begonnen.
 Anker: sectie 1 en 2 beschrijven de code op `main`. Fase 1 landde met `783f0bd` en de
 replay-opruiming met `8d73503`; de pdf-fix `a0f79d8` staat op `main` maar raakt deze architectuur
 niet.
@@ -329,17 +329,65 @@ Beslissingen:
 | **Scopegrens** | geen instellingenvenster, geen schakelaar per view, geen eigen CSS of iconen per categorie, geen wijziging aan de services zelf |
 | **Verificatie** | per categorie: met alleen die categorie aan bevat de pluginlijst precies die categorie, en elke view ervan bereikt elk adres dat hij aanroept. De padaanalyse meet dat per categorie; de gemounte verzameling is elke ronde opzettelijk dezelfde, want de adressen zijn van de core — dat de schakelaar daar niet aan kan komen, bewaakt `CoreMountTests` |
 
-### Fase 4 — de gedeelde api-client opsplitsen ⬜
+### Fase 4 — de gedeelde api-client opsplitsen 🚧 ontworpen op deze branch
 
 Losgetrokken van fase 3 op advies van de review. `static/src/api-client.js` is 101 methodes in
 één object (766 regels) en wordt door 19 van de 20 views gebruikt — alleen `icons` raakt hem
 niet. Dat is een herstructurering die niets met enable/disable te maken heeft; zit hij in fase 3,
 dan is fase 3 de fase waarin het misgaat.
 
+**Doel:** een plugin bezit zijn eigen API-calls, zodat de gedeelde client niet de nieuwe bottleneck
+wordt — en zodat een plugin die in fase 5 in een eigen pakket woont zijn eigen client meebrengt in
+plaats van de core te moeten bewerken.
+
+**De keuze: één client per plugin, niet één gedeelde met een namespace per domein.** De eenheid is
+de plugin, want dat is precies wat er in fase 5 verhuist. Wat meer dan één categorie nodig heeft, is
+van de core — dezelfde regel als bij de adressen in fase 3, nu op methoden toegepast. Gemeten met de
+padaanalyse van de testsuite: van de 101 methodes worden er 100 door views aangeroepen, en **vier**
+daarvan door meer dan één categorie:
+
+| methode | pad | categorieën |
+| --- | --- | --- |
+| `getModels` | `/api/models` | image-pool, realtime-translation |
+| `getAdminModels` | `/api/models/admin` | llm-pool, translation-services |
+| `getTtsAdminModels` | `/api/tts-pool/models/admin` | realtime-tts, tts-pool |
+| `listTranslationPrompts` | `/api/translation/prompts` | realtime-translation, translation-services |
+
+Die vier komen in een core-client. De andere 96 gaan naar de plugin die ze gebruikt, en dat blijkt
+een schone verdeling langs de bestaande categorieën: `/api/image-pool` bij image-pool,
+`/api/translation` plus de drie pdf-families bij translation-services, `/api/replay` en
+`/api/prompts` bij realtime-translation, `/api/realtime-tts` bij realtime-tts, `/api/video-pool` bij
+video-pool, `/api/chat`, `/api/text-generation` en `/api/config` bij llm-pool, `/api/tts-pool` bij
+tts-pool.
+
+**De vorm:**
+
+| bestand | inhoud |
+| --- | --- |
+| `static/src/shared/api/request.js` | het dunne gedeelde deel: één fetch-helper met het gedrag van nu (same-origin, JSON, fout bij een non-2xx). Elk ander clientbestand importeert hem |
+| `static/src/shared/api/shared.js` | de vier methoden hierboven, die meer dan één categorie aanroept |
+| `static/src/plugins/<categorie-id>/api.js` | de client van één plugin; `<categorie-id>` is dezelfde id als in `app/plugins.py` |
+| `static/src/workflows/<view>/…` | blijft staan waar het staat; de view importeert de client van zijn eigen plugin |
+
+De twee websocket-klassen (`ReplayWebSocket`, `ReplaySpeakWebSocket`) verhuizen mee naar de plugin
+van hun view. `static/src/api-client.js` verdwijnt; er blijft geen re-export achter, want dat is
+precies de "twee plekken waar het kan staan"-constructie die deze fase opheft.
+
+**Wat deze fase ook oplevert: de toets leest eindelijk de code zelf.** De padaanalyse in
+`tests/test_plugin_registry.py` haalt zijn methode → pad-tabel nu uit `api-client.js`; dat is de
+noodoplossing die sectie 3 beschrijft. Na de splitsing liggen de paden in de subtree van de view
+zelf — zijn eigen plugin-client plus wat die uit `shared/` importeert — dus de tabel en het
+`api.<methode>()`-opzoeken kunnen weg, en de toets meet wat hij zegt te meten.
+
+**Scopegrens:** geen wijziging aan de endpoints zelf, geen wijziging aan de views buiten hun
+imports, geen plugin-pakketten (dat is fase 5), geen bundelstap.
+
+**Open punt dat deze fase zelf raakt:** `getTtsModels` staat in de client maar wordt door geen enkele
+view aangeroepen (gemeten). Die verdwijnt in deze fase in plaats van mee te verhuizen.
+
 | | |
 | --- | --- |
-| **Doel** | een plugin bezit zijn eigen API-calls, zodat `api-client.js` niet de nieuwe bottleneck wordt |
-| **Scopegrens** | geen wijziging aan de endpoints zelf |
+| **Verificatie** | de API-oppervlakte blijft identiek; de padaanalyse draait zonder `api-client.js`; elke view importeert nog precies één client; geen enkele view importeert uit een andere plugin |
 
 ### Fase 5 — discovery buiten de repo ⬜
 
@@ -416,6 +464,8 @@ Deze zijn bewust blijven liggen; ze horen bij een latere fase.
 | Data-only manifesten, `module`/`factory` als strings | Factory-functies direct importeren: werkt, maar valt niet uit te serveren |
 | **Aliassen in de registratie, op de view die het doel bezit** | Globaal laten in `registry.js`: dan blijft een deel van de configuratie in JS achter, wat fase 2 juist opheft |
 | **`enabled` in settings, niet in het manifest** | In het manifest: dan is het manifest geen statische data meer en kan de regressiepin niets meer vastpinnen |
+| **Eén client per plugin, met een dunne gedeelde fetch-helper en de vier gedeelde methoden in de core** | Eén gedeelde client met een namespace per domein: dan blijft er één bestand waar elke nieuwe plugin in moet werken, en dat is precies de bottleneck die fase 4 wegneemt |
+| **Een methode die meer dan één categorie aanroept, hoort in de core-client** | Hem bij zijn oorspronkelijke plugin laten: dan hing realtime-translation aan tts-pool of translation-services, dezelfde fout die fase 3 bij de adressen wegnam |
 | **De `api-client.js`-splitsing als eigen fase** | In fase 3 laten: dat bundelt een herstructurering van 766 regels met enable/disable, en dan is fase 3 te groot om te reviewen |
 | **`replay-translate` uit de shell halen als losse opruiming vóór fase 2** | In fase 2 meenemen: maakt de fase-2-diff groter zonder dat het iets met de bron van waarheid te maken heeft. Gedaan in een eigen commit op de fase-2-branch |
 | ~~**De koppeling view → routers met de hand schrijven**~~ *Vervangen in fase 3: er is geen koppeling meer. De onafhankelijke padaanalyse blijft en is nu scherper, want hij meet wat de core belooft* | Afleiden uit `api-client.js`: dat werkt vandaag, maar fase 4 splitst dat bestand juist op, dus de afleiding verdwijnt precies wanneer je hem nodig hebt |
@@ -428,5 +478,7 @@ Deze zijn bewust blijven liggen; ze horen bij een latere fase.
 1. **Mag een plugin in fase 5 eigen adressen meebrengen?** Dit model zegt nee: de core bezit ze.
    Een plugin van buiten de repo die een eigen backend wil, vraagt om een andere beslissing dan
    deze — en dat is bewust uitgesteld, niet vergeten.
-2. Is de api-client-splitsing klaar wanneer elke plugin zijn eigen module heeft, of is een
-   gedeelde namespace per domein beter?
+2. ~~Is de api-client-splitsing klaar wanneer elke plugin zijn eigen module heeft, of is een
+   gedeelde namespace per domein beter?~~ **Beslist in fase 4:** één client per plugin, met een
+   dunne gedeelde fetch-helper in `static/src/shared/api/` en de vier methoden die meer dan één
+   categorie aanroept in de core. De fase-4-sectie noemt de gemeten verdeling en wat er verhuist.
