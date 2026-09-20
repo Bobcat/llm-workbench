@@ -1,7 +1,8 @@
 # Plugin-architectuur — beslissingen en fase-afbakening
 
-Status: fase 1 en 2 zijn gebouwd. Fase 3 t/m 5 zijn niet begonnen.
-Anker: sectie 2 beschrijft de code op deze branch. Fase 1 landde met `783f0bd` en de
+Status: fase 1 en 2 zijn gebouwd en staan op `main`. Fase 3 wordt op deze branch gebouwd; fase 4
+en 5 zijn niet begonnen.
+Anker: sectie 1 en 2 beschrijven de code op deze branch. Fase 1 landde met `783f0bd` en de
 replay-opruiming met `8d73503`; de pdf-fix `a0f79d8` staat op `main` maar raakt deze architectuur
 niet.
 
@@ -14,18 +15,31 @@ wijzigingen: de fase-2-belofte dat `app/router.py` een lus over de registry word
 kunnen, en aliassen, het view-contract en de omvang van fase 3 moesten opnieuw. Sectie 5 noemt
 wat er is overgenomen en wat er afviel.
 
+Herzien voor fase 3, na de vraag wat een plugin eigenlijk bezit. De kern daarvan: **de core bezit
+de service-adressen en een plugin is alleen menu.** Daarmee vervalt de koppeling view → routers die
+fase 2 bouwde, en kan geen enkele categorie meer van een andere afhangen.
+
 ## 1. Wat is een plugin hier
 
 Een plugin is **één sidebar-categorie met één of meer views**. Meer niet.
+
+De workbench zelf — de core — kent de services en hun adressen, en die zijn er altijd, ongeacht
+welke plugins aan staan. Een plugin voegt dus geen adressen toe en beheert ze niet: hij bepaalt
+alleen wat er in het menu staat.
 
 Wel:
 
 - een beschrijving met een `id`, een label, en de views die eronder hangen
 - per view een module en een factory
-- later: eigen CSS, iconen, toegewezen routers, en een aan/uit-schakelaar
+- een aan/uit-schakelaar; uit betekent dat de categorie niet in het menu staat
+- later: eigen CSS en iconen
 
 Niet, en dat is een bewuste grens:
 
+- **geen eigen adressen.** Een plugin gebruikt wat de core aanbiedt. Daardoor kan geen enkele view
+  stukgaan doordat een andere categorie uit staat, en kan een workbench met één categorie volledig
+  werken. Fase 5 kan hierop terugkomen: een plugin van buiten de repo zou een eigen backend willen
+  meenemen, en dat is een andere beslissing dan deze.
 - **geen isolatie of sandboxing.** Plugins delen het DOM en de global scope. `index.html` laadt
   markdown-it en DOMPurify globaal en de chatview leest `window.markdownit`. Een plugin krijgt
   dus volledige toegang tot de pagina. Zie fase 5 voor de drempel die dat stelt.
@@ -37,14 +51,16 @@ Niet, en dat is een bewuste grens:
 
 ### De registratie
 
-`app/plugins.py` is de bron van waarheid. Drie dingen komen daaruit voort: `app/router.py` mount
-de routers die erin genoemd staan, `app/main.py` registreert er de twee websockets uit, en FastAPI
-genereert `/plugins.js` uit dezelfde gegevens.
-Daardoor kunnen de routetabel en de sidebar niet uit elkaar lopen zonder dat een test het merkt.
+`app/plugins.py` is de bron van waarheid voor **het menu**. FastAPI genereert `/plugins.js` daaruit
+en `static/index.html` laadt dat bestand vóór `app.js`.
+
+De service-adressen staan daar los van: `app/router.py` mount ze allemaal, altijd. Dat is de kern
+van deze architectuur — een categorie uitzetten verandert niets aan wat de workbench kan, alleen
+aan wat ze toont.
 
 | Plugin-veld | Betekenis |
 | --- | --- |
-| `id` | stabiele plugin-id; bedoeld als settings-sleutel in fase 3, **nu nog nergens gelezen** |
+| `id` | stabiele plugin-id; in fase 3 de sleutel in de settings |
 | `label` | sidebar-sectiekop; leeg voor auxiliary plugins |
 | `auxiliary` | `true` → los item onderaan de sidebar in plaats van een categorie |
 | `views` | view-descriptors in sidebar-volgorde |
@@ -59,10 +75,7 @@ Daardoor kunnen de routetabel en de sidebar niet uit elkaar lopen zonder dat een
 | `persistent` | view blijft in de DOM bij wegnavigeren |
 | `module` | pad onder de static root, geresolveerd tegen `document.baseURI` |
 | `factory` | geëxporteerde functienaam in die module; levert het view-element |
-| `routers` | **elke** router die een endpoint bedient dat deze view aanroept, ook routers van een andere plugin; één router mag door meerdere views gedeeld worden |
-| `websockets` | de websockets die deze view gebruikt; de enige applicatieroutes buiten `/api` |
 | `aliases` | gepensioneerde routenamen die naar deze view wijzen |
-| `backend` | `false` voor een view die aantoonbaar geen API heeft; alleen `icons` |
 
 `module` en `factory` zijn strings en geen directe functies. Dat kost statische
 verifieerbaarheid — een typefout breekt pas bij een klik — en dat is de prijs voor een vorm die
@@ -150,6 +163,10 @@ waardoor een gewijzigde view onzichtbaar kon blijven. Dat is server-side opgelos
 | **Hertoetsing** | drie reviewrondes: `docs/reviews/refactor-plugin-registry.md`, `docs/reviews/plugin-registry-hardening.md` |
 
 ### Fase 2 — Python wordt de bron van waarheid ✅
+
+*Fase 3 legt het mounten weer bij de core en haalt de velden `routers`, `websockets` en `backend`
+van een view. Deze sectie beschrijft wat fase 2 bouwde en waarom; hoe de adressen nu gemount worden
+staat in sectie 1 en 2.*
 
 **Doel: geen view zonder zijn backend.** Niet "router en sidebar kunnen niet meer uit elkaar
 lopen" — dat is onhaalbaar, want de view `icons` heeft geen backend. Die asymmetrie loopt één
@@ -255,23 +272,34 @@ toets zou dragen: de zwakste prose-verwijzing ging daarmee van 56% naar 8% van d
 verschuiving zouden overleven. Wat de toets niet vangt staat in zijn docstring, met de gemeten
 marges erbij.
 
-### Fase 3 — per-plugin assets en enable/disable ⬜
+### Fase 3 — categorieën aan- en uitzetten 🚧 in uitvoering op deze branch
 
-**Doel:** een installatie toont alleen wat ze nodig heeft, bijvoorbeeld LLM Pool-only.
+**Doel:** een installatie toont alleen wat ze nodig heeft. Een workbench met één categorie aan moet
+volledig werken — wie wil, draait per categorie een eigen instantie.
 
-Regels die nu al vastliggen:
+Wat "uit" betekent: **de categorie staat niet in het menu.** Meer niet. De adressen zijn van de
+core en blijven altijd beschikbaar, dus geen enkele view kan stukgaan doordat een andere categorie
+uit staat.
 
-- **`enabled` hoort niet in de registratie.** De registratie beschrijft wat er *bestaat*, settings
-  beschrijven wat *aan* staat. Twee payloads, bij het serveren samengevoegd. Zitten ze in één
-  bestand, dan is de registratie geen statische data meer en verliest de regressiepin zijn betekenis.
-- Afwezig betekent aan.
-- Plugin-uit wint van view-aan.
+Beslissingen:
+
+- **De core mount alle service-adressen zelf**, altijd. De pluginlijst stuurt het menu aan en verder
+  niets. Daarmee verdwijnen `routers`, `websockets` en `backend` van een view: die bestonden om te
+  weten wie welk adres bezit, en dat is nu de core.
+- **De schakelaar staat in het configuratiebestand**, bij de service-adressen die er al staan:
+  `config/settings.json`, met `config/local.json` als overschrijving. Wat je niet noemt, staat aan.
+  Geen instellingenvenster.
+- **Alleen hele categorieën**, geen losse views. De regel "plugin-uit wint van view-aan" uit een
+  eerdere versie van dit document vervalt daarmee.
+- **De startroute is de eerste view van de eerste categorie die aan staat.** Geen instelling nodig:
+  de browser krijgt alleen de aangezette categorieën, dus de eerste daarvan is de landing.
+- **Styling en iconen per categorie stellen we uit.** Die betalen zich pas terug bij plugins van
+  buiten de repo, en dat is fase 5.
 
 | | |
 | --- | --- |
-| **Contractwijziging** | een plugin declareert zijn eigen CSS en iconen; `id` wordt de settings-sleutel |
-| **Scopegrens** | geen hot reload; assets blijven statische bestanden zonder buildstap |
-| **Verificatie** | een uitgeschakelde plugin levert geen sidebar-item én geen gemounte router |
+| **Scopegrens** | geen instellingenvenster, geen schakelaar per view, geen eigen CSS of iconen per categorie, geen wijziging aan de services zelf |
+| **Verificatie** | per categorie: een workbench met alleen die categorie aan levert alleen die categorie in het menu, en elke view ervan bereikt elk adres dat hij aanroept. De bestaande onafhankelijke padaanalyse bewijst dat tweede; daar komt een variant bij die met één categorie aan draait |
 
 ### Fase 4 — de gedeelde api-client opsplitsen ⬜
 
@@ -301,55 +329,59 @@ Deze zijn bewust blijven liggen; ze horen bij een latere fase.
   `include_router`-regels, en `ROUTE_ALIASES` staat globaal.~~ **Opgelost in fase 2.** De
   registratie in `app/plugins.py` is één bron voor de sidebar én de routetabel, en de aliassen
   hangen aan de view die ze vervangen.
+- ~~Een view mag endpoints van een andere plugin gebruiken.~~ **Opgelost door het model zelf, in
+  fase 3.** Vijf views buiten llm-pool halen hun modellenlijst uit `/api/models` of
+  `/api/models/admin` (`replay-translate`, `image-train`, `image-translation`, `pdf-translation`,
+  `prompt-library`). Zolang een plugin adressen bezat, was dat een afhankelijkheid tussen
+  categorieën. Nu de core de adressen bezit, leunt een view nergens meer op: hij gebruikt wat de
+  workbench aanbiedt. Dat is precies waarom dit model gekozen is.
 - **Routebotsingen hebben geen gedefinieerd gedrag.** `WORKFLOWS_BY_ROUTE`
   (`static/src/plugins/registry.js:53`) laat bij een dubbele route stil de laatste winnen. De testsuite vangt dat voor
-  de gecommitte set, maar vanaf fase 3 (settings) en zeker fase 5 (packages buiten de repo) is een
-  botsing een runtime-geval zonder afgesproken uitkomst. Er moet een regel komen: weigeren bij het
-  laden, of eerste-wint met een waarschuwing.
-- **Een view mag endpoints van een andere plugin gebruiken, en dat is het normale geval.** Vijf views
-  buiten llm-pool halen hun modellenlijst uit `/api/models` of `/api/models/admin`
-  (`replay-translate`, `image-train`, `image-translation`, `pdf-translation`, `prompt-library`), en
-  `pdf-translation` gebruikt routers van translation-services, pdf-benchmark en pdf-regression. De
-  registratie noteert dat sinds de review van PR #16 volledig: `routers` op een view is elke router
-  die een door die view aangeroepen endpoint bedient. Wat daarmee blijft liggen is de fase-3-vraag:
-  zet je llm-pool uit, dan verliezen views in drie andere plugins een deel van hun backend. De
-  registratie maakt dat zichtbaar, er is nog geen regel voor.
-- Geen enable/disable, dus de hele workbench toont altijd alles.
+  de gecommitte set, maar in fase 5 (packages buiten de repo) is een botsing een runtime-geval
+  zonder afgesproken uitkomst. Er moet een regel komen: weigeren bij het laden, of eerste-wint met
+  een waarschuwing.
 - `css/app.css` is één globaal `@import`-manifest van 25 regels en er is één globale
-  iconensprite; een plugin kan nog geen eigen assets bijdragen.
+  iconensprite; een plugin kan nog geen eigen assets bijdragen. **Bewust uitgesteld in fase 3:** het
+  levert nu vooral een nettere indeling op en betaalt zich pas terug bij plugins van buiten de repo.
 - ~~De shell hardcodeert `replay-translate`.~~ **Opgelost** als losse opruiming vóór fase 2, in een
   eigen commit op de fase-2-branch. Replay publiceert nu `WORKFLOW_BUSY_EVENT` zoals de vijf andere
   views, en `app.js` noemt geen enkele view meer bij naam — op één na: de fallback
   `WORKFLOWS[0]?.route || 'replay-translate'` voor een lege registry, en dat is het laatste punt
   in deze lijst.
-- Het registratieveld `id` wordt in runtime nergens gelezen; het is gereserveerd voor fase 3.
+- ~~De defaultroute is impliciet `WORKFLOWS[0]`.~~ **Beslist in fase 3:** de landing is de eerste
+  view van de eerste categorie die aan staat. Omdat de browser alleen de aangezette categorieën
+  krijgt, volgt dat automatisch.
 - `static/app.js:59-67` (`pluginItemMarkup`) interpoleert `name`, `tooltip` en `route` ongeëscapet
   in `innerHTML`. Nu onschadelijk omdat de data statisch en gecommit is. Zodra plugins van
   buiten de repo komen is dit een injectiepunt; `escapeHtml`/`escapeAttr` bestaan al in
   `static/src/shared/ui-helpers.js`.
-- De defaultroute is impliciet `WORKFLOWS[0]` (`static/app.js:331`). Zodra plugins uit kunnen,
-  wordt "eerste ingeschakelde plugin" een willekeurige landingspagina.
 
 ## 5. Genomen beslissingen, en wat afviel
 
 | Beslissing | Afgevallen alternatief |
 | --- | --- |
+| **De core bezit alle service-adressen; een plugin is alleen menu** | **De adressen mounten vanuit de pluginlijst** — dat deed fase 2, en het maakte elke categorie afhankelijk van een andere: zette je llm-pool uit, dan verloor Tuning zijn modellenlijst terwijl de service gewoon draaide. Een plugin hoort niet te bepalen welke adressen de browser kan gebruiken |
+| **De schakelaar in `config/settings.json`, met `local.json` als overschrijving** | Een instellingenvenster in de workbench: nieuw UI-werk plus een adres om de instelling te bewaren en te herladen, voor een keuze die je eenmalig per installatie maakt |
+| **Alleen hele categorieën aan of uit** | Ook losse views: dan wordt het instellingenbestand een boom en moet de regel "categorie-uit wint van view-aan" ook echt gebouwd en onderhouden worden. Niemand vroeg erom |
+| **De landing is de eerste view van de eerste categorie die aan staat** | Een instelbare startroute: extra instelling voor iets wat automatisch goed uitkomt, want de browser krijgt alleen de aangezette categorieën |
+| **Styling en iconen per categorie uitgesteld** | Nu meenemen: het levert vooral een nettere bestandsindeling op en betaalt zich pas terug bij plugins van buiten de repo |
 | Plugins als mappen in de repo, contract zo dat entry points later passen | Meteen pip-packages: veel ceremonie voor één gebruiker. Geen abstractie: overstappen wordt later een herontwerp |
 | **Python als bron van waarheid via een gegenereerde `plugins.js`-global** | **Een endpoint `/api/plugins`** — dit document koos dat eerst, en de ontwerpreview keerde het om: de lijst verandert niet tijdens een sessie, dus een fetch levert niets op en voegt een lege-sidebar-toestand plus een async bootstrap toe. Een gedeeld JSON-bestand viel eerder al af omdat het de koppeling met de echte routers en settings verliest |
-| **Expliciete mapping van plugin naar routers in de Python-registratie** | **`app/` herindelen zodat elk pakket één plugin is** — dan wordt `prompt_testing` gedeeld tussen llm-pool en image-pool, en dus een cross-plugin dependency |
+| ~~**Expliciete mapping van plugin naar routers in de Python-registratie**~~ *Vervangen in fase 3 door het core-model: de adressen zijn van de core en een view hoeft niets meer te declareren* | ~~**`app/` herindelen zodat elk pakket één plugin is**~~ — dan wordt `prompt_testing` gedeeld tussen llm-pool en image-pool, en dus een cross-plugin dependency |
 | Data-only manifesten, `module`/`factory` als strings | Factory-functies direct importeren: werkt, maar valt niet uit te serveren |
 | **Aliassen in de registratie, op de view die het doel bezit** | Globaal laten in `registry.js`: dan blijft een deel van de configuratie in JS achter, wat fase 2 juist opheft |
 | **`enabled` in settings, niet in het manifest** | In het manifest: dan is het manifest geen statische data meer en kan de regressiepin niets meer vastpinnen |
 | **De `api-client.js`-splitsing als eigen fase** | In fase 3 laten: dat bundelt een herstructurering van 766 regels met enable/disable, en dan is fase 3 te groot om te reviewen |
 | **`replay-translate` uit de shell halen als losse opruiming vóór fase 2** | In fase 2 meenemen: maakt de fase-2-diff groter zonder dat het iets met de bron van waarheid te maken heeft. Gedaan in een eigen commit op de fase-2-branch |
-| **De koppeling view → routers met de hand schrijven, met een onafhankelijke padaanalyse als bewijs** | Afleiden uit `api-client.js`: dat werkt vandaag, maar fase 4 splitst dat bestand juist op, dus de afleiding verdwijnt precies wanneer je hem nodig hebt |
-| **Een view zonder backend zegt dat zelf: `backend=False` op de view** | De auxiliary-vlag op plugin-niveau als uitzondering gebruiken: dat is een plugin-eigenschap die toevallig samenvalt met een view-eigenschap, en dan lopen plugin en view door elkaar op de enige plek waar de toets ze wil scheiden |
+| ~~**De koppeling view → routers met de hand schrijven**~~ *Vervangen in fase 3: er is geen koppeling meer. De onafhankelijke padaanalyse blijft en is nu scherper, want hij meet wat de core belooft* | Afleiden uit `api-client.js`: dat werkt vandaag, maar fase 4 splitst dat bestand juist op, dus de afleiding verdwijnt precies wanneer je hem nodig hebt |
+| ~~**Een view zonder backend zegt dat zelf: `backend=False`**~~ *Vervangen in fase 3: het veld bestaat niet meer, want elke view gebruikt wat de core aanbiedt* | De auxiliary-vlag op plugin-niveau als uitzondering gebruiken: dat is een plugin-eigenschap die toevallig samenvalt met een view-eigenschap, en dan lopen plugin en view door elkaar op de enige plek waar de toets ze wil scheiden |
 | Lazy loading bij eerste activering | Alles eager importeren: geen eerste-klik-kosten, maar ~21k regels JS parsen bij het opstarten |
 | Registry laadt, shell bezit de levenscyclus en de DOM | Registry ook eigenaar van caching en activering: mengt data met DOM-beheer |
 
 ## 6. Nog open
 
-1. De exacte vorm van de samengevoegde registratie-plus-settings-payload in fase 3, en wat
-   enable/disable doet met een view die endpoints van een andere plugin gebruikt (zie sectie 4).
+1. **Mag een plugin in fase 5 eigen adressen meebrengen?** Dit model zegt nee: de core bezit ze.
+   Een plugin van buiten de repo die een eigen backend wil, vraagt om een andere beslissing dan
+   deze — en dat is bewust uitgesteld, niet vergeten.
 2. Is de api-client-splitsing klaar wanneer elke plugin zijn eigen module heeft, of is een
    gedeelde namespace per domein beter?
