@@ -478,6 +478,19 @@ def verify(base: str, checks: Checks) -> None:
                 solo.eval_on_selector_all("#appRoot > *", "els => els.length") == 1,
                 "a single-category menu does not hold exactly one view",
             )
+            # A bookmark to a view whose category is off has no route to resolve. The shell falls
+            # back to the landing route, which is what makes a shrunk menu harmless for old links.
+            solo.goto(f"{base}/#chat")
+            solo.reload()
+            solo.wait_for_selector("#appRoot > *", timeout=10000)
+            checks.check(
+                solo.url.endswith("#image-pool-models"),
+                f"a route outside the menu did not fall back to the landing: {solo.url}",
+            )
+            checks.check(
+                solo.query_selector(".workflow-error") is None,
+                "a route outside the menu showed an error panel instead of the landing view",
+            )
         except Exception as error:  # noqa: BLE001 - reported as a problem
             problems.append(f"a single-category menu did not work: {error}")
         solo.close()
