@@ -1,7 +1,7 @@
 # Plugin-architectuur — beslissingen en fase-afbakening
 
-Status: fase 1, 2 en 3 zijn gebouwd en staan op `main` (fase 3 via PR #17). Fase 4 is op deze
-branch ontworpen en nog niet gebouwd; fase 5 is niet begonnen.
+Status: fase 1, 2 en 3 staan op `main` (fase 3 via PR #17). Fase 4 is op deze branch gebouwd en
+wacht op review; fase 5 is niet begonnen.
 Anker: sectie 1 en 2 beschrijven de code op `main`. Fase 1 landde met `783f0bd` en de
 replay-opruiming met `8d73503`; de pdf-fix `a0f79d8` staat op `main` maar raakt deze architectuur
 niet.
@@ -235,10 +235,8 @@ Gebouwd:
    **0 paden voor `icons`** en **2 tot 15 paden voor de andere 19**, wat precies is wat je wilt
    zien.
 
-   Tot fase 4 rust deze toets op `api-client.js`. Daarna liggen de paden in de subtree van de
-   plugin zelf en wordt de toets wat hij zegt. Dat is tijdelijk, en het hoort er te staan: het
-   wringt met de motivering hierboven, waar een afleiding uit `api-client.js` juist wordt
-   afgewezen omdat fase 4 dat bestand opsplitst.
+   Tot fase 4 rustte deze toets op `api-client.js`; die tabel is er in fase 4 uitgehaald, zodat de
+   paden nu in de subtree van de view zelf liggen. Zie de fase-4-sectie.
 3. *De pin is verhuisd.* De handgeschreven regressiepin staat nu in Python, waar de bron van
    waarheid is; de JS-suite houdt wat alleen JS kan controleren (module resolvet, factory
    geëxporteerd, icoon in de sprite). Die twee zijn geen duplicaat: de pin ontleent zijn waarde
@@ -246,14 +244,16 @@ Gebouwd:
    een subprocess bij `app/plugins.py` en stubt daarmee de global, want een tweede kopie in JS is
    precies wat deze fase opheft.
 
-Deze drie zitten in `tests/test_plugin_registry.py` (40 tests) en
-`tests/js/plugin-registry.test.mjs` (4 tests). De padaanalyse meet sinds fase 3 tegen de gemounte
-app in plaats van tegen een declaratie per view: de core mount alle adressen, dus elk pad dat een
-view aanroept moet daar altijd in zitten. Ze dekt zowel de `api.<methode>()`-aanroepen als de URL's
-die zes views met de hand bouwen; die laatsten waren onzichtbaar tot een review liet zien dat je een
-endpoint naar een niet-bestaand pad kon hernoemen zonder dat de suite iets zei. Voor de twee
-websockets gebeurt hetzelfde: de paden komen uit `api-client.js` en worden tegen de geregistreerde
-routes gehouden, met de twee verwachte paden als pin ernaast.
+Deze drie zitten in `tests/test_plugin_registry.py` (41 tests) en
+`tests/js/plugin-registry.test.mjs` (4 tests). De padaanalyse meet tegen de gemounte app: de core
+mount alle adressen, dus elk pad dat een view aanroept moet daar altijd in zitten. Sinds fase 4 leest
+ze die paden waar ze geschreven staan — in de subtree van de view zelf, dus de client van zijn eigen
+plugin plus wat die uit `shared/` haalt — in plaats van via een methode → pad-tabel uit één gedeeld
+bestand. Ze dekt daarmee zowel de clientaanroepen als de URL's die views met de hand bouwen voor
+downloads en streams; die laatsten waren onzichtbaar tot een review liet zien dat je een endpoint
+naar een niet-bestaand pad kon hernoemen zonder dat de suite iets zei. Voor de twee websockets
+gebeurt hetzelfde, en daar hoort een tweede toets bij: geen enkele view haalt de client van een
+andere plugin binnen.
 
 Daar bovenop staat de toets per categorie: met alleen categorie X aan moet elke view van X elk adres
 dat hij aanroept nog kunnen bereiken — inclusief de modellenlijst die de LLM Pool-service serveert en
@@ -329,7 +329,7 @@ Beslissingen:
 | **Scopegrens** | geen instellingenvenster, geen schakelaar per view, geen eigen CSS of iconen per categorie, geen wijziging aan de services zelf |
 | **Verificatie** | per categorie: met alleen die categorie aan bevat de pluginlijst precies die categorie, en elke view ervan bereikt elk adres dat hij aanroept. De padaanalyse meet dat per categorie; de gemounte verzameling is elke ronde opzettelijk dezelfde, want de adressen zijn van de core — dat de schakelaar daar niet aan kan komen, bewaakt `CoreMountTests` |
 
-### Fase 4 — de gedeelde api-client opsplitsen 🚧 ontworpen op deze branch
+### Fase 4 — de gedeelde api-client opsplitsen ✅
 
 Losgetrokken van fase 3 op advies van de review. `static/src/api-client.js` is 101 methodes in
 één object (766 regels) en wordt door 19 van de 20 views gebruikt — alleen `icons` raakt hem
@@ -394,17 +394,24 @@ De twee websocket-klassen (`ReplayWebSocket`, `ReplaySpeakWebSocket`) verhuizen 
 van hun view. `static/src/api-client.js` verdwijnt; er blijft geen re-export achter, want dat is
 precies de "twee plekken waar het kan staan"-constructie die deze fase opheft.
 
-**Wat deze fase ook oplevert: de toets leest eindelijk de code zelf.** De padaanalyse in
-`tests/test_plugin_registry.py` haalt zijn methode → pad-tabel nu uit `api-client.js`; dat is de
-tabel die sectie 3 als bewijsstap beschrijft. Na de splitsing liggen de paden in de subtree van de view
-zelf — zijn eigen plugin-client plus wat die uit `shared/` importeert — dus de tabel en het
-`api.<methode>()`-opzoeken kunnen weg, en de toets meet wat hij zegt te meten.
+**Wat deze fase ook oplevert: de toets leest de code zelf.** De padaanalyse in
+`tests/test_plugin_registry.py` haalde zijn methode → pad-tabel uit `api-client.js`, de tabel die
+sectie 3 als bewijsstap beschrijft. Die tabel is nu weg: de paden liggen in de subtree van de view
+zelf — zijn eigen plugin-client plus wat die uit `shared/` importeert — dus de analyse leest wat er
+geschreven staat en de toets meet wat hij zegt te meten. Daar is één toets bij gekomen: geen enkele
+view haalt de client van een andere plugin binnen.
 
 **Scopegrens:** geen wijziging aan de endpoints zelf, geen wijziging aan de views buiten hun
 imports, geen plugin-pakketten (dat is fase 5), geen bundelstap.
 
 **Open punt dat deze fase zelf raakt:** `getTtsModels` staat in de client maar wordt door geen enkele
 view aangeroepen (gemeten). Die verdwijnt in deze fase in plaats van mee te verhuizen.
+
+**Gebouwd op deze branch.** De 100 methodes zijn verbatim overgezet — als tekst vergeleken met
+het origineel, op de verwijderde `getTtsModels` na — en de twee websocket-klassen zijn mee
+verhuisd. De paden die de voorkant aanroept zijn exact dezelfde op één na: `/api/tts-pool/models`
+verdween met de dode methode, er kwam niets bij. De JS-suite en de browsercheck draaien
+ongewijzigd door, wat klopt met de scopegrens: geen enkele view veranderde buiten zijn imports.
 
 | | |
 | --- | --- |
