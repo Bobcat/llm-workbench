@@ -323,6 +323,12 @@ def _merge_json_objects(base: dict[str, object], override: dict[str, object]) ->
     return merged
 
 
+def _enabled_entry(payload: dict[str, object]) -> object | None:
+    """The raw ``plugins.enabled`` value of one settings file, before the two are merged."""
+    section = payload.get("plugins")
+    return section.get("enabled") if isinstance(section, dict) else None
+
+
 def enabled_plugins(settings_path: Path | str = DEFAULT_SETTINGS_PATH) -> tuple[Plugin, ...]:
     """The categories that are in the menu, in registry order.
 
@@ -339,24 +345,26 @@ def enabled_plugins(settings_path: Path | str = DEFAULT_SETTINGS_PATH) -> tuple[
     is enough.
     """
     path = Path(settings_path)
-    payload = _merge_json_objects(
-        _load_json_object(path),
-        _load_json_object(path.with_name("local.json")),
-    )
-    plugins_payload = payload.get("plugins")
-    enabled = plugins_payload.get("enabled") if isinstance(plugins_payload, dict) else None
+    local_path = path.with_name("local.json")
+    local_payload = _load_json_object(local_path)
+    payload = _merge_json_objects(_load_json_object(path), local_payload)
+    enabled = _enabled_entry(payload)
     if enabled is None:
         return PLUGINS
+    # Which of the two files the switch really came from. `local.json` wins from the base file and
+    # is the documented place to switch categories off, so naming the base file unconditionally
+    # sends the reader to the file where nothing is wrong.
+    source = local_path if _enabled_entry(local_payload) is not None else path
     if not isinstance(enabled, list) or not all(isinstance(entry, str) for entry in enabled):
-        raise ValueError(f"plugins.enabled in {path} must be a list of category ids")
+        raise ValueError(f"plugins.enabled in {source} must be a list of category ids")
     if not enabled:
-        raise ValueError(f"plugins.enabled in {path} is empty, which would leave no menu at all")
+        raise ValueError(f"plugins.enabled in {source} is empty, which would leave no menu at all")
 
     known = {plugin.id for plugin in PLUGINS}
     unknown = sorted({entry for entry in enabled if entry not in known})
     if unknown:
         raise ValueError(
-            f"plugins.enabled in {path} names unknown categories: {', '.join(unknown)}"
+            f"plugins.enabled in {source} names unknown categories: {', '.join(unknown)}"
         )
 
     wanted = set(enabled)
@@ -366,8 +374,8 @@ def enabled_plugins(settings_path: Path | str = DEFAULT_SETTINGS_PATH) -> tuple[
 def route_aliases() -> dict[str, str]:
     """Retired route names, mapped to the route that replaced them.
 
-    Aliases travel with their view, so a category that is off also retires its aliases: the
-    frontend builds this table from the payload it receives.
+    The tests pin this table; the browser builds its own from the payload it receives, which is why
+    switching a category off also retires its aliases. This is the registry's own view of it.
     """
     return {
         alias: view.route

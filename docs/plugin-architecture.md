@@ -246,7 +246,7 @@ Gebouwd:
    een subprocess bij `app/plugins.py` en stubt daarmee de global, want een tweede kopie in JS is
    precies wat deze fase opheft.
 
-Deze drie zitten in `tests/test_plugin_registry.py` (34 tests) en
+Deze drie zitten in `tests/test_plugin_registry.py` (35 tests) en
 `tests/js/plugin-registry.test.mjs` (4 tests). De padaanalyse meet sinds fase 3 tegen de gemounte
 app in plaats van tegen een declaratie per view: de core mount alle adressen, dus elk pad dat een
 view aanroept moet daar altijd in zitten. Ze dekt zowel de `api.<methode>()`-aanroepen als de URL's
@@ -322,7 +322,7 @@ Beslissingen:
 | | |
 | --- | --- |
 | **Scopegrens** | geen instellingenvenster, geen schakelaar per view, geen eigen CSS of iconen per categorie, geen wijziging aan de services zelf |
-| **Verificatie** | per categorie: een workbench met alleen die categorie aan levert alleen die categorie in het menu, en elke view ervan bereikt elk adres dat hij aanroept. De onafhankelijke padaanalyse bewijst het eerste deel, en de toets per categorie draait hem met precies één categorie aan |
+| **Verificatie** | per categorie: met alleen die categorie aan bevat de pluginlijst precies die categorie, en elke view ervan bereikt elk adres dat hij aanroept. De padaanalyse meet dat per categorie; de gemounte verzameling is elke ronde opzettelijk dezelfde, want de adressen zijn van de core — dat de schakelaar daar niet aan kan komen, bewaakt `CoreMountTests` |
 
 ### Fase 4 — de gedeelde api-client opsplitsen ⬜
 
@@ -373,7 +373,14 @@ Deze zijn bewust blijven liggen; ze horen bij een latere fase.
 - **Het foutpaneel noemt de instelling niet.** Een foutieve `plugins.enabled` laat `/plugins.js` met
   een 500 antwoorden, waarna het bestaande paneel verschijnt: het noemt de global en vraagt de
   pagina te herladen. Bij een typefout is herladen niet de oplossing — het instellingenbestand moet
-  worden gecorrigeerd. De serverlog noemt het foute id wel, met het bestand erbij.
+  worden gecorrigeerd. De serverlog noemt het foute id en het bestand waar de lijst echt vandaan
+  komt — `local.json` als die het laatst zegt, anders het basisbestand.
+- **Een hashwijziging tijdens de sessie laat de url staan.** Een deep link naar een view van een
+  uitgezette categorie landt netjes op de landing, maar wie tijdens de sessie `#chat` in de
+  adresbalk zet terwijl die categorie uit staat, houdt `#chat` in de balk terwijl de view op de
+  landing blijft staan — tot de volgende herlaadbeurt. Dat is bestaand gedrag van de router voor
+  elke onbekende route (`#foo` doet hetzelfde); fase 3 maakt het alleen bereikbaar. In Chromium
+  gemeten.
 - ~~De shell hardcodeert `replay-translate`.~~ **Opgelost** als losse opruiming vóór fase 2, in een
   eigen commit op de fase-2-branch. Replay publiceert nu `WORKFLOW_BUSY_EVENT` zoals de vijf andere
   views, en `app.js` noemt geen enkele view meer bij naam — op één na: de fallback
