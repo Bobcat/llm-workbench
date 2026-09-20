@@ -443,13 +443,18 @@ class ViewEndpointTests(unittest.TestCase):
         thin = {route: count for route, count in counts.items() if count < 2}
         self.assertEqual(thin, {})
 
-    def test_every_category_on_its_own_reaches_the_endpoints_its_views_call(self) -> None:
-        """The core model's promise, measured per category.
+    def test_a_single_category_menu_still_reaches_the_endpoints_its_views_call(self) -> None:
+        """What a one-category workbench promises, measured per category.
 
         Switch everything off except one category and the views that remain must still reach every
         endpoint they call — including the model list that the LLM Pool service serves, which five
         views outside LLM Pool use. That is what "a workbench with one category works" means, and
         it is why the addresses live with the core instead of with the plugins.
+
+        The mounted set is deliberately the same on every iteration: `_app_paths()` reads the app
+        that was built at import and never sees the switch. That "switching categories cannot change
+        what is mounted" is what `CoreMountTests` guards; what this loop adds per category is the
+        payload — only that category is in the menu, and its views still reach everything.
         """
         methods = _client_method_paths()
         app_paths = _app_paths()
@@ -496,6 +501,7 @@ class WebSocketTests(unittest.TestCase):
                 any(socket == path or socket.startswith(path) for socket in registered),
                 f"the frontend connects to {path}, which the core does not serve",
             )
+
 
 class PluginSwitchTests(unittest.TestCase):
     """`plugins.enabled` in settings decides which categories are in the menu.
@@ -586,6 +592,22 @@ class PluginSwitchTests(unittest.TestCase):
             )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.strip(), "500", result.stderr)
+
+    def test_the_error_names_the_file_the_switch_came_from(self) -> None:
+        """`local.json` is the documented place to switch categories off, and it wins from the base
+        file: a message about a typo in it must not send the reader to `settings.json`, where
+        nothing is wrong.
+        """
+        with _settings({"plugins": {}}, local={"plugins": {"enabled": ["imagepool"]}}) as path:
+            with self.assertRaises(ValueError) as raised:
+                enabled_plugins(path)
+        self.assertIn("local.json", str(raised.exception))
+        self.assertNotIn("settings.json", str(raised.exception))
+
+        with _settings({"plugins": {"enabled": ["imagepool"]}}) as path:
+            with self.assertRaises(ValueError) as raised:
+                enabled_plugins(path)
+        self.assertIn("settings.json", str(raised.exception))
 
     def test_the_settings_file_can_be_pointed_elsewhere(self) -> None:
         """`LLM_WORKBENCH_SETTINGS_FILE` decides which file is read.
