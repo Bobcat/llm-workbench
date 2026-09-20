@@ -30,7 +30,8 @@ FRONTEND_GLOBAL = "__LLM_WORKBENCH_PLUGINS__"
 
 # The environment variable is how a deployment keeps its settings outside the repo, and how the
 # browser check drives the workbench against the shipped defaults on a machine that has switched
-# categories off in config/local.json.
+# categories off in config/local.json. It is read here, at import; the file's contents are read per
+# call, so switching a category needs a page reload and not a restart.
 DEFAULT_SETTINGS_PATH = Path(
     os.environ.get(
         "LLM_WORKBENCH_SETTINGS_FILE",

@@ -246,7 +246,7 @@ Gebouwd:
    een subprocess bij `app/plugins.py` en stubt daarmee de global, want een tweede kopie in JS is
    precies wat deze fase opheft.
 
-Deze drie zitten in `tests/test_plugin_registry.py` (32 tests) en
+Deze drie zitten in `tests/test_plugin_registry.py` (34 tests) en
 `tests/js/plugin-registry.test.mjs` (4 tests). De padaanalyse meet sinds fase 3 tegen de gemounte
 app in plaats van tegen een declaratie per view: de core mount alle adressen, dus elk pad dat een
 view aanroept moet daar altijd in zitten. Ze dekt zowel de `api.<methode>()`-aanroepen als de URL's
@@ -267,7 +267,8 @@ en op de gegenereerde-scripttoets; een literaal `/api`-pad naar iets onbestaanba
 sidebarlabel hernoemen faalt op de pin. De browsercheck controleert daarnaast dat de sidebar écht uit
 de gegenereerde global komt, dat een menu met één categorie alleen die categorie toont en op de
 eerste view daarvan landt, en dat een pluginlijst die niet aankomt zichtbaar op het scherm komt in
-plaats van als lege schil.
+plaats van als lege schil — zowel wanneer het verzoek mislukt als wanneer de server hem weigert,
+wat een typefout in `plugins.enabled` oplevert.
 
 De regelverwijzingen in dit document worden ook getoetst. Drie reviewrondes op rij vonden hier
 verouderde nummers, elke keer doordat een codewijziging in dezelfde commit ze verschoof. Die

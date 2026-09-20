@@ -561,6 +561,32 @@ class PluginSwitchTests(unittest.TestCase):
                 enabled_plugins(settings_path)
         self.assertIn("empty", str(raised.exception))
 
+    def test_the_route_answers_500_when_the_switch_is_wrong(self) -> None:
+        """A typo must not serve a half-empty menu.
+
+        `/plugins.js` raises, FastAPI answers 500, and `static/index.html`'s script tag leaves the
+        global unset — so the browser shows its "plugin list did not arrive" panel instead of an
+        empty sidebar. The browser half is checked in `tests/browser/check_plugin_registry.py`.
+
+        A subprocess, because the route calls `frontend_script()`, whose default settings path was
+        bound when `app.plugins` was imported.
+        """
+        with _settings({"plugins": {"enabled": ["imagepool"]}}) as settings_path:
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-c",
+                    "from fastapi.testclient import TestClient; from app.main import app;"
+                    " print(TestClient(app, raise_server_exceptions=False).get('/plugins.js').status_code)",
+                ],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                env={**os.environ, "LLM_WORKBENCH_SETTINGS_FILE": str(settings_path)},
+            )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), "500", result.stderr)
+
     def test_the_settings_file_can_be_pointed_elsewhere(self) -> None:
         """`LLM_WORKBENCH_SETTINGS_FILE` decides which file is read.
 
