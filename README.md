@@ -237,8 +237,11 @@ Leave `plugins.enabled` out and every category is in the menu, so a category
 added to the registry appears by itself. Name the list and only those ids are, in
 registry order. The ids are `realtime-translation`, `realtime-tts`, `llm-pool`,
 `tts-pool`, `image-pool`, `video-pool`, `translation-services`, and `developer`
-(the Icons item). An unknown id, or an empty list, is refused instead of quietly
-producing a shorter menu. Only whole categories switch, and a page reload is
+(the Icons item). An unknown id, an empty list, a `plugins` section that is not an
+object and a settings file whose root is not an object are all refused instead of
+quietly producing a different menu. `"enabled": null` in `local.json` turns every
+category on: that is the only way a local file widens the menu instead of
+narrowing it. Only whole categories switch, and a page reload is
 enough: the file is read per request. `LLM_WORKBENCH_SETTINGS_FILE` points the
 workbench at another file altogether, with `local.json` looked up beside it;
 that is how a deployment keeps its settings outside the repo, and how

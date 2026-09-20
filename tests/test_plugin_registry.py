@@ -135,8 +135,12 @@ def _router_module_objects() -> dict[str, APIRouter]:
 
 
 @contextlib.contextmanager
-def _settings(payload: dict[str, object], local: dict[str, object] | None = None):
-    """A temporary `settings.json`, with a `local.json` beside it when one is given."""
+def _settings(payload: object, local: object | None = None):
+    """A temporary `settings.json`, with a `local.json` beside it when one is given.
+
+    Both are written as JSON, so a test can also hand in something a settings file should not be —
+    a list, or a string where an object belongs.
+    """
     with tempfile.TemporaryDirectory() as tmp:
         path = Path(tmp) / "settings.json"
         path.write_text(json.dumps(payload), encoding="utf-8")
@@ -566,6 +570,54 @@ class PluginSwitchTests(unittest.TestCase):
             with self.assertRaises(ValueError) as raised:
                 enabled_plugins(settings_path)
         self.assertIn("empty", str(raised.exception))
+
+    def test_a_shape_error_above_enabled_is_an_error(self) -> None:
+        """A `plugins` section of the wrong shape must not silently drop the list beside it.
+
+        Left alone it is merged away, so the menu would show every category while the reader
+        believes their switch was applied — the same failure the checks on `enabled` prevent.
+        """
+        with _settings(
+            {"plugins": {"enabled": ["image-pool"]}},
+            local={"plugins": "kapot"},
+        ) as settings_path:
+            with self.assertRaises(ValueError) as raised:
+                enabled_plugins(settings_path)
+        self.assertIn("local.json", str(raised.exception))
+
+        with _settings({"plugins": "kapot"}) as settings_path:
+            with self.assertRaises(ValueError) as raised:
+                enabled_plugins(settings_path)
+        self.assertIn("settings.json", str(raised.exception))
+
+        with _settings(
+            {"plugins": {"enabled": ["image-pool"]}},
+            local={"plugins": [1, 2]},
+        ) as settings_path:
+            with self.assertRaises(ValueError) as raised:
+                enabled_plugins(settings_path)
+        self.assertIn("local.json", str(raised.exception))
+
+    def test_a_settings_file_that_is_not_an_object_is_an_error(self) -> None:
+        """A malformed settings file is not "no switch here": read that way it shows everything."""
+        with _settings(
+            {"plugins": {"enabled": ["image-pool"]}},
+            local=["image-pool"],
+        ) as settings_path:
+            with self.assertRaises(ValueError) as raised:
+                enabled_plugins(settings_path)
+        self.assertIn("local.json", str(raised.exception))
+
+    def test_an_explicit_null_turns_everything_on(self) -> None:
+        """`enabled: null` is the one way `local.json` reverses the base file instead of narrowing
+        it, and it follows from "no list means everything is on". Pinned so it stays a choice
+        rather than an accident.
+        """
+        with _settings(
+            {"plugins": {"enabled": ["image-pool"]}},
+            local={"plugins": {"enabled": None}},
+        ) as settings_path:
+            self.assertEqual(enabled_plugins(settings_path), PLUGINS)
 
     def test_the_route_answers_500_when_the_switch_is_wrong(self) -> None:
         """A typo must not serve a half-empty menu.

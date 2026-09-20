@@ -299,8 +299,12 @@ def iter_views() -> tuple[View, ...]:
 
 
 def _load_json_object(path: Path) -> dict[str, object]:
-    # A local copy of the loader the service settings use, six of which already exist. Folding
-    # them into one module is a cleanup of its own; it is not part of this switch.
+    # A local copy of the loader the service settings use, six of which already exist. Folding them
+    # into one module is a cleanup of its own; it is not part of this switch. One deliberate
+    # difference: a file whose root is not an object is an error here instead of being ignored.
+    # `["image-pool"]` where an object belongs is the same class of mistake as an unknown category
+    # id, and silently reading it as "no switch" shows every category while the reader believes
+    # their list was applied.
     if not path.exists():
         return {}
     raw_text = path.read_text(encoding="utf-8")
@@ -308,7 +312,7 @@ def _load_json_object(path: Path) -> dict[str, object]:
         return {}
     payload = json.loads(raw_text)
     if not isinstance(payload, dict):
-        return {}
+        raise ValueError(f"{path} must contain a JSON object")
     return dict(payload)
 
 
@@ -346,8 +350,18 @@ def enabled_plugins(settings_path: Path | str = DEFAULT_SETTINGS_PATH) -> tuple[
     """
     path = Path(settings_path)
     local_path = path.with_name("local.json")
+    base_payload = _load_json_object(path)
     local_payload = _load_json_object(local_path)
-    payload = _merge_json_objects(_load_json_object(path), local_payload)
+    # A `plugins` section of the wrong shape is a mistake one level above `enabled`. Left alone it
+    # would be merged away and the list beside it ignored, so the menu would show every category
+    # while the reader believes their switch was applied. `null` counts as absent.
+    for candidate_path, candidate_payload in ((path, base_payload), (local_path, local_payload)):
+        section = candidate_payload.get("plugins")
+        if section is not None and not isinstance(section, dict):
+            raise ValueError(
+                f"plugins in {candidate_path} must be an object, not {type(section).__name__}"
+            )
+    payload = _merge_json_objects(base_payload, local_payload)
     enabled = _enabled_entry(payload)
     if enabled is None:
         return PLUGINS
