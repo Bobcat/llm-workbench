@@ -310,7 +310,13 @@ def _load_json_object(path: Path) -> dict[str, object]:
     raw_text = path.read_text(encoding="utf-8")
     if raw_text.strip() == "":
         return {}
-    payload = json.loads(raw_text)
+    try:
+        payload = json.loads(raw_text)
+    except json.JSONDecodeError as error:
+        # The decoder says what is wrong and where, but not in which of the two files. `local.json`
+        # is the file an operator hand-edits, and a stray comma there is the likeliest accident, so
+        # the file name is the one thing the message cannot do without.
+        raise ValueError(f"{path} is not valid JSON: {error}") from error
     if not isinstance(payload, dict):
         raise ValueError(f"{path} must contain a JSON object")
     return dict(payload)

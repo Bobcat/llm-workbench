@@ -246,7 +246,7 @@ Gebouwd:
    een subprocess bij `app/plugins.py` en stubt daarmee de global, want een tweede kopie in JS is
    precies wat deze fase opheft.
 
-Deze drie zitten in `tests/test_plugin_registry.py` (38 tests) en
+Deze drie zitten in `tests/test_plugin_registry.py` (40 tests) en
 `tests/js/plugin-registry.test.mjs` (4 tests). De padaanalyse meet sinds fase 3 tegen de gemounte
 app in plaats van tegen een declaratie per view: de core mount alle adressen, dus elk pad dat een
 view aanroept moet daar altijd in zitten. Ze dekt zowel de `api.<methode>()`-aanroepen als de URL's

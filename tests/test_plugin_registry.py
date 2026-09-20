@@ -135,17 +135,20 @@ def _router_module_objects() -> dict[str, APIRouter]:
 
 
 @contextlib.contextmanager
-def _settings(payload: object, local: object | None = None):
+def _settings(payload: object, local: object | None = None, raw: dict[str, str] | None = None):
     """A temporary `settings.json`, with a `local.json` beside it when one is given.
 
-    Both are written as JSON, so a test can also hand in something a settings file should not be —
-    a list, or a string where an object belongs.
+    The values are written as JSON, so a test can also hand in something a settings file should not
+    be — a list, or a string where an object belongs. `raw` maps a file name to content written
+    verbatim, for the one thing the writer cannot produce: a file that is not valid JSON at all.
     """
     with tempfile.TemporaryDirectory() as tmp:
         path = Path(tmp) / "settings.json"
         path.write_text(json.dumps(payload), encoding="utf-8")
         if local is not None:
             (Path(tmp) / "local.json").write_text(json.dumps(local), encoding="utf-8")
+        for name, content in (raw or {}).items():
+            (Path(tmp) / name).write_text(content, encoding="utf-8")
         yield path
 
 
@@ -607,6 +610,38 @@ class PluginSwitchTests(unittest.TestCase):
             with self.assertRaises(ValueError) as raised:
                 enabled_plugins(settings_path)
         self.assertIn("local.json", str(raised.exception))
+
+    def test_a_settings_file_that_is_not_valid_json_names_itself(self) -> None:
+        """A stray comma is the likeliest accident in a hand-edited `local.json`, and the decoder
+        message says what is wrong and where, but not which of the two files it is in.
+        """
+        with _settings(
+            {"plugins": {}},
+            raw={"local.json": '{"plugins": {"enabled": ["image-pool"],}}'},
+        ) as settings_path:
+            with self.assertRaises(ValueError) as raised:
+                enabled_plugins(settings_path)
+        self.assertIn("local.json", str(raised.exception))
+        self.assertIn("not valid JSON", str(raised.exception))
+
+        with _settings({}, raw={"settings.json": '{"plugins": {,}}'}) as settings_path:
+            with self.assertRaises(ValueError) as raised:
+                enabled_plugins(settings_path)
+        self.assertIn("settings.json", str(raised.exception))
+        self.assertIn("not valid JSON", str(raised.exception))
+
+    def test_a_null_plugins_section_counts_as_absent(self) -> None:
+        """`plugins: null` claims nothing, so it is not a shape error. Pinned because the comment
+        in `app/plugins.py` calls that a decision, and nothing else would notice if it changed.
+        """
+        with _settings(
+            {"plugins": {"enabled": ["image-pool"]}},
+            local={"plugins": None},
+        ) as settings_path:
+            self.assertEqual(enabled_plugins(settings_path), PLUGINS)
+
+        with _settings({"plugins": None}) as settings_path:
+            self.assertEqual(enabled_plugins(settings_path), PLUGINS)
 
     def test_an_explicit_null_turns_everything_on(self) -> None:
         """`enabled: null` is the one way `local.json` reverses the base file instead of narrowing
