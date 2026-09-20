@@ -1,4 +1,4 @@
-import { api } from '../../api-client.js';
+import { api } from '../../plugins/translation-services/api.js';
 import { escapeAttr, escapeHtml, formatApiError } from '../../shared/ui-helpers.js';
 
 export function createPlacementPlanInspector(host) {

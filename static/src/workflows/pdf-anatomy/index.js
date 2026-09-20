@@ -1,4 +1,4 @@
-import { api } from '../../api-client.js';
+import { api } from '../../plugins/translation-services/api.js';
 import { escapeAttr, escapeHtml, formatApiError } from '../../shared/ui-helpers.js';
 
 // PDF anatomy — what the frozen source is MADE OF against what the accepted output is made of

@@ -1,4 +1,5 @@
-import { api } from '../../api-client.js';
+import { api } from '../../plugins/llm-pool/api.js';
+import { sharedApi } from '../../shared/api/shared.js';
 import { escapeAttr, escapeHtml, formatApiError } from '../../shared/ui-helpers.js';
 import { TRANSLATION_LANGUAGES } from '../../shared/translation-languages.js';
 
@@ -533,7 +534,7 @@ export function createTextGenerationView() {
     setBusy(true);
     setStatus('Loading models...');
     try {
-      adminModels = normalizeAdminModelsPayload(await api.getAdminModels());
+      adminModels = normalizeAdminModelsPayload(await sharedApi.getAdminModels());
       renderModelOptions();
       if (loadedModels().length === 0) {
         setStatus('No loaded models available.');

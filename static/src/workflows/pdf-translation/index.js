@@ -1,4 +1,5 @@
-import { api } from '../../api-client.js';
+import { api } from '../../plugins/translation-services/api.js';
+import { sharedApi } from '../../shared/api/shared.js';
 import { createOmnidocInspector } from './omnidoc.js';
 import { createPlacementPlanInspector } from './placement-plan.js';
 import { createLayoutMetricsInspector } from './layout-metrics.js';
@@ -1110,7 +1111,7 @@ export function createPdfTranslationView() {
     let pdfCaps = null;
     try {
       const [adminPayload, statusPayload] = await Promise.all([
-        api.getAdminModels(),
+        sharedApi.getAdminModels(),
         api.getTranslationStatus().catch(() => null),
       ]);
       models = Array.isArray(adminPayload?.models) ? adminPayload.models : [];

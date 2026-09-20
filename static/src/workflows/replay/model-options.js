@@ -1,4 +1,5 @@
-import { api } from '../../api-client.js';
+import { api } from '../../plugins/realtime-translation/api.js';
+import { sharedApi } from '../../shared/api/shared.js';
 import {
   getStoredReviserModelSelection,
   getStoredReviserModelSelectionOverride,
@@ -14,7 +15,7 @@ export async function loadModelsAndSelectDefault(container, onModelSelected, onC
 
   try {
     const [modelsResponse, configResponse] = await Promise.all([
-      api.getModels(),
+      sharedApi.getModels(),
       api.getDefaultModel(),
     ]);
 
@@ -73,7 +74,7 @@ export async function refreshModelOptions(container, currentModel, currentCorrec
   if (!select || !correctionSelect) return;
 
   try {
-    const models = await api.getModels();
+    const models = await sharedApi.getModels();
     const modelIds = models.map((model) => model.id);
     const selectedModel = currentModel && currentModel !== '(none)' ? currentModel : '';
     const selectedCorrectionModel = currentCorrectionModel || '';

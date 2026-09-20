@@ -1,4 +1,4 @@
-import { api } from '../../api-client.js';
+import { api } from '../../plugins/video-pool/api.js';
 import { escapeAttr, escapeHtml, formatApiError } from '../../shared/ui-helpers.js';
 
 const DEFAULT_PARAMETER_LABELS = {

@@ -1,4 +1,5 @@
-import { api } from '../../api-client.js';
+import { api } from '../../plugins/image-pool/api.js';
+import { sharedApi } from '../../shared/api/shared.js';
 import { escapeAttr, escapeHtml, formatApiError } from '../../shared/ui-helpers.js';
 
 const DEFAULT_TRIGGER_WORD = 'GFX_IMPR5N';
@@ -677,7 +678,7 @@ export function createImageTrainView() {
 
   async function loadLlmModels() {
     try {
-      const payload = await api.getModels();
+      const payload = await sharedApi.getModels();
       if (!container.isConnected) return;
       llmModels = Array.isArray(payload)
         ? payload.map((model) => ({

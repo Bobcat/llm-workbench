@@ -1,4 +1,5 @@
-import { api } from '../../api-client.js';
+import { api } from '../../plugins/translation-services/api.js';
+import { sharedApi } from '../../shared/api/shared.js';
 import { escapeAttr, escapeHtml, formatApiError } from '../../shared/ui-helpers.js';
 import { TRANSLATION_LANGUAGES } from '../../shared/translation-languages.js';
 import { publishWorkflowBusy } from '../../shared/workflow-activity.js';
@@ -548,7 +549,7 @@ export function createTranslationRequestsView() {
   // one from the flat list to re-translate the cached units with.
   async function loadPromptChoices() {
     try {
-      const result = await api.listTranslationPrompts();
+      const result = await sharedApi.listTranslationPrompts();
       savedPrompts = (result && result.prompts) || [];
     } catch (err) {
       savedPrompts = [];
@@ -721,7 +722,7 @@ export function createTranslationRequestsView() {
     let defaultModel = '';
     try {
       const [adminPayload, statusPayload] = await Promise.all([
-        api.getAdminModels(),
+        sharedApi.getAdminModels(),
         api.getTranslationStatus().catch(() => null),
       ]);
       models = Array.isArray(adminPayload?.models) ? adminPayload.models : [];
