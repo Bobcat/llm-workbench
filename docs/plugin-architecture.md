@@ -285,7 +285,9 @@ volledig werken — wie wil, draait per categorie een eigen instantie.
 
 Wat "uit" betekent: **de categorie staat niet in het menu.** Meer niet. De adressen zijn van de
 core en blijven altijd beschikbaar, dus geen enkele view kan stukgaan doordat een andere categorie
-uit staat.
+uit staat. Een bladwijzer naar een view van een uitgezette categorie heeft geen route meer; de shell
+valt dan terug op de landing (`static/app.js:331`, `defaultRoute`) in plaats van een lege host te
+tonen. Dat is bestaand gedrag, maar fase 3 maakt het bereikbaar — en de browsercheck pint het.
 
 Beslissingen:
 
