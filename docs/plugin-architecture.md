@@ -354,11 +354,32 @@ daarvan door meer dan één categorie:
 | `listTranslationPrompts` | `/api/translation/prompts` | realtime-translation, translation-services |
 
 Die vier komen in een core-client. De andere 96 gaan naar de plugin die ze gebruikt, en dat blijkt
-een schone verdeling langs de bestaande categorieën: `/api/image-pool` bij image-pool,
-`/api/translation` plus de drie pdf-families bij translation-services, `/api/replay` en
-`/api/prompts` bij realtime-translation, `/api/realtime-tts` bij realtime-tts, `/api/video-pool` bij
-video-pool, `/api/chat`, `/api/text-generation` en `/api/config` bij llm-pool, `/api/tts-pool` bij
-tts-pool.
+een schone verdeling langs de bestaande categorieën: na aftrek van de vier gedeelde valt elke methode
+op precies één categorie.
+
+| categorie | families | methodes |
+| --- | --- | --- |
+| image-pool | `/api/image-pool` | 22 |
+| translation-services | `/api/translation`, `/api/pdf-translation`, `/api/pdf-benchmark`, `/api/pdf-regression`, `/api/prompts` | 40 |
+| realtime-translation | `/api/replay`, `/api/config` | 13 |
+| video-pool | `/api/video-pool` | 7 |
+| realtime-tts | `/api/realtime-tts` | 6 |
+| llm-pool | `/api/chat`, `/api/text-generation`, en van `/api/models` de drie die alleen llm-pool aanroept | 5 |
+| tts-pool | `/api/tts-pool`, zonder de gedeelde admin-methode | 3 |
+| | | **96** |
+
+Twee families die vanzelfsprekend lijken maar het niet zijn: `/api/config` (`getDefaultModel`) hoort
+bij **realtime-translation**, want alleen de replay-view roept hem aan, en `/api/prompts`
+(`testTranslationPrompt`) bij **translation-services**, want alleen `prompt-library` roept hem aan —
+die view hoort bij translation-services, ook al woont zijn router in het `realtime_translation`-pakket.
+Welke plugin een client bezit volgt dus uit de aanroeper, niet uit de router.
+
+**Wat een view importeert.** Tien van de negentien views die de client gebruiken, roepen zowel een
+gedeelde als een eigen methode aan (gemeten; `image-train` doet bijvoorbeeld `getModels` uit de core
+en zijn eigen trainingscalls). Zo'n view importeert dus twee modules: de client van zijn eigen plugin
+en de core-client. Dat is de bedoeling — de eis is niet "één import" maar "nooit de client van een
+andere plugin" — en de plugin-client her-exporteert niets uit de core: dat zou een façade zonder
+gedrag zijn, en een plugin-pakket in fase 5 moet die core-import toch zelf doen.
 
 **De vorm:**
 
@@ -367,7 +388,7 @@ tts-pool.
 | `static/src/shared/api/request.js` | het dunne gedeelde deel: één fetch-helper met het gedrag van nu (same-origin, JSON, fout bij een non-2xx). Elk ander clientbestand importeert hem |
 | `static/src/shared/api/shared.js` | de vier methoden hierboven, die meer dan één categorie aanroept |
 | `static/src/plugins/<categorie-id>/api.js` | de client van één plugin; `<categorie-id>` is dezelfde id als in `app/plugins.py` |
-| `static/src/workflows/<view>/…` | blijft staan waar het staat; de view importeert de client van zijn eigen plugin |
+| `static/src/workflows/<view>/…` | blijft staan waar het staat; de view importeert de client van zijn eigen plugin, en waar nodig de core-client |
 
 De twee websocket-klassen (`ReplayWebSocket`, `ReplaySpeakWebSocket`) verhuizen mee naar de plugin
 van hun view. `static/src/api-client.js` verdwijnt; er blijft geen re-export achter, want dat is
@@ -375,7 +396,7 @@ precies de "twee plekken waar het kan staan"-constructie die deze fase opheft.
 
 **Wat deze fase ook oplevert: de toets leest eindelijk de code zelf.** De padaanalyse in
 `tests/test_plugin_registry.py` haalt zijn methode → pad-tabel nu uit `api-client.js`; dat is de
-noodoplossing die sectie 3 beschrijft. Na de splitsing liggen de paden in de subtree van de view
+tabel die sectie 3 als bewijsstap beschrijft. Na de splitsing liggen de paden in de subtree van de view
 zelf — zijn eigen plugin-client plus wat die uit `shared/` importeert — dus de tabel en het
 `api.<methode>()`-opzoeken kunnen weg, en de toets meet wat hij zegt te meten.
 
@@ -387,7 +408,7 @@ view aangeroepen (gemeten). Die verdwijnt in deze fase in plaats van mee te verh
 
 | | |
 | --- | --- |
-| **Verificatie** | de API-oppervlakte blijft identiek; de padaanalyse draait zonder `api-client.js`; elke view importeert nog precies één client; geen enkele view importeert uit een andere plugin |
+| **Verificatie** | de API-oppervlakte blijft identiek; de padaanalyse draait zonder `api-client.js`; een view importeert alleen de client van zijn eigen plugin en de core-client, nooit die van een andere plugin |
 
 ### Fase 5 — discovery buiten de repo ⬜
 
@@ -465,6 +486,7 @@ Deze zijn bewust blijven liggen; ze horen bij een latere fase.
 | **Aliassen in de registratie, op de view die het doel bezit** | Globaal laten in `registry.js`: dan blijft een deel van de configuratie in JS achter, wat fase 2 juist opheft |
 | **`enabled` in settings, niet in het manifest** | In het manifest: dan is het manifest geen statische data meer en kan de regressiepin niets meer vastpinnen |
 | **Eén client per plugin, met een dunne gedeelde fetch-helper en de vier gedeelde methoden in de core** | Eén gedeelde client met een namespace per domein: dan blijft er één bestand waar elke nieuwe plugin in moet werken, en dat is precies de bottleneck die fase 4 wegneemt |
+| **Een view importeert zijn eigen plugin-client plus, waar nodig, de core-client** | De plugin-client laten her-exporteren wat zijn views uit de core nodig hebben: een façade zonder gedrag, en een plugin-pakket in fase 5 moet die core-import toch zelf doen |
 | **Een methode die meer dan één categorie aanroept, hoort in de core-client** | Hem bij zijn oorspronkelijke plugin laten: dan hing realtime-translation aan tts-pool of translation-services, dezelfde fout die fase 3 bij de adressen wegnam |
 | **De `api-client.js`-splitsing als eigen fase** | In fase 3 laten: dat bundelt een herstructurering van 766 regels met enable/disable, en dan is fase 3 te groot om te reviewen |
 | **`replay-translate` uit de shell halen als losse opruiming vóór fase 2** | In fase 2 meenemen: maakt de fase-2-diff groter zonder dat het iets met de bron van waarheid te maken heeft. Gedaan in een eigen commit op de fase-2-branch |
