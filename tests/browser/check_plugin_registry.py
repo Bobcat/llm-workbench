@@ -510,6 +510,31 @@ def verify(base: str, checks: Checks) -> None:
         missing.close()
         checks.note("missing plugin list: visible panel with the reason, no silent empty shell")
 
+        # --- a plugin list the server refuses is visible too ---
+        # A typo in plugins.enabled makes /plugins.js raise, which FastAPI answers with a 500 and a
+        # text/plain body. The script tag then never sets the global, so the same panel has to
+        # appear: this is what that typo looks like to the person who made it.
+        refused = browser.new_page()
+        refused.route(
+            "**/plugins.js",
+            lambda route: route.fulfill(
+                status=500, content_type="text/plain", body="Internal Server Error"
+            ),
+        )
+        refused.goto(f"{base}/#pdf-anatomy")
+        try:
+            refused.wait_for_selector(".workflow-error", timeout=5000)
+            text = refused.inner_text(".workflow-error")
+            checks.check("plugin list" in text.lower(), f"panel does not name the plugin list: {text!r}")
+            checks.check(
+                refused.eval_on_selector_all("#workflowList li[data-route]", "els => els.length") == 0,
+                "the sidebar rendered items without a plugin list",
+            )
+        except Exception as error:  # noqa: BLE001 - reported as a problem
+            problems.append(f"a refused plugin list was not shown to the user: {error}")
+        refused.close()
+        checks.note("refused plugin list: the 500 from a bad plugins.enabled is visible on screen")
+
         checks.check(not page_errors, f"page errors: {page_errors}")
         checks.check(not import_failures, f"dynamic import failures: {import_failures}")
         browser.close()
