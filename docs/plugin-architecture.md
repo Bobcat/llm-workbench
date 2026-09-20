@@ -439,17 +439,47 @@ De registratie in `app/plugins.py` houdt de velden die sectie 2 noemt; een pakke
 
 **Hoe de core dat serveert.** De core mount `static_dir` op `/plugin-static/<plugin-id>/`, met
 dezelfde `RevalidatingStaticFiles` als zijn eigen bestanden en vóór de catch-all mount. Het
-`module`-veld van een view wordt door de browser tegen `document.baseURI` opgelost, dus voor een
-plugin is dat `/plugin-static/<plugin-id>/view.js`; voor de ingebouwde plugins verandert er niets.
-`icon` mag voor een plugin een pad zijn in plaats van een sprite-id: een waarde die met `/` begint
-wordt als afbeelding gerenderd, al het andere blijft de sprite-symbol uit `static/assets/icons.svg`.
-De JS-toets die elke view-icoon in de sprite controleert, gaat daarmee alleen nog over sprite-id's.
+`module`-veld van een view wordt door de browser tegen `document.baseURI` opgelost, en daarom is het
+voor een plugin **relatief**: `plugin-static/<plugin-id>/view.js`, zonder leidende slash. Die slash
+zou de basis weggooien en daarmee de subpad-eigenschap die de loader in zijn eigen commentaar belooft;
+gemeten, met `http://host/workbench/` als basis:
+
+| module | resolutie onder een subpad |
+| --- | --- |
+| `src/workflows/chat/index.js` (ingebouwd) | `…/workbench/src/workflows/chat/index.js` |
+| `plugin-static/mine/view.js` | `…/workbench/plugin-static/mine/view.js` |
+| `/plugin-static/mine/view.js` | `…/plugin-static/mine/view.js` — basis weg |
+
+De mount aan de serverkant blijft `/plugin-static/<plugin-id>`, want dat is een absoluut serverpad;
+onder een subpad strippt de proxy dat voorvoegsel, net als bij de rest van de app.
+
+`icon` mag voor een plugin een pad zijn in plaats van een sprite-id, maar alleen van deze vorm: een
+relatief pad onder de eigen mount. `iconMarkup` laat vandaag alleen `^[a-z0-9-]+$` toe en gooit op
+al het andere, en die wacht is precies wat het icoon nu veilig maakt in `innerHTML`; een pad kan er
+dus alleen bij als de shell de vorm controleert (`plugin-static/<eigen-id>/…`) en de waarde escapet,
+zoals bij de andere drie velden. Al het andere blijft de sprite-symbol uit `static/assets/icons.svg`,
+en de JS-toets die elke view-icoon in de sprite controleert gaat over die gevallen.
+
+`styles` is een nieuwe sleutel op plugin-niveau in de payload, standaard een lege lijst. Daarmee
+verandert de pin in `test_payload_carries_only_frontend_data`, die de sleutelverzameling per plugin
+exact vastlegt — dat is de bedoeling van die pin, en het staat hier zodat het geen verrassing is.
 
 **Samenvoegen, en botsen weigeren.** `PLUGINS` blijft de ingebouwde lijst en de bron van waarheid voor
-wat er in de repo zit; `all_plugins()` is die lijst plus wat discovery vindt, in die orde. Twee
+wat er in de repo zit; `all_plugins()` is die lijst plus wat discovery vindt, in die orde. Binnen het
+gevonden deel wordt op plugin-id gesorteerd, en dat is geen detail: de landingsroute is
+`WORKFLOWS[0]` (`static/app.js:331`), dus de volgorde bepaalt de startpagina en de sidebar. Twee
 botsingen worden bij het laden geweigerd in plaats van stil opgelost: een plugin-id die al bestaat,
 en een routenaam die al bestaat. Dat sluit het gat uit sectie 4 met de strengste van de twee opties
 die daar staan.
+
+**Faalmodes, met een keuze in plaats van stilte.**
+
+| geval | wat de core doet | waarom niet anders |
+| --- | --- | --- |
+| `static_dir` bestaat niet | weigeren bij het laden, met de plugin erbij | stil overslaan is wat de core met zijn eigen map doet (`app/main.py:74`), maar voor een plugin betekent het dat geen enkele view laadt: dat lijkt een kapotte workbench |
+| een entry point gooit bij het laden | weigeren bij het laden, met het entry point en het pakket erbij | de fabrieksfunctie draait tijdens import; één kapot pakket zou anders de hele workbench meenemen of half laden |
+| twee entry points uit één pakket | toegestaan: dat zijn twee plugins | ze krijgen elk hun eigen id, en de id-regel hierboven vangt de botsing als ze dezelfde kiezen |
+| dezelfde plugin-id of routenaam | weigeren bij het laden, met beide kanten | zie hierboven |
 
 **Adressen: antwoord op de open vraag uit sectie 6.** Een plugin mag zijn eigen adressen meebrengen,
 met drie regels:
@@ -462,6 +492,16 @@ met drie regels:
 Regel 2 is geen goede intentie maar een toets: de padaanalyse eist per view dat elk aangeroepen pad
 door de core of door de eigen plugin gediend wordt. Zonder die toets komt de afhankelijkheid terug
 die fase 3 weghaalde — vijf views buiten LLM Pool leunden op `/api/models` zonder dat iemand het zag.
+
+Die toets heeft wel een wortel nodig. Elke helper in `tests/test_plugin_registry.py` begint nu bij
+`STATIC / view.module`, en `pathlib` vervangt de basis zodra dat pad absoluut is: van
+`/plugin-static/mine/view.js` maakt het `/plugin-static/mine/view.js`, dat niet bestaat. Het gevolg
+is niet dat de toets omvalt maar dat hij niets ziet — `_api_paths` en `_client_owners` geven een lege
+verzameling, en dan slagen `test_views_only_build_paths_that_are_served` én de toets die regel 2
+draagt zonder iets te controleren. Daarom krijgt de analyse **per view een wortel**: `static/` voor
+de ingebouwde plugins, `static_dir` van de plugin voor een gevonden plugin. Een wortel die niet
+bestaat is een fout, geen lege verzameling. De JS-suite heeft dezelfde wortel nodig; `path.join`
+plakt een absoluut pad juist aan (`static/plugin-static/mine/view.js`), wat net zo goed niets vindt.
 
 **Geïnstalleerd is niet hetzelfde als aan.** Discovery bepaalt wat er bestaat, `plugins.enabled` wat
 er in het menu staat. Een geïnstalleerde plugin die niet in de lijst staat is dus aanwezig maar
@@ -477,7 +517,10 @@ een page reload.
 **Escapen is voorwaarde, geen extra.** `pluginItemMarkup` zet `name`, `tooltip` en `route` ongeëscapet
 in `innerHTML`; met data van buiten de repo is dat een gat, ook als die data uit een first-party
 pakket komt. `escapeHtml` en `escapeAttr` bestaan al, dus dit is een kleine wijziging die het gat uit
-sectie 4 sluit in plaats van verplaatst.
+sectie 4 sluit. **Het icoon hoort er in dezelfde beweging bij**: dat is nu niet te misbruiken omdat
+`iconMarkup` alleen `^[a-z0-9-]+$` toelaat en anders gooit, maar een pad moet die allowlist openen.
+Dus: drie velden escapen, het vierde veld een vormcontrole geven én escapen — anders sluit deze fase
+drie gaten en opent ze er één.
 
 **Buiten scope, met reden.** Derden isoleren is een ander ontwerp (iframe of worker), geen
 vervolgfase. De ingebouwde plugins blijven in de repo: deze fase voegt de mogelijkheid toe, niet de
@@ -494,10 +537,18 @@ gebruiker met first-party pakketten heeft ze niet nodig.
    raken.
 3. *Adressen.* De routers van een gevonden plugin worden gemount, ook als die plugin niet in
    `plugins.enabled` staat; en de padaanalyse zakt per view af naar "de core of de eigen plugin", met
-   een mutatie die een view naar de client van een andere plugin laat grijpen.
-4. *Botsen.* Een dubbele plugin-id en een dubbele routenaam laten het laden falen met een melding die
-   beide kanten noemt.
-5. *De pin.* De handgeschreven sidebarpin blijft over de ingebouwde set gaan: wat in de repo zit hoort
+   een mutatie die een view naar de client van een andere plugin laat grijpen. De analyse krijgt
+   daarvoor per view een wortel (`static/` of de `static_dir` van de plugin), en een view waarvan de
+   wortel niet bestaat laat de toets vallen in plaats van hem stil over te slaan.
+4. *Paden en iconen.* Een `module` van een plugin is relatief en resolvet ook onder een subpad goed;
+   een `icon` dat een pad is wordt op zijn vorm gecontroleerd en geëscapet, en een sprite-id blijft
+   een sprite-symbol.
+5. *De payload.* Zonder entry points is de payload identiek aan die van fase 4; met een plugin erin
+   heeft die plugin er `styles` bij, en de payloadpin noemt die sleutel.
+6. *Botsen en faalmodes.* Een dubbele plugin-id, een dubbele routenaam, een ontbrekende `static_dir`
+   en een entry point dat gooit laten alle vier het laden falen met een melding die de plugin of het
+   entry point noemt.
+7. *De pin.* De handgeschreven sidebarpin blijft over de ingebouwde set gaan: wat in de repo zit hoort
    vastgepind, wat geïnstalleerd is niet.
 
 ## 4. Bekende gaten en geaccepteerde schuld
@@ -577,12 +628,19 @@ Deze zijn bewust blijven liggen; ze horen bij een latere fase.
 | Lazy loading bij eerste activering | Alles eager importeren: geen eerste-klik-kosten, maar ~21k regels JS parsen bij het opstarten |
 | Registry laadt, shell bezit de levenscyclus en de DOM | Registry ook eigenaar van caching en activering: mengt data met DOM-beheer |
 
-## 6. Nog open
+## 6. Open vragen
 
-1. ~~**Mag een plugin in fase 5 eigen adressen meebrengen?**~~ **Beslist in fase 5:** ja, met drie
-   regels — de core mount ze, een view gebruikt de core of zijn eigen plugin, en een gedeeld adres
-   verhuist naar de core. De fase-5-sectie noemt ze en de toets die regel 2 afdwingt.
-2. ~~Is de api-client-splitsing klaar wanneer elke plugin zijn eigen module heeft, of is een
-   gedeelde namespace per domein beter?~~ **Beslist in fase 4:** één client per plugin, met een
-   dunne gedeelde fetch-helper in `static/src/shared/api/` en de vier methoden die meer dan één
-   categorie aanroept in de core. De fase-4-sectie noemt de gemeten verdeling en wat er verhuist.
+Na fase 5 staat hier niets meer open. De twee vragen die hier stonden zijn beantwoord — eigen adressen
+in fase 5 (de drie regels in die sectie) en de api-client in fase 4 — en de keuzes die de
+ontwerpreview van fase 5 op tafel legde staan in de fase-5-sectie zelf: de wortel per view voor de
+padanalyse, het relatieve `module`-pad, het icoon in het escapen, `styles` in de payloadpin, en vier
+faalmodes met een expliciete keuze.
+
+Wat er bewust buiten blijft, en waarom:
+
+- **Isolatie van derden.** Een plugin zonder sandbox is gelijk aan code-uitvoering; derden zouden een
+  iframe of worker vragen, en dat is een ander ontwerp, geen vervolgfase.
+- **De ingebouwde plugins naar pakketten migreren.** Ze zijn de regressiebasis waar de hele reeks
+  toetsen tegen meet; verhuizen zou het bewijs weghalen dat discovery niets verandert aan wat er was.
+- **Hot reload en een versiebeleid.** Discovery gebeurt bij het opstarten; één gebruiker met
+  first-party pakketten heeft meer niet nodig.
