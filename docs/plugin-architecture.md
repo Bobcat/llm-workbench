@@ -1,8 +1,8 @@
 # Plugin-architectuur — beslissingen en fase-afbakening
 
-Status: fase 1 en 2 zijn gebouwd en staan op `main`. Fase 3 wordt op deze branch gebouwd; fase 4
-en 5 zijn niet begonnen.
-Anker: sectie 1 en 2 beschrijven de code op deze branch. Fase 1 landde met `783f0bd` en de
+Status: fase 1, 2 en 3 zijn gebouwd en staan op `main` (fase 3 via PR #17). Fase 4 en 5 zijn niet
+begonnen.
+Anker: sectie 1 en 2 beschrijven de code op `main`. Fase 1 landde met `783f0bd` en de
 replay-opruiming met `8d73503`; de pdf-fix `a0f79d8` staat op `main` maar raakt deze architectuur
 niet.
 
@@ -278,7 +278,7 @@ toets zou dragen: de zwakste prose-verwijzing ging daarmee van 56% naar 8% van d
 verschuiving zouden overleven. Wat de toets niet vangt staat in zijn docstring, met de gemeten
 marges erbij.
 
-### Fase 3 — categorieën aan- en uitzetten 🚧 in uitvoering op deze branch
+### Fase 3 — categorieën aan- en uitzetten ✅
 
 **Doel:** een installatie toont alleen wat ze nodig heeft. Een workbench met één categorie aan moet
 volledig werken — wie wil, draait per categorie een eigen instantie.
