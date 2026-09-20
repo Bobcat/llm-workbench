@@ -73,7 +73,7 @@ aan wat ze toont.
 | `icon` | symbol-id in `static/assets/icons.svg` |
 | `tooltip` | optioneel; valt terug op `name` |
 | `persistent` | view blijft in de DOM bij wegnavigeren |
-| `module` | pad onder de static root, geresolveerd tegen `document.baseURI` |
+| `module` | pad dat tegen `document.baseURI` wordt geresolveerd; onder de static root voor een ingebouwde plugin, onder de eigen mount (`plugin-static/<id>/…`) voor een plugin uit een pakket |
 | `factory` | geëxporteerde functienaam in die module; levert het view-element |
 | `aliases` | gepensioneerde routenamen die naar deze view wijzen |
 
@@ -464,6 +464,9 @@ en de JS-toets die elke view-icoon in de sprite controleert gaat over die gevall
 verandert de pin in `test_payload_carries_only_frontend_data`, die de sleutelverzameling per plugin
 exact vastlegt — dat is de bedoeling van die pin, en het staat hier zodat het geen verrassing is.
 
+De regel bovenin `static/src/plugins/registry.js` die hetzelfde over `module` zegt ("pad onder de
+static root") gaat in deze fase mee, want die spreekt de nieuwe afspraak tegen.
+
 **Samenvoegen, en botsen weigeren.** `PLUGINS` blijft de ingebouwde lijst en de bron van waarheid voor
 wat er in de repo zit; `all_plugins()` is die lijst plus wat discovery vindt, in die orde. Binnen het
 gevonden deel wordt op plugin-id gesorteerd, en dat is geen detail: de landingsroute is
@@ -503,6 +506,14 @@ de ingebouwde plugins, `static_dir` van de plugin voor een gevonden plugin. Een 
 bestaat is een fout, geen lege verzameling. De JS-suite heeft dezelfde wortel nodig; `path.join`
 plakt een absoluut pad juist aan (`static/plugin-static/mine/view.js`), wat net zo goed niets vindt.
 
+Die wortel levert ook het **eigendom**, en dat is de andere helft. `_client_owners` bepaalt vandaag
+bij welke plugin een clientbestand hoort door te kijken welke map onder `static/src/plugins/` het
+is; een bestand buiten die map levert een lege verzameling, en dan slaagt de toets die regel 2 draagt
+alsnog zonder iets te controleren. De regel wordt daarom: **een bestand onder de `static_dir` van
+plugin X hoort bij X**, net zoals een bestand onder `static/src/plugins/<id>/` vandaag bij `<id>`
+hoort, en alles onder `static/src/shared/` is van de core. Een bestand dat nergens onder valt is een
+fout, geen leeg antwoord. Zo doet dezelfde toets het werk voor beide soorten plugins.
+
 **Geïnstalleerd is niet hetzelfde als aan.** Discovery bepaalt wat er bestaat, `plugins.enabled` wat
 er in het menu staat. Een geïnstalleerde plugin die niet in de lijst staat is dus aanwezig maar
 onzichtbaar, en zijn adressen zijn gewoon gemount — precies zoals de core dat vandaag met alle
@@ -538,11 +549,13 @@ gebruiker met first-party pakketten heeft ze niet nodig.
 3. *Adressen.* De routers van een gevonden plugin worden gemount, ook als die plugin niet in
    `plugins.enabled` staat; en de padaanalyse zakt per view af naar "de core of de eigen plugin", met
    een mutatie die een view naar de client van een andere plugin laat grijpen. De analyse krijgt
-   daarvoor per view een wortel (`static/` of de `static_dir` van de plugin), en een view waarvan de
-   wortel niet bestaat laat de toets vallen in plaats van hem stil over te slaan.
+   daarvoor per view een wortel (`static/` of de `static_dir` van de plugin), het eigendom volgt
+   dezelfde wortel, en een view waarvan de wortel niet bestaat laat de toets vallen in plaats van hem
+   stil over te slaan.
 4. *Paden en iconen.* Een `module` van een plugin is relatief en resolvet ook onder een subpad goed;
-   een `icon` dat een pad is wordt op zijn vorm gecontroleerd en geëscapet, en een sprite-id blijft
-   een sprite-symbol.
+   een `icon` dat een pad is wordt op zijn vorm gecontroleerd, geëscapet én moet bestaan in de
+   `static_dir` van zijn plugin — anders is een typefout een gebroken plaatje dat geen enkele toets
+   ziet. Een sprite-id blijft een sprite-symbol.
 5. *De payload.* Zonder entry points is de payload identiek aan die van fase 4; met een plugin erin
    heeft die plugin er `styles` bij, en de payloadpin noemt die sleutel.
 6. *Botsen en faalmodes.* Een dubbele plugin-id, een dubbele routenaam, een ontbrekende `static_dir`
@@ -600,7 +613,10 @@ Deze zijn bewust blijven liggen; ze horen bij een latere fase.
 - `static/app.js:59-67` (`pluginItemMarkup`) interpoleert `name`, `tooltip` en `route` ongeëscapet
   in `innerHTML`. Nu onschadelijk omdat de data statisch en gecommit is. Zodra plugins van buiten de
   repo komen is dit een injectiepunt; **beslist in fase 5:** escapen met `escapeHtml`/`escapeAttr`
-  uit `static/src/shared/ui-helpers.js`, als voorwaarde en niet als extra.
+  uit `static/src/shared/ui-helpers.js`, als voorwaarde en niet als extra. **Het icoon hoort erbij:**
+  dat is vandaag niet te misbruiken omdat `iconMarkup` alleen `^[a-z0-9-]+$` toelaat en anders gooit,
+  maar een pad-icoon moet die allowlist openen — dus vormcontrole én escapen, anders sluit deze fase
+  drie gaten en opent ze er één.
 
 ## 5. Genomen beslissingen, en wat afviel
 
@@ -642,5 +658,5 @@ Wat er bewust buiten blijft, en waarom:
   iframe of worker vragen, en dat is een ander ontwerp, geen vervolgfase.
 - **De ingebouwde plugins naar pakketten migreren.** Ze zijn de regressiebasis waar de hele reeks
   toetsen tegen meet; verhuizen zou het bewijs weghalen dat discovery niets verandert aan wat er was.
-- **Hot reload en een versiebeleid.** Discovery gebeurt bij het opstarten; één gebruiker met
-  first-party pakketten heeft meer niet nodig.
+- **Hot reload, een versiebeleid en een pluginregister.** Discovery gebeurt bij het opstarten; één
+  gebruiker met first-party pakketten heeft meer niet nodig.
