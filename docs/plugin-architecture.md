@@ -364,6 +364,14 @@ Deze zijn bewust blijven liggen; ze horen bij een latere fase.
 - `css/app.css` is één globaal `@import`-manifest van 25 regels en er is één globale
   iconensprite; een plugin kan nog geen eigen assets bijdragen. **Bewust uitgesteld in fase 3:** het
   levert nu vooral een nettere indeling op en betaalt zich pas terug bij plugins van buiten de repo.
+- **Zeven kopieën van de settings-loader.** `_load_json_object` en `_merge_json_objects` staan in
+  elke module die settings leest, en `app/plugins.py` heeft er in fase 3 een zevende bij gekregen.
+  Ze samenvoegen is een eigen opruiming, geen fase-3-werk; de kopie in de registratie zegt dat er
+  zelf bij.
+- **Het foutpaneel noemt de instelling niet.** Een foutieve `plugins.enabled` laat `/plugins.js` met
+  een 500 antwoorden, waarna het bestaande paneel verschijnt: het noemt de global en vraagt de
+  pagina te herladen. Bij een typefout is herladen niet de oplossing — het instellingenbestand moet
+  worden gecorrigeerd. De serverlog noemt het foute id wel, met het bestand erbij.
 - ~~De shell hardcodeert `replay-translate`.~~ **Opgelost** als losse opruiming vóór fase 2, in een
   eigen commit op de fase-2-branch. Replay publiceert nu `WORKFLOW_BUSY_EVENT` zoals de vijf andere
   views, en `app.js` noemt geen enkele view meer bij naam — op één na: de fallback
