@@ -234,8 +234,8 @@ Which sidebar categories the workbench shows:
 ```
 
 Leave `plugins.enabled` out and every category is in the menu, so a category
-added to the registry appears by itself. Name the list and only those ids are, in
-registry order. The ids are `realtime-translation`, `realtime-tts`, `llm-pool`,
+added to the registry appears by itself. Name the list and only those ids are in the
+menu, in registry order. The ids are `realtime-translation`, `realtime-tts`, `llm-pool`,
 `tts-pool`, `image-pool`, `video-pool`, `translation-services`, and `developer`
 (the Icons item). An unknown id, an empty list, a `plugins` section that is not an
 object and a settings file whose root is not an object are all refused instead of
