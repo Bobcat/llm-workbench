@@ -1,4 +1,4 @@
-import { api } from '../../api-client.js';
+import { api } from '../../plugins/translation-services/api.js';
 import { escapeHtml, escapeAttr, formatApiError } from '../../shared/ui-helpers.js';
 
 const COLORS = {

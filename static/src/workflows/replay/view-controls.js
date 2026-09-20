@@ -1,4 +1,4 @@
-import { api } from '../../api-client.js';
+import { api } from '../../plugins/realtime-translation/api.js';
 import {
   normalizeTranslationLanguage as normalizeReplayLanguage,
 } from '../../shared/translation-languages.js';

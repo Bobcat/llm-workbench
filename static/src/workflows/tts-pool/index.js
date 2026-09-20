@@ -1,4 +1,5 @@
-import { api } from '../../api-client.js';
+import { api } from '../../plugins/tts-pool/api.js';
+import { sharedApi } from '../../shared/api/shared.js';
 import { escapeAttr, escapeHtml, formatApiError } from '../../shared/ui-helpers.js';
 
 const REFRESH_INTERVAL_MS = 3000;
@@ -173,7 +174,7 @@ export function createTtsPoolView() {
     const token = ++refreshToken;
     try {
       const [modelsPayload, gpuPayload] = await Promise.all([
-        api.getTtsAdminModels(),
+        sharedApi.getTtsAdminModels(),
         api.getTtsAdminGpuMemory().catch(() => null),
       ]);
       if (!container.isConnected || token !== refreshToken) return;

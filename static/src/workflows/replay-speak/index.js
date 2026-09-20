@@ -1,4 +1,5 @@
-import { api, ReplaySpeakWebSocket } from '../../api-client.js';
+import { api, ReplaySpeakWebSocket } from '../../plugins/realtime-tts/api.js';
+import { sharedApi } from '../../shared/api/shared.js';
 import { escapeAttr, escapeHtml, formatApiError } from '../../shared/ui-helpers.js';
 
 const DEFAULT_SAMPLE_PATH = 'data/realtime_translation/sample/sample_c_only_120s.pc';
@@ -175,7 +176,7 @@ export function createReplaySpeakView() {
 
   async function loadModels() {
     try {
-      const payload = await api.getTtsAdminModels();
+      const payload = await sharedApi.getTtsAdminModels();
       models = Array.isArray(payload?.models)
         ? payload.models.map((model) => ({
           id: String(model?.name || '').trim(),

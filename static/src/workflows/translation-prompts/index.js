@@ -1,4 +1,5 @@
-import { api } from '../../api-client.js';
+import { api } from '../../plugins/translation-services/api.js';
+import { sharedApi } from '../../shared/api/shared.js';
 import { populateTranslationLanguageSelect } from '../../shared/translation-languages.js';
 import { escapeAttr, escapeHtml, formatApiError } from '../../shared/ui-helpers.js';
 
@@ -367,13 +368,13 @@ export function createTranslationPromptsView() {
   }
 
   async function loadPromptLibrary() {
-    const result = await api.listTranslationPrompts();
+    const result = await sharedApi.listTranslationPrompts();
     promptRecords = (result && result.prompts) || [];
     populatePromptLibraryOptions();
   }
 
   async function loadAdminModels() {
-    const adminModelsPayload = await api.getAdminModels();
+    const adminModelsPayload = await sharedApi.getAdminModels();
     adminModels = normalizeAdminModelsPayload(adminModelsPayload);
     populateModelOptions();
   }

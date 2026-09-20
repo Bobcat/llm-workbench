@@ -44,7 +44,7 @@ from app.plugins import (
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 STATIC = REPO_ROOT / "static"
-API_CLIENT = STATIC / "src" / "api-client.js"
+PLUGIN_ROOT = STATIC / "src" / "plugins"
 # The committed defaults, read directly rather than through app.plugins: that module resolves the
 # path through `LLM_WORKBENCH_SETTINGS_FILE` and merges `config/local.json`, and the pins below are
 # about what ships.
@@ -163,7 +163,11 @@ def _shipped_settings():
 
 
 def _module_files(entry: Path) -> set[Path]:
-    """The view's own files: relative imports, stopping at the shared API client."""
+    """Every file the view pulls in through relative imports, itself included.
+
+    Since phase 4 that includes the client of its own plugin and whatever that imports from
+    `shared/`, which is where the `/api` paths are written.
+    """
     seen: set[Path] = set()
     stack = [entry]
     while stack:
@@ -173,70 +177,53 @@ def _module_files(entry: Path) -> set[Path]:
         seen.add(current)
         source = current.read_text(encoding="utf-8", errors="replace")
         for specifier in re.findall(r"""from\s*['"](\.[^'"]+)['"]""", source):
-            target = (current.parent / specifier).resolve()
-            if target.name != "api-client.js":
-                stack.append(target)
+            stack.append((current.parent / specifier).resolve())
     return seen
 
 
-def _api_object_source() -> str:
-    """The `api` object only: the websocket classes below it are not API methods."""
-    source = API_CLIENT.read_text(encoding="utf-8")
-    start = source.index("export const api = {")
-    end = source.index("\nexport class", start)
-    return source[start:end]
+def _api_paths(entry: Path) -> set[str]:
+    """Every `/api` path the view's own code builds, read as text.
 
-
-def _client_method_paths() -> dict[str, str]:
-    """method name -> the API path it calls, read out of static/src/api-client.js."""
-    source = _api_object_source()
-    starts = list(re.finditer(r"\n  (?:async )?([A-Za-z][A-Za-z0-9_]*)\([^)]*\)\s*\{", source))
-    methods: dict[str, str] = {}
-    for index, match in enumerate(starts):
-        end = starts[index + 1].start() if index + 1 < len(starts) else len(source)
-        path = re.search(r"['\"`](/api/[^'\"`]*)['\"`]", source[match.end():end])
-        if path:
-            methods[match.group(1)] = path.group(1)
-    return methods
-
-
-def _called_paths(entry: Path, methods: dict[str, str]) -> tuple[set[str], set[str], set[str]]:
-    """What a view's own code calls.
-
-    Three things come back: the paths behind the ``api.<method>()`` calls, the hand-built
-    ``/api/...`` literals, and any method name that could not be resolved. Views mostly go through
-    the client, but six of them also build URLs by hand for downloads and streams — and those were
-    invisible to this analysis until a review pointed out that an endpoint could be renamed to a
-    path nobody serves without the suite noticing.
-
-    Literals are returned as prefixes, because a hand-built URL is usually a base the view appends
-    to; the ``${...}`` part of a template is cut off.
-
-    The price of that shortcut: only the base is checked, so an endpoint underneath it can be
-    renamed without this analysis noticing. Measured with two pdf-regression endpoints that two
-    views really call. Resolving the rest would mean running the JavaScript, which this suite does
-    not do.
+    Until phase 4 this came out of `api-client.js` through a method → path table, because all the
+    paths lived in one shared file. They now live in the subtree itself — the plugin's client plus
+    what it imports from `shared/` — so the table is gone and this reads what is written. The
+    `${...}` part of a template is cut off, because a view appends ids to a base.
     """
-    paths: set[str] = set()
-    prefixes: set[str] = set()
-    unknown: set[str] = set()
+    found: set[str] = set()
     for file in _module_files(entry):
         source = file.read_text(encoding="utf-8", errors="replace")
-        for name in re.findall(r"\bapi\.([A-Za-z][A-Za-z0-9_]*)\(", source):
-            if name in methods:
-                paths.add(methods[name])
-            else:
-                unknown.add(name)
         for literal in LITERAL_API_PATH.findall(source):
             literal = literal[: literal.find("${")] if "${" in literal else literal
             literal = literal.rstrip("/")
             if len(literal) > len("/api/"):
-                prefixes.add(literal)
-    return paths, prefixes, unknown
+                found.add(literal)
+    return found
+
+
+def _socket_paths(entry: Path) -> set[str]:
+    """The `/ws` paths the view's own code connects to."""
+    found: set[str] = set()
+    for file in _module_files(entry):
+        source = file.read_text(encoding="utf-8", errors="replace")
+        found.update(re.findall(r"/ws/[A-Za-z0-9/_-]*", source))
+    return found
+
+
+def _client_owners(entry: Path) -> set[str]:
+    """The plugin ids whose client modules the view pulls in, by folder under `src/plugins/`."""
+    owners: set[str] = set()
+    for file in _module_files(entry):
+        try:
+            relative = file.relative_to(PLUGIN_ROOT)
+        except ValueError:
+            continue
+        if len(relative.parts) > 1:
+            owners.add(relative.parts[0])
+    return owners
 
 
 def _prefix_is_served(prefix: str, app_paths: set[str]) -> bool:
-    """A hand-built base URL is served when a route lives underneath it."""
+    """A base URL is served when a route lives underneath it."""
     return any(
         candidate == prefix or candidate.startswith(prefix + "/") or candidate.startswith(prefix + "{")
         for candidate in app_paths
@@ -244,22 +231,15 @@ def _prefix_is_served(prefix: str, app_paths: set[str]) -> bool:
 
 
 def _is_served(path: str, app_paths: set[str]) -> bool:
-    """A literal path must match exactly; a path with a ${...} hole must match a route prefix."""
+    """A path is served when a route matches it, or when a route lives underneath it.
+
+    The exact half catches a complete path that nothing serves; the prefix half is for a base the
+    caller appends to, like `/api/pdf-regression` followed by `/fixtures`.
+    """
     literal = path.split("?", 1)[0]
-    hole = literal.find("${")
-    if hole == -1:
-        return literal in app_paths
-    prefix = literal[:hole].rstrip("/")
-    return any(
-        candidate == prefix or candidate.startswith(prefix + "/") or candidate.startswith(prefix + "{")
-        for candidate in app_paths
-    )
-
-
-def _client_socket_paths() -> set[str]:
-    """The websocket paths the frontend connects to, read out of static/src/api-client.js."""
-    source = API_CLIENT.read_text(encoding="utf-8")
-    return set(re.findall(r"/ws/[A-Za-z0-9/_-]*", source))
+    if literal in app_paths:
+        return True
+    return _prefix_is_served(literal, app_paths)
 
 
 def _registered_sockets() -> set[str]:
@@ -394,56 +374,43 @@ class ViewEndpointTests(unittest.TestCase):
     served by a router mounted for something else — exactly the coupling this phase removed.
     """
 
-    def test_every_api_method_has_a_resolvable_path(self) -> None:
-        methods = _client_method_paths()
-        source = _api_object_source()
-        declared = set(re.findall(r"\n  (?:async )?([A-Za-z][A-Za-z0-9_]*)\([^)]*\)\s*\{", source))
-        self.assertEqual(declared - set(methods), set(), "methods without a static /api path")
+    def test_views_only_build_paths_that_are_served(self) -> None:
+        """Every `/api` path a view's own code writes must be served by a mounted route.
 
-    def test_views_call_only_known_methods_and_served_paths(self) -> None:
-        methods = _client_method_paths()
+        Measured on the text, per view: the client of the view's own plugin, whatever that imports
+        from `shared/`, and the URLs a view builds by hand for downloads and streams.
+        """
         app_paths = _app_paths()
         for view in iter_views():
-            entry = STATIC / view.module
-            paths, prefixes, unknown = _called_paths(entry, methods)
-            self.assertEqual(unknown, set(), f"view {view.route} calls unknown api methods")
+            paths = _api_paths(STATIC / view.module)
             for path in sorted(paths):
                 self.assertTrue(
                     _is_served(path, app_paths),
-                    f"view {view.route} calls {path}, which no mounted route serves",
-                )
-            for prefix in sorted(prefixes):
-                self.assertTrue(
-                    _prefix_is_served(prefix, app_paths),
-                    f"view {view.route} builds {prefix}/..., which no mounted route serves",
+                    f"view {view.route} builds {path}, which no mounted route serves",
                 )
 
-    def test_the_literal_path_analysis_finds_something(self) -> None:
-        """A check on the analysis itself: six views build URLs by hand."""
-        methods = _client_method_paths()
-        with_literals = [
+    def test_the_path_analysis_finds_something(self) -> None:
+        """A check on the analysis itself: if it finds nothing, it proves nothing."""
+        with_paths = [
             view.route
             for view in iter_views()
-            if _called_paths(STATIC / view.module, methods)[1]
+            if _api_paths(STATIC / view.module)
         ]
-        self.assertGreaterEqual(len(with_literals), 4, f"only found literals in {with_literals}")
+        self.assertGreaterEqual(len(with_paths), 18, f"only found paths for {with_paths}")
 
     def test_the_only_view_without_endpoints_is_icons(self) -> None:
         """`icons` is frontend-only, and no other view quietly lost its backend."""
-        methods = _client_method_paths()
         empty = sorted(
             view.route
             for view in iter_views()
-            if not any(_called_paths(STATIC / view.module, methods)[:2])
+            if not _api_paths(STATIC / view.module)
         )
         self.assertEqual(empty, ["icons"])
 
     def test_other_views_reach_at_least_two_endpoints(self) -> None:
         """A smoke check on the analysis itself: if it finds nothing, it proves nothing."""
-        methods = _client_method_paths()
         counts = {
-            view.route: len(_called_paths(STATIC / view.module, methods)[0])
-            + len(_called_paths(STATIC / view.module, methods)[1])
+            view.route: len(_api_paths(STATIC / view.module))
             for view in iter_views()
             if view.route != "icons"
         }
@@ -463,7 +430,6 @@ class ViewEndpointTests(unittest.TestCase):
         what is mounted" is what `CoreMountTests` guards; what this loop adds per category is the
         payload — only that category is in the menu, and its views still reach everything.
         """
-        methods = _client_method_paths()
         app_paths = _app_paths()
         for plugin in PLUGINS:
             with self.subTest(category=plugin.id):
@@ -474,20 +440,40 @@ class ViewEndpointTests(unittest.TestCase):
                     self.assertTrue(views, f"{plugin.id} has no views")
                     for view in views:
                         route = str(view["route"])
-                        paths, prefixes, unknown = _called_paths(
-                            STATIC / str(view["module"]), methods
-                        )
-                        self.assertEqual(unknown, set(), f"view {route} calls unknown api methods")
-                        for path in sorted(paths):
+                        for path in sorted(_api_paths(STATIC / str(view["module"]))):
                             self.assertTrue(
                                 _is_served(path, app_paths),
-                                f"view {route} calls {path}, which no mounted route serves",
+                                f"view {route} builds {path}, which no mounted route serves",
                             )
-                        for prefix in sorted(prefixes):
-                            self.assertTrue(
-                                _prefix_is_served(prefix, app_paths),
-                                f"view {route} builds {prefix}/..., which no mounted route serves",
-                            )
+
+
+class ClientOwnershipTests(unittest.TestCase):
+    """Which client a view may use.
+
+    The point of phase 4: a view talks to its own plugin's client or to the core's, never to
+    another plugin's. That is what keeps switching a category off from breaking a view elsewhere.
+    """
+
+    def test_no_view_imports_another_plugins_client(self) -> None:
+        for plugin in PLUGINS:
+            for view in plugin.views:
+                owners = _client_owners(STATIC / view.module)
+                self.assertEqual(
+                    owners - {plugin.id},
+                    set(),
+                    f"view {view.route} pulls in the client of {sorted(owners - {plugin.id})}",
+                )
+
+    def test_the_scan_finds_a_client_for_every_view_with_paths(self) -> None:
+        """A check on the check: a view with endpoints must pull in a client module."""
+        for plugin in PLUGINS:
+            for view in plugin.views:
+                entry = STATIC / view.module
+                if _api_paths(entry):
+                    self.assertTrue(
+                        _client_owners(entry),
+                        f"view {view.route} builds paths but imports no client",
+                    )
 
 
 class WebSocketTests(unittest.TestCase):
@@ -500,8 +486,12 @@ class WebSocketTests(unittest.TestCase):
         )
 
     def test_every_socket_the_client_connects_to_is_registered(self) -> None:
-        found = _client_socket_paths()
-        self.assertTrue(found, "no websocket paths found in api-client.js; the check would be empty")
+        found = {
+            path
+            for view in iter_views()
+            for path in _socket_paths(STATIC / view.module)
+        }
+        self.assertTrue(found, "no websocket paths found in the views; the check would be empty")
         registered = _registered_sockets()
         for path in sorted(found):
             self.assertTrue(

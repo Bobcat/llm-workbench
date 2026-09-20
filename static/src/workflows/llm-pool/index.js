@@ -1,4 +1,5 @@
-import { api } from '../../api-client.js';
+import { api } from '../../plugins/llm-pool/api.js';
+import { sharedApi } from '../../shared/api/shared.js';
 import { escapeAttr, escapeHtml, formatApiError } from '../../shared/ui-helpers.js';
 
 const REFRESH_INTERVAL_MS = 3000;
@@ -199,7 +200,7 @@ export function createLlmPoolView() {
     const token = ++refreshToken;
     try {
       const [modelsPayload, gpuPayload] = await Promise.all([
-        api.getAdminModels(),
+        sharedApi.getAdminModels(),
         api.getAdminGpuMemory().catch(() => null),
       ]);
       if (!container.isConnected || token !== refreshToken) return;

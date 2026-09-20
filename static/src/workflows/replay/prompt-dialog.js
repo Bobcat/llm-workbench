@@ -1,4 +1,4 @@
-import { api } from '../../api-client.js';
+import { sharedApi } from '../../shared/api/shared.js';
 import { escapeHtml } from '../../shared/ui-helpers.js';
 import { normalizeTranslationLanguage as normalizeReplayLanguage } from '../../shared/translation-languages.js';
 import {
@@ -341,7 +341,7 @@ export function createReplayPromptDialog(options) {
     firstPassPromptsBtn.disabled = true;
     firstPassPromptSelect.innerHTML = '';
     try {
-      const result = await api.listTranslationPrompts();
+      const result = await sharedApi.listTranslationPrompts();
       // One flat library, shared with the image pipeline. A prompt has no pass of its own;
       // both selectors show the full list and you pick whichever for each slot.
       const prompts = ((result && result.prompts) || []).map((e) => ({

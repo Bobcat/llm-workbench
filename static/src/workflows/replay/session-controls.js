@@ -1,4 +1,4 @@
-import { api, ReplayWebSocket } from '../../api-client.js';
+import { api, ReplayWebSocket } from '../../plugins/realtime-translation/api.js';
 import { escapeHtml } from '../../shared/ui-helpers.js';
 import { resetReplayMetricsState } from './metrics.js';
 import { resetRecordedReplayTimer, syncRecordedReplayTimer } from './recorded-timer.js';
