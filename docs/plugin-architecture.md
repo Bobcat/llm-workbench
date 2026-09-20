@@ -246,7 +246,7 @@ Gebouwd:
    een subprocess bij `app/plugins.py` en stubt daarmee de global, want een tweede kopie in JS is
    precies wat deze fase opheft.
 
-Deze drie zitten in `tests/test_plugin_registry.py` (35 tests) en
+Deze drie zitten in `tests/test_plugin_registry.py` (38 tests) en
 `tests/js/plugin-registry.test.mjs` (4 tests). De padaanalyse meet sinds fase 3 tegen de gemounte
 app in plaats van tegen een declaratie per view: de core mount alle adressen, dus elk pad dat een
 view aanroept moet daar altijd in zitten. Ze dekt zowel de `api.<methode>()`-aanroepen als de URL's
@@ -305,6 +305,11 @@ Beslissingen:
 
   Een id dat de registratie niet kent is een fout, en een lege lijst ook: een typefout of een
   vergeten lijst ziet er anders uit als een werkende installatie waar toevallig een categorie mist.
+  Dat geldt ook een niveau hoger: een `plugins`-sectie die geen object is, of een settingsbestand
+  dat geen object is, wordt geweigerd in plaats van stil genegeerd — anders verdwijnt de lijst
+  ernaast en staat alles aan terwijl de lezer denkt dat zijn schakelaar is toegepast.
+  `"enabled": null` zet alles aan; dat is de enige manier waarop `local.json` het menu verbreedt in
+  plaats van versmalt, en het volgt uit "geen lijst betekent alles aan".
   Geen instellingenvenster. `LLM_WORKBENCH_SETTINGS_FILE` wijst naar een ander bestand, met
   `local.json` daarnaast; dat is voor een deployment die zijn instellingen buiten de repo houdt, en
   het is hoe de browsercheck tegen de gecommitte default draait in plaats van tegen de machine.
@@ -380,7 +385,8 @@ Deze zijn bewust blijven liggen; ze horen bij een latere fase.
   adresbalk zet terwijl die categorie uit staat, houdt `#chat` in de balk terwijl de view op de
   landing blijft staan — tot de volgende herlaadbeurt. Dat is bestaand gedrag van de router voor
   elke onbekende route (`#foo` doet hetzelfde); fase 3 maakt het alleen bereikbaar. In Chromium
-  gemeten.
+  gemeten. Vervolgstap, zoals bij de routebotsingen: normaliseer de hash naar de landing, net als
+  bij een koude start.
 - ~~De shell hardcodeert `replay-translate`.~~ **Opgelost** als losse opruiming vóór fase 2, in een
   eigen commit op de fase-2-branch. Replay publiceert nu `WORKFLOW_BUSY_EVENT` zoals de vijf andere
   views, en `app.js` noemt geen enkele view meer bij naam — op één na: de fallback
