@@ -1,12 +1,16 @@
 """Tests for the plugin registry — the sidebar's source of truth.
 
-Two kinds of test live here:
+Three kinds of test live here:
 
 - the **regression pin**: a hand-written copy of the shipped sidebar. It is deliberately not
   derived from `app.plugins`, so that a mistake in the registry shows up here instead of being
   copied along. If you add or rename a view on purpose, update this table too.
-- the **independent checks**: every view either has a backend or says it has none, and the
-  endpoints the views actually call are served. Those do not read the registry's own claims.
+- the **independent checks**: the endpoints the views actually call are served, and every router
+  module in `app/` is mounted. Those do not read the registry's own claims — that matters more
+  since phase 3, where the core owns the addresses and a plugin is only a menu entry.
+- the **switch checks**: `plugins.enabled` selects categories, and every category on its own still
+  reaches every endpoint its views call. That last one is the promise of the core model: no
+  category depends on another.
 
 The JS suite covers what only a browser can: that each view module resolves, exports its named
 factory, and that every icon exists in the sprite.
@@ -14,20 +18,25 @@ factory, and that every icon exists in the sprite.
 
 from __future__ import annotations
 
+import contextlib
+import importlib
 import json
 import re
+import tempfile
 import unittest
 from pathlib import Path
 
+from fastapi import APIRouter
 from fastapi.testclient import TestClient
 
 from app.main import app
 from app.plugins import (
+    DEFAULT_SETTINGS_PATH,
     PLUGINS,
+    enabled_plugins,
     frontend_payload,
-    iter_routers,
+    frontend_script,
     iter_views,
-    iter_websockets,
     route_aliases,
 )
 
@@ -101,6 +110,33 @@ def _app_paths() -> set[str]:
         if path.startswith("/api"):
             paths.add(path)
     return paths
+
+
+def _router_module_objects() -> dict[str, APIRouter]:
+    """Every module under `app/` that defines a module-level `router`, imported.
+
+    The core mounts these by hand; this finds them without reading `app/router.py`, so a service
+    that is added to `app/` and forgotten there shows up as a failure instead of a 404 later.
+    """
+    routers: dict[str, APIRouter] = {}
+    for path in sorted((REPO_ROOT / "app").rglob("*.py")):
+        source = path.read_text(encoding="utf-8")
+        if not re.search(r"^router = APIRouter\(", source, re.M):
+            continue
+        module_name = path.relative_to(REPO_ROOT).with_suffix("").as_posix().replace("/", ".")
+        routers[module_name] = importlib.import_module(module_name).router
+    return routers
+
+
+@contextlib.contextmanager
+def _settings(payload: dict[str, object], local: dict[str, object] | None = None):
+    """A temporary `settings.json`, with a `local.json` beside it when one is given."""
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "settings.json"
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        if local is not None:
+            (Path(tmp) / "local.json").write_text(json.dumps(local), encoding="utf-8")
+        yield path
 
 
 def _module_files(entry: Path) -> set[Path]:
@@ -184,10 +220,6 @@ def _prefix_is_served(prefix: str, app_paths: set[str]) -> bool:
     )
 
 
-def _router_paths(view) -> set[str]:
-    return {"/api" + route.path for router in view.routers for route in router.routes}
-
-
 def _is_served(path: str, app_paths: set[str]) -> bool:
     """A literal path must match exactly; a path with a ${...} hole must match a route prefix."""
     literal = path.split("?", 1)[0]
@@ -259,6 +291,11 @@ class RegistryInvariantTests(unittest.TestCase):
         self.assertEqual(len(set(routes)), len(routes))
         self.assertEqual(len(set(ids)), len(ids))
 
+    def test_plugin_ids_are_unique(self) -> None:
+        """They are the keys of `plugins.enabled`, so a duplicate would make the switch ambiguous."""
+        ids = [plugin.id for plugin in PLUGINS]
+        self.assertEqual(len(set(ids)), len(ids))
+
     def test_aliases_do_not_shadow_a_route(self) -> None:
         routes = {view.route for view in iter_views()}
         for alias in route_aliases():
@@ -269,43 +306,12 @@ class RegistryInvariantTests(unittest.TestCase):
         for alias, target in route_aliases().items():
             self.assertIn(target, routes, f"alias {alias} points at a missing route {target}")
 
-    def test_every_view_has_a_backend_or_says_it_has_none(self) -> None:
-        for view in iter_views():
-            if view.backend:
-                self.assertTrue(view.routers, f"view {view.route} claims a backend but maps no router")
-            else:
-                self.assertFalse(view.routers, f"view {view.route} has routers but is marked backend-less")
-
-    def test_every_router_is_mounted_exactly_once(self) -> None:
-        routers = iter_routers()
-        self.assertEqual(len({id(router) for router in routers}), len(routers))
-
-        mounted = {"/api" + route.path for router in routers for route in router.routes}
-        # Paths, not route objects: including a router builds new objects, and one path can carry
-        # several methods or be registered by two views that share a router.
-        self.assertEqual(mounted, _app_paths())
-
-    def test_no_router_is_left_unmounted(self) -> None:
-        from app.router import api_router
-
-        mounted_prefixes = {
-            getattr(route, "path", "").split("/{")[0]
-            for route in api_router.routes
-        }
-        for router in iter_routers():
-            for route in router.routes:
-                expected = "/api" + route.path
-                self.assertTrue(
-                    any(expected == prefix or expected.startswith(prefix) for prefix in mounted_prefixes),
-                    f"{expected} is not reachable from the mounted api router",
-                )
-
-    def test_payload_carries_no_routers(self) -> None:
+    def test_payload_carries_only_frontend_data(self) -> None:
         for plugin in frontend_payload():
             self.assertEqual(set(plugin), {"id", "label", "auxiliary", "views"})
             for view in plugin["views"]:
-                # The exact key set, so a field that must not leak — websockets holds Python
-                # callables, routers holds router objects — fails here instead of at json.dumps.
+                # The exact key set, so a field that cannot be serialised fails here instead of at
+                # json.dumps.
                 self.assertEqual(
                     set(view),
                     {
@@ -322,8 +328,46 @@ class RegistryInvariantTests(unittest.TestCase):
                 )
 
 
-class ViewBackendTests(unittest.TestCase):
-    """Independent of the registry: the endpoints a view calls must actually be served."""
+class CoreMountTests(unittest.TestCase):
+    """The core owns the addresses: every router module in `app/` is mounted, whatever is on.
+
+    This is what replaced phase 2's per-view router declarations. A category switched off changes
+    the sidebar and nothing else, so the set of mounted endpoints must not depend on the registry
+    at all.
+    """
+
+    def test_the_router_scan_finds_the_routers(self) -> None:
+        """A check on the check: a scan that finds nothing proves nothing."""
+        found = _router_module_objects()
+        self.assertGreaterEqual(len(found), 16, sorted(found))
+
+    def test_every_router_module_is_mounted(self) -> None:
+        mounted = _app_paths()
+        for module_name, router in _router_module_objects().items():
+            for route in router.routes:
+                expected = "/api" + route.path
+                self.assertTrue(
+                    _is_served(expected, mounted),
+                    f"{expected} from {module_name} is not mounted by the core",
+                )
+
+    def test_the_mounted_api_holds_nothing_else(self) -> None:
+        """The mirror: no endpoint is mounted that no module in `app/` defines."""
+        defined = {
+            "/api" + route.path
+            for router in _router_module_objects().values()
+            for route in router.routes
+        }
+        self.assertEqual(_app_paths(), defined)
+
+
+class ViewEndpointTests(unittest.TestCase):
+    """Independent of the registry: the endpoints a view calls must actually be served.
+
+    Since phase 3 that is the core's promise, so this measures against the mounted app. It does so
+    per view rather than on the union, because a union stays green when one view's endpoints are
+    served by a router mounted for something else — exactly the coupling this phase removed.
+    """
 
     def test_every_api_method_has_a_resolvable_path(self) -> None:
         methods = _client_method_paths()
@@ -359,118 +403,154 @@ class ViewBackendTests(unittest.TestCase):
         ]
         self.assertGreaterEqual(len(with_literals), 4, f"only found literals in {with_literals}")
 
-    def test_declared_routers_cover_every_path_the_view_calls(self) -> None:
-        """The per-view half: the routers a view declares must serve what that view calls.
-
-        The check above only proves the union of every declared router covers every called path,
-        which stays green when one view is mapped to the wrong router. This one is measured
-        against the view's own declaration, so a swapped router fails here.
-        """
+    def test_the_only_view_without_endpoints_is_icons(self) -> None:
+        """`icons` is frontend-only, and no other view quietly lost its backend."""
         methods = _client_method_paths()
-        for view in iter_views():
-            if not view.backend:
-                continue
-            paths, prefixes, _ = _called_paths(STATIC / view.module, methods)
-            declared = _router_paths(view)
-            for path in sorted(paths):
-                self.assertTrue(
-                    _is_served(path, declared),
-                    f"view {view.route} calls {path}, which none of its declared routers serve",
-                )
-            for prefix in sorted(prefixes):
-                self.assertTrue(
-                    _prefix_is_served(prefix, declared),
-                    f"view {view.route} builds {prefix}/..., which none of its declared routers serve",
-                )
+        empty = sorted(
+            view.route
+            for view in iter_views()
+            if not any(_called_paths(STATIC / view.module, methods)[:2])
+        )
+        self.assertEqual(empty, ["icons"])
 
-    def test_declared_routers_are_all_actually_used(self) -> None:
-        """The mirror of the check above.
-
-        A router a view never calls overstates what that view loses when its plugin is switched off,
-        and phase 3 reads exactly that from this field. Measured clean when this was added.
-        """
-        methods = _client_method_paths()
-        for view in iter_views():
-            if not view.backend:
-                continue
-            paths, prefixes, _ = _called_paths(STATIC / view.module, methods)
-            for router in view.routers:
-                router_paths = {"/api" + route.path for route in router.routes}
-                self.assertTrue(
-                    any(_is_served(path, router_paths) for path in paths)
-                    or any(_prefix_is_served(prefix, router_paths) for prefix in prefixes),
-                    f"view {view.route} declares a router whose endpoints it never calls",
-                )
-
-    def test_the_backend_less_view_calls_nothing(self) -> None:
-        methods = _client_method_paths()
-        for view in iter_views():
-            if view.backend:
-                continue
-            paths, prefixes, _ = _called_paths(STATIC / view.module, methods)
-            self.assertEqual(paths, set(), f"view {view.route} is marked backend-less but calls the API")
-            self.assertEqual(prefixes, set(), f"view {view.route} is marked backend-less but builds URLs")
-
-    def test_views_with_a_backend_reach_at_least_two_endpoints(self) -> None:
+    def test_other_views_reach_at_least_two_endpoints(self) -> None:
         """A smoke check on the analysis itself: if it finds nothing, it proves nothing."""
         methods = _client_method_paths()
         counts = {
             view.route: len(_called_paths(STATIC / view.module, methods)[0])
             + len(_called_paths(STATIC / view.module, methods)[1])
             for view in iter_views()
-            if view.backend
+            if view.route != "icons"
         }
         thin = {route: count for route, count in counts.items() if count < 2}
         self.assertEqual(thin, {})
-        self.assertGreaterEqual(min(counts.values()), 2)
+
+    def test_every_category_on_its_own_reaches_the_endpoints_its_views_call(self) -> None:
+        """The core model's promise, measured per category.
+
+        Switch everything off except one category and the views that remain must still reach every
+        endpoint they call — including the model list that the LLM Pool service serves, which five
+        views outside LLM Pool use. That is what "a workbench with one category works" means, and
+        it is why the addresses live with the core instead of with the plugins.
+        """
+        methods = _client_method_paths()
+        app_paths = _app_paths()
+        for plugin in PLUGINS:
+            with self.subTest(category=plugin.id):
+                with _settings({"plugins": {"enabled": [plugin.id]}}) as settings_path:
+                    payload = frontend_payload(settings_path)
+                    self.assertEqual([entry["id"] for entry in payload], [plugin.id])
+                    views = [view for entry in payload for view in entry["views"]]
+                    self.assertTrue(views, f"{plugin.id} has no views")
+                    for view in views:
+                        route = str(view["route"])
+                        paths, prefixes, unknown = _called_paths(
+                            STATIC / str(view["module"]), methods
+                        )
+                        self.assertEqual(unknown, set(), f"view {route} calls unknown api methods")
+                        for path in sorted(paths):
+                            self.assertTrue(
+                                _is_served(path, app_paths),
+                                f"view {route} calls {path}, which no mounted route serves",
+                            )
+                        for prefix in sorted(prefixes):
+                            self.assertTrue(
+                                _prefix_is_served(prefix, app_paths),
+                                f"view {route} builds {prefix}/..., which no mounted route serves",
+                            )
 
 
 class WebSocketTests(unittest.TestCase):
-    """The two websockets are routes too, and they used to live outside the registry."""
+    """The two websockets are core routes too; they used to live outside the registry."""
 
-    def test_every_declared_socket_is_registered(self) -> None:
-        self.assertEqual({socket.path for socket in iter_websockets()}, _registered_sockets())
-
-    def test_every_socket_the_client_connects_to_is_declared(self) -> None:
-        declared = {socket.path for socket in iter_websockets()}
-        found = _client_socket_paths()
-        self.assertTrue(found, "no websocket paths found in api-client.js; the check would be empty")
-        for path in sorted(found):
-            self.assertTrue(
-                any(socket == path or socket.startswith(path) for socket in declared),
-                f"the frontend connects to {path}, which no view declares",
-            )
-
-    def test_sockets_belong_to_a_view_that_has_a_backend(self) -> None:
-        for view in iter_views():
-            if not view.websockets:
-                continue
-            self.assertTrue(view.backend, f"view {view.route} has sockets but is marked backend-less")
-
-    def test_the_registry_declares_the_expected_two_sockets(self) -> None:
-        """A pin, not a wiring check: that every declared path is registered is the test above."""
+    def test_the_two_expected_sockets_are_registered(self) -> None:
         self.assertEqual(
-            {socket.path for socket in iter_websockets()},
+            _registered_sockets(),
             {"/ws/replay/{session_id}", "/ws/replay-speak/{session_id}"},
         )
 
-    def test_declared_sockets_are_actually_used(self) -> None:
-        """The mirror: a socket no view connects to should not be declared.
+    def test_every_socket_the_client_connects_to_is_registered(self) -> None:
+        found = _client_socket_paths()
+        self.assertTrue(found, "no websocket paths found in api-client.js; the check would be empty")
+        registered = _registered_sockets()
+        for path in sorted(found):
+            self.assertTrue(
+                any(socket == path or socket.startswith(path) for socket in registered),
+                f"the frontend connects to {path}, which the core does not serve",
+            )
 
-        The client class is named in the registry rather than derived from the path, so renaming a
-        client class does not turn a correct declaration into a failure.
-        """
-        for view in iter_views():
-            for socket in view.websockets:
-                source = "\n".join(
-                    file.read_text(encoding="utf-8", errors="replace")
-                    for file in _module_files(STATIC / view.module)
-                )
-                self.assertIn(
-                    socket.client,
-                    source,
-                    f"view {view.route} declares {socket.path} but never uses {socket.client}",
-                )
+class PluginSwitchTests(unittest.TestCase):
+    """`plugins.enabled` in settings decides which categories are in the menu.
+
+    The registry stays a constant: settings say what is on, `app/plugins.py` says what exists, and
+    `/plugins.js` is the two combined. Absent means everything is on, so a category added to the
+    registry shows up by itself.
+    """
+
+    def test_the_shipped_settings_switch_nothing_off(self) -> None:
+        """The committed default: every category in the menu, exactly as before this switch."""
+        committed = json.loads(DEFAULT_SETTINGS_PATH.read_text(encoding="utf-8"))
+        self.assertIn("plugins", committed)
+        self.assertNotIn("enabled", committed["plugins"])
+        self.assertEqual(enabled_plugins(DEFAULT_SETTINGS_PATH), PLUGINS)
+
+    def test_only_the_named_categories_are_on(self) -> None:
+        with _settings({"plugins": {"enabled": ["image-pool"]}}) as settings_path:
+            self.assertEqual(
+                [plugin.id for plugin in enabled_plugins(settings_path)],
+                ["image-pool"],
+            )
+
+    def test_the_order_is_the_registry_order(self) -> None:
+        """Listing ids in another order must not reorder the sidebar."""
+        with _settings({"plugins": {"enabled": ["video-pool", "llm-pool"]}}) as settings_path:
+            self.assertEqual(
+                [plugin.id for plugin in enabled_plugins(settings_path)],
+                ["llm-pool", "video-pool"],
+            )
+
+    def test_local_json_overrides_the_committed_settings(self) -> None:
+        with _settings(
+            {"plugins": {"enabled": ["llm-pool"]}},
+            local={"plugins": {"enabled": ["image-pool"]}},
+        ) as settings_path:
+            self.assertEqual(
+                [plugin.id for plugin in enabled_plugins(settings_path)],
+                ["image-pool"],
+            )
+
+    def test_an_unknown_id_is_an_error(self) -> None:
+        """A typo must not look like a working install that happens to miss one category."""
+        with _settings({"plugins": {"enabled": ["image-pool", "imagepool"]}}) as settings_path:
+            with self.assertRaises(ValueError) as raised:
+                enabled_plugins(settings_path)
+        self.assertIn("imagepool", str(raised.exception))
+
+    def test_a_value_that_is_not_a_list_is_an_error(self) -> None:
+        with _settings({"plugins": {"enabled": "image-pool"}}) as settings_path:
+            with self.assertRaises(ValueError):
+                enabled_plugins(settings_path)
+
+    def test_an_empty_list_is_an_error(self) -> None:
+        """An empty menu is not a workable state, so it fails loudly instead of showing an empty shell."""
+        with _settings({"plugins": {"enabled": []}}) as settings_path:
+            with self.assertRaises(ValueError) as raised:
+                enabled_plugins(settings_path)
+        self.assertIn("empty", str(raised.exception))
+
+    def test_the_generated_script_carries_only_the_enabled_categories(self) -> None:
+        with _settings({"plugins": {"enabled": ["image-pool"]}}) as settings_path:
+            body = frontend_script(settings_path)
+
+        prefix = "window.__LLM_WORKBENCH_PLUGINS__ = "
+        self.assertTrue(body.startswith(prefix), body[:60])
+        payload = json.loads(body[len(prefix):].rstrip().rstrip(";"))
+        self.assertEqual([entry["id"] for entry in payload], ["image-pool"])
+        self.assertEqual(
+            [view["route"] for view in payload[0]["views"]],
+            ["image-pool-models", "image-generation", "image-lora-library", "image-train"],
+        )
+
 
 class DocumentedLineReferenceTests(unittest.TestCase):
     """Every file:line reference in the design document must still point at what it claims.

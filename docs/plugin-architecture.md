@@ -60,7 +60,7 @@ aan wat ze toont.
 
 | Plugin-veld | Betekenis |
 | --- | --- |
-| `id` | stabiele plugin-id; in fase 3 de sleutel in de settings |
+| `id` | stabiele plugin-id; de sleutel in `plugins.enabled` |
 | `label` | sidebar-sectiekop; leeg voor auxiliary plugins |
 | `auxiliary` | `true` → los item onderaan de sidebar in plaats van een categorie |
 | `views` | view-descriptors in sidebar-volgorde |
@@ -148,7 +148,7 @@ Views worden pas bij eerste activering geïmporteerd in plaats van alle 20 bij h
 Prijs: een koude view kost een networkrequest en kan even een placeholder tonen. Tweede prijs,
 en die kostte een middag zoeken: een dynamic import valt buiten de cache-bypass van Ctrl+F5,
 waardoor een gewijzigde view onzichtbaar kon blijven. Dat is server-side opgelost met
-`Cache-Control: no-cache` (`app/main.py:15`, `RevalidatingStaticFiles`).
+`Cache-Control: no-cache` (`app/main.py:17`, `RevalidatingStaticFiles`).
 
 ## 3. Fasen
 
@@ -246,23 +246,28 @@ Gebouwd:
    een subprocess bij `app/plugins.py` en stubt daarmee de global, want een tweede kopie in JS is
    precies wat deze fase opheft.
 
-Deze drie zitten in `tests/test_plugin_registry.py` (27 tests) en
-`tests/js/plugin-registry.test.mjs` (4 tests). De padaanalyse wordt in **beide richtingen**
-getoetst — een view die een router mist én een view die een router declareert die ze nooit
-aanroept — en dat geldt ook voor de websockets. Ze dekt zowel de `api.<methode>()`-aanroepen als
-de URL's die zes views met de hand bouwen; die laatsten waren onzichtbaar tot een review liet zien
-dat je een endpoint naar een niet-bestaand pad kon hernoemen zonder dat de suite iets zei. Voor de
-websockets draagt de registratie de naam van de clientklasse in plaats van hem uit het pad af te
-leiden: consistent hernoemen blijft groen, alleen in JS hernoemen faalt met de ontbrekende naam
-erbij.
+Deze drie zitten in `tests/test_plugin_registry.py` (32 tests) en
+`tests/js/plugin-registry.test.mjs` (4 tests). De padaanalyse meet sinds fase 3 tegen de gemounte
+app in plaats van tegen een declaratie per view: de core mount alle adressen, dus elk pad dat een
+view aanroept moet daar altijd in zitten. Ze dekt zowel de `api.<methode>()`-aanroepen als de URL's
+die zes views met de hand bouwen; die laatsten waren onzichtbaar tot een review liet zien dat je een
+endpoint naar een niet-bestaand pad kon hernoemen zonder dat de suite iets zei. Voor de twee
+websockets gebeurt hetzelfde: de paden komen uit `api-client.js` en worden tegen de geregistreerde
+routes gehouden, met de twee verwachte paden als pin ernaast.
 
-Alle toetsen zijn mutatie-gecontroleerd: één router niet mounten laat drie tests falen, waaronder
-de padaanalyse tegen de gemounte app; een router verwisselen voor die van een andere view faalt op
-de padaanalyse tegen de eigen declaratie; een overbodige router of socket erbij zetten faalt op de
-spiegeltoets; een literaal `/api`-pad naar iets onbestaanbaars faalt; een sidebarlabel hernoemen
-faalt op de pin. De browsercheck controleert daarnaast dat de sidebar écht uit de gegenereerde
-global komt, en dat een pluginlijst die niet aankomt zichtbaar op het scherm komt in plaats van als
-lege schil.
+Daar bovenop staat de toets per categorie: met alleen categorie X aan moet elke view van X elk adres
+dat hij aanroept nog kunnen bereiken — inclusief de modellenlijst die de LLM Pool-service serveert en
+die vijf views buiten LLM Pool gebruiken. Dat is de belofte van het core-model, en het is de toets
+die "een workbench met één categorie werkt" mechanisch maakt.
+
+Alle toetsen zijn mutatie-gecontroleerd: één router niet mounten laat zeven tests falen, waaronder
+de mount-toets en vier van de acht per-categorie-subtests; een routermodule in `app/` die niemand
+mount faalt op de mount-toets; de payload de schakelaar laten negeren faalt op de per-categorie-toets
+en op de gegenereerde-scripttoets; een literaal `/api`-pad naar iets onbestaanbaars faalt; een
+sidebarlabel hernoemen faalt op de pin. De browsercheck controleert daarnaast dat de sidebar écht uit
+de gegenereerde global komt, dat een menu met één categorie alleen die categorie toont en op de
+eerste view daarvan landt, en dat een pluginlijst die niet aankomt zichtbaar op het scherm komt in
+plaats van als lege schil.
 
 De regelverwijzingen in dit document worden ook getoetst. Drie reviewrondes op rij vonden hier
 verouderde nummers, elke keer doordat een codewijziging in dezelfde commit ze verschoof. Die
@@ -287,7 +292,16 @@ Beslissingen:
   niets. Daarmee verdwijnen `routers`, `websockets` en `backend` van een view: die bestonden om te
   weten wie welk adres bezit, en dat is nu de core.
 - **De schakelaar staat in het configuratiebestand**, bij de service-adressen die er al staan:
-  `config/settings.json`, met `config/local.json` als overschrijving. Wat je niet noemt, staat aan.
+  `config/settings.json`, met `config/local.json` als overschrijving. Zonder `plugins.enabled` staat
+  alles aan, zodat een nieuwe categorie vanzelf in het menu verschijnt. Noem je de lijst, dan staat
+  precies die lijst aan en is een workbench met één categorie één regel:
+
+  ```json
+  { "plugins": { "enabled": ["image-pool"] } }
+  ```
+
+  Een id dat de registratie niet kent is een fout, en een lege lijst ook: een typefout of een
+  vergeten lijst ziet er anders uit als een werkende installatie waar toevallig een categorie mist.
   Geen instellingenvenster.
 - **Alleen hele categorieën**, geen losse views. De regel "plugin-uit wint van view-aan" uit een
   eerdere versie van dit document vervalt daarmee.
@@ -299,7 +313,7 @@ Beslissingen:
 | | |
 | --- | --- |
 | **Scopegrens** | geen instellingenvenster, geen schakelaar per view, geen eigen CSS of iconen per categorie, geen wijziging aan de services zelf |
-| **Verificatie** | per categorie: een workbench met alleen die categorie aan levert alleen die categorie in het menu, en elke view ervan bereikt elk adres dat hij aanroept. De bestaande onafhankelijke padaanalyse bewijst dat tweede; daar komt een variant bij die met één categorie aan draait |
+| **Verificatie** | per categorie: een workbench met alleen die categorie aan levert alleen die categorie in het menu, en elke view ervan bereikt elk adres dat hij aanroept. De onafhankelijke padaanalyse bewijst het eerste deel, en de toets per categorie draait hem met precies één categorie aan |
 
 ### Fase 4 — de gedeelde api-client opsplitsen ⬜
 
@@ -362,6 +376,7 @@ Deze zijn bewust blijven liggen; ze horen bij een latere fase.
 | --- | --- |
 | **De core bezit alle service-adressen; een plugin is alleen menu** | **De adressen mounten vanuit de pluginlijst** — dat deed fase 2, en het maakte elke categorie afhankelijk van een andere: zette je llm-pool uit, dan verloor Tuning zijn modellenlijst terwijl de service gewoon draaide. Een plugin hoort niet te bepalen welke adressen de browser kan gebruiken |
 | **De schakelaar in `config/settings.json`, met `local.json` als overschrijving** | Een instellingenvenster in de workbench: nieuw UI-werk plus een adres om de instelling te bewaren en te herladen, voor een keuze die je eenmalig per installatie maakt |
+| **Eén `enabled`-lijst die de hele menu-inhoud in één keer vastlegt** | Een map van categorie naar `true`/`false`: dan moet je voor "alleen Image Pool" zeven sleutels op `false` zetten, en staat nergens in één opslag wat er aan is. De lijst is ook precies de vraag die je stelt — welke consoles wil deze installatie |
 | **Alleen hele categorieën aan of uit** | Ook losse views: dan wordt het instellingenbestand een boom en moet de regel "categorie-uit wint van view-aan" ook echt gebouwd en onderhouden worden. Niemand vroeg erom |
 | **De landing is de eerste view van de eerste categorie die aan staat** | Een instelbare startroute: extra instelling voor iets wat automatisch goed uitkomt, want de browser krijgt alleen de aangezette categorieën |
 | **Styling en iconen per categorie uitgesteld** | Nu meenemen: het levert vooral een nettere bestandsindeling op en betaalt zich pas terug bij plugins van buiten de repo |

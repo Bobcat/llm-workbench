@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import FastAPI, Response
+from fastapi import FastAPI, Response, WebSocket
 from fastapi.staticfiles import StaticFiles
 
-from app.plugins import frontend_script, iter_websockets
+from app.plugins import frontend_script
+from app.realtime_tts.replay import websocket_endpoint as realtime_tts_websocket_endpoint
+from app.realtime_translation.replay.replay import websocket_endpoint
 from app.router import api_router
 
 base_dir = Path(__file__).parent.parent
@@ -38,10 +40,18 @@ app = FastAPI(
 
 app.include_router(api_router)
 
-# The websockets come from the registry too, so a view and the socket it connects to are
-# declared in the same place. They are the only routes outside /api.
-for _socket in iter_websockets():
-    app.websocket(_socket.path)(_socket.endpoint)
+# The two websockets are the only routes outside /api. Like the routers, they belong to the core:
+# which category shows them does not decide whether they exist.
+
+
+@app.websocket("/ws/replay/{session_id}")
+async def ws_replay(websocket: WebSocket, session_id: str):
+    await websocket_endpoint(websocket, session_id)
+
+
+@app.websocket("/ws/replay-speak/{session_id}")
+async def ws_replay_speak(websocket: WebSocket, session_id: str):
+    await realtime_tts_websocket_endpoint(websocket, session_id)
 
 
 @app.get("/plugins.js", include_in_schema=False)
@@ -49,8 +59,10 @@ def plugins_js() -> Response:
     """The plugin list, generated from ``app/plugins.py``.
 
     ``static/index.html`` loads this with a blocking script tag before ``app.js``, so the sidebar
-    renders synchronously from a list Python owns. Registered before the static mount, which
-    would otherwise serve a file of that name.
+    renders synchronously from a list Python owns. Which categories end up in it comes from
+    ``config/settings.json`` (``plugins.enabled``), read per request, so switching a category only
+    needs a page reload. Registered before the static mount, which would otherwise serve a file of
+    that name.
     """
     return Response(
         content=frontend_script(),
