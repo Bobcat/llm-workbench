@@ -144,8 +144,12 @@ This repo does not own:
   route table and the lazy view loader.
 - `static/foundation/spa-foundation/` contains the shared shell, routing, modal,
   and sidebar helpers.
-- `static/src/api-client.js` contains same-origin API helpers and replay
-  websocket clients.
+- `static/src/shared/api/` contains the request plumbing every client shares, plus
+  the four calls that more than one plugin uses.
+- `static/src/plugins/<category-id>/api.js` is the API client of one plugin, with
+  the websocket class of its own views where it has one. A view imports the
+  client of its own plugin and, where needed, the shared core client — never
+  another plugin's.
 - `static/src/workflows/` contains the workflow views.
 - `static/css/` contains shared application styling.
 
