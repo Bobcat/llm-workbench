@@ -1,7 +1,7 @@
 # Plugin-architectuur — beslissingen en fase-afbakening
 
-Status: fase 1 tot en met 4 staan op `main` (fase 3 via PR #17, fase 4 via PR #18). Fase 5 is niet
-begonnen.
+Status: fase 1 tot en met 4 staan op `main` (fase 3 via PR #17, fase 4 via PR #18). Fase 5 is op
+deze branch ontworpen en nog niet gebouwd.
 Anker: sectie 1 en 2 beschrijven de code op `main`. Fase 1 landde met `783f0bd` en de
 replay-opruiming met `8d73503`; de pdf-fix `a0f79d8` staat op `main` maar raakt deze architectuur
 niet.
@@ -417,13 +417,88 @@ ongewijzigd door, wat klopt met de scopegrens: geen enkele view veranderde buite
 | --- | --- |
 | **Verificatie** | de API-oppervlakte blijft identiek; de padaanalyse draait zonder `api-client.js`; een view importeert alleen de client van zijn eigen plugin en de core-client, nooit die van een andere plugin |
 
-### Fase 5 — discovery buiten de repo ⬜
+### Fase 5 — discovery buiten de repo 🚧 ontworpen op deze branch
 
 | | |
 | --- | --- |
 | **Doel** | een plugin kan in een eigen package leven |
 | **Contractwijziging** | discovery via pip entry points; het manifestcontract blijft gelijk |
 | **Scopegrens** | **alleen first-party.** Niet-isolatie is acceptabel zolang elke plugin code is die je sowieso zou draaien — hetzelfde vertrouwen als de repo zelf. Het moment dat je een plugin installeert zonder hem te lezen, is het klaar: het XSS-gat in `pluginItemMarkup` plus volledige DOM- en global-toegang maakt een manifest dan gelijk aan willekeurige code-uitvoering. Derden zijn dus geen aanscherping van dit ontwerp maar een ander ontwerp (iframe of worker), en dat is geen vervolgfase |
+
+**Wat een plugin-pakket aanlevert.** Een entry point in de groep `llm_workbench.plugins`, wijzend naar
+een functie zonder argumenten die één plugin beschrijft: dezelfde velden als de registratie nu heeft
+(`id`, `label`, `auxiliary`, `views` met `id`, `route`, `name`, `icon`, `module`, `factory`,
+`aliases`, `tooltip`, `persistent`), plus drie dingen die een plugin van buiten de repo nodig heeft.
+De registratie in `app/plugins.py` houdt de velden die sectie 2 noemt; een pakket levert er deze bij:
+
+| veld | waarom |
+| --- | --- |
+| `static_dir` | de map in het pakket met de frontendbestanden van zijn views; de core serveert hem |
+| `routers` | de adressen van deze plugin; de core mount ze (zie de adresregel hieronder) |
+| `styles` | optioneel: stylesheets van de plugin, die de shell één keer inlaadt als de plugin aan staat |
+
+**Hoe de core dat serveert.** De core mount `static_dir` op `/plugin-static/<plugin-id>/`, met
+dezelfde `RevalidatingStaticFiles` als zijn eigen bestanden en vóór de catch-all mount. Het
+`module`-veld van een view wordt door de browser tegen `document.baseURI` opgelost, dus voor een
+plugin is dat `/plugin-static/<plugin-id>/view.js`; voor de ingebouwde plugins verandert er niets.
+`icon` mag voor een plugin een pad zijn in plaats van een sprite-id: een waarde die met `/` begint
+wordt als afbeelding gerenderd, al het andere blijft de sprite-symbol uit `static/assets/icons.svg`.
+De JS-toets die elke view-icoon in de sprite controleert, gaat daarmee alleen nog over sprite-id's.
+
+**Samenvoegen, en botsen weigeren.** `PLUGINS` blijft de ingebouwde lijst en de bron van waarheid voor
+wat er in de repo zit; `all_plugins()` is die lijst plus wat discovery vindt, in die orde. Twee
+botsingen worden bij het laden geweigerd in plaats van stil opgelost: een plugin-id die al bestaat,
+en een routenaam die al bestaat. Dat sluit het gat uit sectie 4 met de strengste van de twee opties
+die daar staan.
+
+**Adressen: antwoord op de open vraag uit sectie 6.** Een plugin mag zijn eigen adressen meebrengen,
+met drie regels:
+
+1. de core mount ze; een plugin mount nooit zelf, zodat er één plek blijft waar de routetabel staat;
+2. een view gebruikt de core of zijn eigen plugin, nooit een andere plugin;
+3. een adres dat meer dan één plugin nodig heeft, verhuist naar de core — met de clientcode erbij,
+   want de core moet het ook kunnen bedienen als die plugin niet geïnstalleerd is.
+
+Regel 2 is geen goede intentie maar een toets: de padaanalyse eist per view dat elk aangeroepen pad
+door de core of door de eigen plugin gediend wordt. Zonder die toets komt de afhankelijkheid terug
+die fase 3 weghaalde — vijf views buiten LLM Pool leunden op `/api/models` zonder dat iemand het zag.
+
+**Geïnstalleerd is niet hetzelfde als aan.** Discovery bepaalt wat er bestaat, `plugins.enabled` wat
+er in het menu staat. Een geïnstalleerde plugin die niet in de lijst staat is dus aanwezig maar
+onzichtbaar, en zijn adressen zijn gewoon gemount — precies zoals de core dat vandaag met alle
+categorieën doet. Een id in `plugins.enabled` dat nergens bestaat blijft een fout, ook als het een
+pakket is dat je net hebt verwijderd: de typo-regel uit fase 3 blijft gelden, en de prijs is dat je
+een plugin ook uit de lijst haalt als je hem weghaalt.
+
+**Discovery gebeurt bij het opstarten.** De mounts en de pluginlijst worden bij import opgebouwd, dus
+een nieuw pakket installeren vraagt een herstart; een categorie aan- of uitzetten niet, dat blijft
+een page reload.
+
+**Escapen is voorwaarde, geen extra.** `pluginItemMarkup` zet `name`, `tooltip` en `route` ongeëscapet
+in `innerHTML`; met data van buiten de repo is dat een gat, ook als die data uit een first-party
+pakket komt. `escapeHtml` en `escapeAttr` bestaan al, dus dit is een kleine wijziging die het gat uit
+sectie 4 sluit in plaats van verplaatst.
+
+**Buiten scope, met reden.** Derden isoleren is een ander ontwerp (iframe of worker), geen
+vervolgfase. De ingebouwde plugins blijven in de repo: deze fase voegt de mogelijkheid toe, niet de
+migratie. Hot reload van plugins, een versiebeleid en een pluginregister vallen er ook buiten; één
+gebruiker met first-party pakketten heeft ze niet nodig.
+
+**Verificatie van fase 5.**
+
+1. *Discovery.* Een synthetische entry point levert een plugin die met zijn views in de payload
+   verschijnt, in de orde ingebouwd-dan-gevonden. Zonder enige entry point is de payload identiek aan
+   die van fase 4 — dezelfde vergelijking die daar al wordt gemaakt.
+2. *Serveren.* De statische map van een plugin wordt geserveerd onder `/plugin-static/<id>/` met
+   `Cache-Control: no-cache`, en een onbekend pad daaronder geeft 404 in plaats van de catch-all te
+   raken.
+3. *Adressen.* De routers van een gevonden plugin worden gemount, ook als die plugin niet in
+   `plugins.enabled` staat; en de padaanalyse zakt per view af naar "de core of de eigen plugin", met
+   een mutatie die een view naar de client van een andere plugin laat grijpen.
+4. *Botsen.* Een dubbele plugin-id en een dubbele routenaam laten het laden falen met een melding die
+   beide kanten noemt.
+5. *De pin.* De handgeschreven sidebarpin blijft over de ingebouwde set gaan: wat in de repo zit hoort
+   vastgepind, wat geïnstalleerd is niet.
 
 ## 4. Bekende gaten en geaccepteerde schuld
 
@@ -441,9 +516,9 @@ Deze zijn bewust blijven liggen; ze horen bij een latere fase.
   workbench aanbiedt. Dat is precies waarom dit model gekozen is.
 - **Routebotsingen hebben geen gedefinieerd gedrag.** `WORKFLOWS_BY_ROUTE`
   (`static/src/plugins/registry.js:53`) laat bij een dubbele route stil de laatste winnen. De testsuite vangt dat voor
-  de gecommitte set, maar in fase 5 (packages buiten de repo) is een botsing een runtime-geval
-  zonder afgesproken uitkomst. Er moet een regel komen: weigeren bij het laden, of eerste-wint met
-  een waarschuwing.
+  de gecommitte set, maar met packages buiten de repo is een botsing een runtime-geval zonder
+  afgesproken uitkomst. **Beslist in fase 5:** weigeren bij het laden, met een melding die beide
+  kanten noemt — de strengste van de twee opties die hier stonden.
 - `css/app.css` is één globaal `@import`-manifest van 25 regels en er is één globale
   iconensprite; een plugin kan nog geen eigen assets bijdragen. **Bewust uitgesteld in fase 3:** het
   levert nu vooral een nettere indeling op en betaalt zich pas terug bij plugins van buiten de repo.
@@ -472,9 +547,9 @@ Deze zijn bewust blijven liggen; ze horen bij een latere fase.
   view van de eerste categorie die aan staat. Omdat de browser alleen de aangezette categorieën
   krijgt, volgt dat automatisch.
 - `static/app.js:59-67` (`pluginItemMarkup`) interpoleert `name`, `tooltip` en `route` ongeëscapet
-  in `innerHTML`. Nu onschadelijk omdat de data statisch en gecommit is. Zodra plugins van
-  buiten de repo komen is dit een injectiepunt; `escapeHtml`/`escapeAttr` bestaan al in
-  `static/src/shared/ui-helpers.js`.
+  in `innerHTML`. Nu onschadelijk omdat de data statisch en gecommit is. Zodra plugins van buiten de
+  repo komen is dit een injectiepunt; **beslist in fase 5:** escapen met `escapeHtml`/`escapeAttr`
+  uit `static/src/shared/ui-helpers.js`, als voorwaarde en niet als extra.
 
 ## 5. Genomen beslissingen, en wat afviel
 
@@ -504,9 +579,9 @@ Deze zijn bewust blijven liggen; ze horen bij een latere fase.
 
 ## 6. Nog open
 
-1. **Mag een plugin in fase 5 eigen adressen meebrengen?** Dit model zegt nee: de core bezit ze.
-   Een plugin van buiten de repo die een eigen backend wil, vraagt om een andere beslissing dan
-   deze — en dat is bewust uitgesteld, niet vergeten.
+1. ~~**Mag een plugin in fase 5 eigen adressen meebrengen?**~~ **Beslist in fase 5:** ja, met drie
+   regels — de core mount ze, een view gebruikt de core of zijn eigen plugin, en een gedeeld adres
+   verhuist naar de core. De fase-5-sectie noemt ze en de toets die regel 2 afdwingt.
 2. ~~Is de api-client-splitsing klaar wanneer elke plugin zijn eigen module heeft, of is een
    gedeelde namespace per domein beter?~~ **Beslist in fase 4:** één client per plugin, met een
    dunne gedeelde fetch-helper in `static/src/shared/api/` en de vier methoden die meer dan één
