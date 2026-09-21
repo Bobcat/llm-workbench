@@ -1,7 +1,7 @@
 # Plugin-architectuur — beslissingen en fase-afbakening
 
 Status: fase 1 tot en met 4 staan op `main` (fase 3 via PR #17, fase 4 via PR #18). Fase 5 is op
-deze branch ontworpen en nog niet gebouwd.
+deze branch gebouwd en wacht op review.
 Anker: sectie 1 en 2 beschrijven de code op `main`. Fase 1 landde met `783f0bd` en de
 replay-opruiming met `8d73503`; de pdf-fix `a0f79d8` staat op `main` maar raakt deze architectuur
 niet.
@@ -243,8 +243,8 @@ Gebouwd:
    een subprocess bij `app/plugins.py` en stubt daarmee de global, want een tweede kopie in JS is
    precies wat deze fase opheft.
 
-Deze drie zitten in `tests/test_plugin_registry.py` (41 tests) en
-`tests/js/plugin-registry.test.mjs` (4 tests). De padaanalyse meet tegen de gemounte app: de core
+Deze drie zitten in `tests/test_plugin_registry.py` (41 tests), `tests/test_plugin_discovery.py`
+(14 tests) en `tests/js/plugin-registry.test.mjs` (4 tests). De padaanalyse meet tegen de gemounte app: de core
 mount alle adressen, dus elk pad dat een view aanroept moet daar altijd in zitten. Sinds fase 4 leest
 ze die paden waar ze geschreven staan — in de subtree van de view zelf, dus de client van zijn eigen
 plugin plus wat die uit `shared/` haalt — in plaats van via een methode → pad-tabel uit één gedeeld
@@ -417,7 +417,7 @@ ongewijzigd door, wat klopt met de scopegrens: geen enkele view veranderde buite
 | --- | --- |
 | **Verificatie** | de API-oppervlakte blijft identiek; de padaanalyse draait zonder `api-client.js`; een view importeert alleen de client van zijn eigen plugin en de core-client, nooit die van een andere plugin |
 
-### Fase 5 — discovery buiten de repo 🚧 ontworpen op deze branch
+### Fase 5 — discovery buiten de repo ✅
 
 | | |
 | --- | --- |
@@ -537,6 +537,15 @@ drie gaten en opent ze er één.
 vervolgfase. De ingebouwde plugins blijven in de repo: deze fase voegt de mogelijkheid toe, niet de
 migratie. Hot reload van plugins, een versiebeleid en een pluginregister vallen er ook buiten; één
 gebruiker met first-party pakketten heeft ze niet nodig.
+
+**Gebouwd op deze branch.** Discovery, het mounten, de adresregel, het escapen en de icoon- en
+styleregels staan er, met veertien nieuwe tests in `tests/test_plugin_discovery.py`: tien in-process
+voor de payload, de schakelaar, de sortering en elke faalmodus apart, en twee end-to-end in een
+subprocess met echte entry-point-metadata, die meten dat een pakket gevonden wordt, dat zijn bestand
+met `Cache-Control: no-cache` geserveerd wordt, dat een onbekend pad onder de mount 404 geeft in
+plaats van de shell, en dat zijn eigen `/api`-route antwoordt. De browsercheck kreeg een scenario met
+een plugin uit een pakket: geen uitgevoerd script, het label als tekst, de afbeelding op het juiste
+pad en de stylesheet gelinkt.
 
 **Verificatie van fase 5.**
 

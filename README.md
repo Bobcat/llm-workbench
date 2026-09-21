@@ -211,6 +211,62 @@ category off changes the sidebar and nothing else. An Image Pool-only workbench
 therefore still reaches the LLM Pool service for the model list that five views
 outside LLM Pool use.
 
+### Plugin packages
+
+A plugin can live in its own package instead of in this repository. The package
+registers itself in the `llm_workbench.plugins` entry-point group with a factory
+that returns a `PluginPackage`: the plugin itself (a `Plugin` with its `View`s and
+optional `styles`) plus its `static_dir` and its routers. The core serves that
+directory at `/plugin-static/<plugin-id>/` and mounts the routers on the API, so a
+plugin never mounts anything itself.
+
+```toml
+# pyproject.toml of the package
+[project.entry-points."llm_workbench.plugins"]
+my-plugin = "my_plugin:build"
+```
+
+```python
+# my_plugin/__init__.py
+from pathlib import Path
+
+from app.plugins import Plugin, PluginPackage, View
+
+
+def build() -> PluginPackage:
+    here = Path(__file__).parent
+    return PluginPackage(
+        plugin=Plugin(
+            id="my-plugin",
+            label="My Plugin",
+            styles=("plugin-static/my-plugin/plugin.css",),
+            views=(
+                View(
+                    id="my-view",
+                    route="my-view",
+                    name="My view",
+                    icon="plugin-static/my-plugin/icon.svg",
+                    module="plugin-static/my-plugin/view.js",
+                    factory="createMyView",
+                ),
+            ),
+        ),
+        static_dir=here / "static",
+    )
+```
+
+A view's `module` and a path `icon` are relative and live under the plugin's own
+mount, so they also resolve when the workbench runs under a subpath; `icon` may
+also be a symbol id from `static/assets/icons.svg`. Installing a package needs a
+restart, because discovery runs at import; switching a category off stays a page
+reload. A duplicate plugin id or route, a missing `static_dir`, a view or icon
+outside the plugin's own mount, and a factory that raises are refused at startup
+with the plugin or entry point named.
+
+Installing a package is the same trust as editing this repository: a plugin runs
+in the page and in the workbench process, and there is no sandbox, so only install
+plugins you would run anyway.
+
 ## Configuration
 
 Committed defaults live in:
