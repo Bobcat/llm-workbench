@@ -280,6 +280,27 @@ class PackageAnalysisTests(unittest.TestCase):
                 self.assertEqual(tpr._client_owners(entry), {"fake"})
 
 
+class PackageFileTests(unittest.TestCase):
+    """The check that a package's files exist, with a package that is missing one."""
+
+    def test_a_missing_icon_file_is_reported(self) -> None:
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location("tpr", REPO_ROOT / "tests" / "test_plugin_registry.py")
+        tpr = importlib.util.module_from_spec(spec)
+        sys.modules["tpr"] = tpr
+        spec.loader.exec_module(tpr)
+
+        with _fake_package("fake") as package:
+            (package.static_dir / "icon.svg").unlink()
+            with _discovered(package):
+                problems = tpr._missing_view_files()
+
+        self.assertEqual(len(problems), 1, problems)
+        self.assertIn("icon", problems[0])
+        self.assertIn("plugin-static/fake/icon.svg", problems[0])
+
+
 class EndToEndDiscoveryTests(unittest.TestCase):
     """A package that is really installed: entry-point metadata on `PYTHONPATH`, mounts and all.
 
