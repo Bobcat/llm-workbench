@@ -548,6 +548,66 @@ def verify(base: str, checks: Checks) -> None:
         refused.close()
         checks.note("refused plugin list: the 500 from a bad plugins.enabled is visible on screen")
 
+        # --- a plugin from an installed package: escaped, styled, with its own icon ---
+        # The payload can carry data from a package since phase 5, so the sidebar has to escape it,
+        # link the plugin's stylesheet, and render a path icon as an image. Nothing is installed
+        # here, so the files themselves 404; what is measured is what the shell does with the data.
+        packaged = browser.new_page()
+        injected = '<img src=x onerror="window.__injected = true">'
+        probe_payload = [{
+            "id": "probe-package",
+            "label": injected,
+            "auxiliary": False,
+            "styles": ["plugin-static/probe-package/plugin.css"],
+            "views": [{
+                "id": "probe-view",
+                "route": "probe-view",
+                "name": injected,
+                "icon": "plugin-static/probe-package/icon.svg",
+                "tooltip": injected,
+                "persistent": True,
+                "module": "plugin-static/probe-package/view.js",
+                "factory": "createView",
+                "aliases": [],
+            }],
+        }]
+        packaged.route(
+            "**/plugins.js",
+            lambda route: route.fulfill(
+                status=200,
+                content_type="application/javascript",
+                body="window.__LLM_WORKBENCH_PLUGINS__ = " + json.dumps(probe_payload) + ";\n",
+            ),
+        )
+        packaged.goto(f"{base}/")
+        try:
+            packaged.wait_for_selector("#workflowList li[data-route]", timeout=10000)
+            checks.check(
+                packaged.evaluate("window.__injected === undefined"),
+                "the sidebar executed markup from the plugin list",
+            )
+            label = packaged.inner_text("#workflowList .sidebar-section-label")
+            # De sectiekop wordt door css in hoofdletters gezet, vandaar de kleine-lettervergelijking.
+            checks.check("<img" in label.lower(), f"the label is not rendered as text: {label!r}")
+            icon_src = packaged.eval_on_selector(
+                "#workflowList img.app-icon", "el => el.getAttribute('src')"
+            )
+            checks.check(
+                icon_src.endswith("/plugin-static/probe-package/icon.svg"),
+                f"path icon src: {icon_src!r}",
+            )
+            links = packaged.eval_on_selector_all(
+                "link[data-plugin-style]", "els => els.map(e => e.getAttribute('href'))"
+            )
+            checks.check(
+                any(href.endswith("/plugin-static/probe-package/plugin.css") for href in links),
+                f"plugin stylesheet not linked: {links}",
+            )
+        except Exception as error:  # noqa: BLE001 - reported as a problem
+            problems.append(f"a packaged plugin was not rendered safely: {error}")
+        packaged.close()
+        checks.note("packaged plugin: label escaped, stylesheet linked, path icon rendered as an image")
+
         checks.check(not page_errors, f"page errors: {page_errors}")
         checks.check(not import_failures, f"dynamic import failures: {import_failures}")
         browser.close()

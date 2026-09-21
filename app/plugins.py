@@ -363,6 +363,13 @@ def _validate_package(package: PluginPackage, named: str) -> None:
                 f"view {view.route} of plugin {plugin.id} must live under {prefix}, "
                 f"not {view.module}"
             )
+        # An icon is either a sprite symbol or a file of this plugin. A path anywhere else is
+        # refused here rather than rendering as a broken image or an unsafe value in the sidebar.
+        if "/" in view.icon and not view.icon.startswith(prefix):
+            raise ValueError(
+                f"icon {view.icon} of view {view.route} in plugin {plugin.id} must live under "
+                f"{prefix}"
+            )
 
 
 def _check_collisions(packages: tuple[PluginPackage, ...]) -> None:

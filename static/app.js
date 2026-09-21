@@ -7,6 +7,7 @@ import {
 import { WORKFLOW_BUSY_EVENT } from './src/shared/workflow-activity.js';
 import { PLUGINS, WORKFLOWS, loadView, normalizeRoute, pluginLoadError } from './src/plugins/registry.js';
 import { iconMarkup } from './src/shared/icons.js';
+import { escapeAttr, escapeHtml } from './src/shared/ui-helpers.js';
 
 // === Initialization ===
 const byId = (id) => document.getElementById(id);
@@ -56,12 +57,14 @@ function applyPreset(preset) {
 // === Sidebar / plugin rendering ===
 // The sidebar is derived from the plugin registry (static/src/plugins/). Categories render in
 // registry order; auxiliary plugins render as standalone items at the bottom.
+// Everything here comes from the plugin list, and since phase 5 that list can carry data from an
+// installed package, so the values are escaped instead of interpolated raw.
 function pluginItemMarkup(wf, extraClass = '') {
   const className = extraClass ? ` class="${extraClass}"` : '';
   return `
-      <li data-route="${wf.route}" data-tooltip="${wf.tooltip || wf.name}"${className}>
+      <li data-route="${escapeAttr(wf.route)}" data-tooltip="${escapeAttr(wf.tooltip || wf.name)}"${className}>
         ${iconMarkup(wf.icon, 'sidebar-icon')}
-        <span class="link-text">${wf.name}</span>
+        <span class="link-text">${escapeHtml(wf.name)}</span>
       </li>
     `;
 }
@@ -72,7 +75,7 @@ function renderWorkflows() {
     .map((plugin) => {
       const sectionItems = plugin.views.map((wf) => pluginItemMarkup(wf)).join('');
       return `
-      <li class="sidebar-section-label" aria-hidden="true">${plugin.label}</li>
+      <li class="sidebar-section-label" aria-hidden="true">${escapeHtml(plugin.label)}</li>
       ${sectionItems}
     `;
     })
@@ -86,6 +89,26 @@ function renderWorkflows() {
 
   workflowList.innerHTML = `${groupedMarkup}${auxiliaryMarkup}`;
   updateSidebarScrollState();
+}
+
+// A plugin from an installed package can bring its own stylesheet. Loaded once per path, for the
+// plugins that are in the menu; the paths are relative, so they resolve like the view modules do.
+function applyPluginStyles(plugins) {
+  const loaded = new Set(
+    [...document.querySelectorAll('link[data-plugin-style]')].map((link) => link.dataset.pluginStyle),
+  );
+  plugins.forEach((plugin) => {
+    (plugin.styles || []).forEach((style) => {
+      const path = String(style || '');
+      if (!path || loaded.has(path)) return;
+      const link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.href = new URL(path, document.baseURI).href;
+      link.dataset.pluginStyle = path;
+      document.head.append(link);
+      loaded.add(path);
+    });
+  });
 }
 
 // Sidebar entries whose view reported work in flight. Held here rather than in the views: the
@@ -317,6 +340,7 @@ function init() {
     return;
   }
 
+  applyPluginStyles(PLUGINS);
   renderWorkflows();
   updateWorkflowRunningState();  // renderWorkflows() rebuilt the markup: re-apply from the set
 
