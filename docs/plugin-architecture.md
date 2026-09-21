@@ -479,7 +479,7 @@ die daar staan.
 
 | geval | wat de core doet | waarom niet anders |
 | --- | --- | --- |
-| `static_dir` bestaat niet | weigeren bij het laden, met de plugin erbij | stil overslaan is wat de core met zijn eigen map doet (`app/main.py:74`), maar voor een plugin betekent het dat geen enkele view laadt: dat lijkt een kapotte workbench |
+| `static_dir` bestaat niet | weigeren bij het laden, met de plugin erbij | stil overslaan is wat de core met zijn eigen map doet (`app/main.py:83`), maar voor een plugin betekent het dat geen enkele view laadt: dat lijkt een kapotte workbench |
 | een entry point gooit bij het laden | weigeren bij het laden, met het entry point en het pakket erbij | de fabrieksfunctie draait tijdens import; één kapot pakket zou anders de hele workbench meenemen of half laden |
 | twee entry points uit één pakket | toegestaan: dat zijn twee plugins | ze krijgen elk hun eigen id, en de id-regel hierboven vangt de botsing als ze dezelfde kiezen |
 | dezelfde plugin-id of routenaam | weigeren bij het laden, met beide kanten | zie hierboven |

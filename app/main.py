@@ -5,7 +5,7 @@ from pathlib import Path
 from fastapi import FastAPI, Response, WebSocket
 from fastapi.staticfiles import StaticFiles
 
-from app.plugins import frontend_script
+from app.plugins import PACKAGE_MOUNT_PREFIX, discovered_packages, frontend_script
 from app.realtime_tts.replay import websocket_endpoint as realtime_tts_websocket_endpoint
 from app.realtime_translation.replay.replay import websocket_endpoint
 from app.router import api_router
@@ -70,6 +70,15 @@ def plugins_js() -> Response:
         headers={"Cache-Control": "no-cache"},
     )
 
+
+# A plugin package's frontend files, served under their own prefix. This has to come before the
+# catch-all mount below, which would otherwise answer with the shell.
+for _package in discovered_packages():
+    app.mount(
+        f"/{PACKAGE_MOUNT_PREFIX}/{_package.plugin.id}",
+        RevalidatingStaticFiles(directory=str(_package.static_dir)),
+        name=f"plugin-{_package.plugin.id}",
+    )
 
 if static_dir.exists():
     app.mount("/", RevalidatingStaticFiles(directory=str(static_dir), html=True), name="static")

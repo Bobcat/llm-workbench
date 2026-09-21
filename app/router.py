@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
+from app.plugins import discovered_packages
 from app.image_pool.loras import router as image_pool_loras_router
 from app.translation_services.proxy import router as translation_router
 from app.translation_services.pdf import router as pdf_translation_router
@@ -42,3 +43,10 @@ api_router.include_router(text_generation_router)
 api_router.include_router(replay_defaults_router)
 api_router.include_router(replay_router)
 api_router.include_router(prompt_library_router)
+
+# A plugin from an installed package brings its own addresses, and the core mounts them: one route
+# table, and a plugin never mounts anything itself. They are mounted whether or not the category is
+# in the menu, exactly like the routers above.
+for _package in discovered_packages():
+    for _router in _package.routers:
+        api_router.include_router(_router)

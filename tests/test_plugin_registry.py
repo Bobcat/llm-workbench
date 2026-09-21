@@ -32,9 +32,11 @@ from pathlib import Path
 from fastapi import APIRouter
 from fastapi.testclient import TestClient
 
+from app import plugins as plugins_module
 from app.main import app
 from app.plugins import (
     PLUGINS,
+    all_plugins,
     enabled_plugins,
     frontend_payload,
     frontend_script,
@@ -209,16 +211,56 @@ def _socket_paths(entry: Path) -> set[str]:
     return found
 
 
+def _package_of(plugin_id: str):
+    """The installed package behind a plugin id, or None for the registry's own plugins."""
+    return next(
+        (package for package in plugins_module.discovered_packages() if package.plugin.id == plugin_id),
+        None,
+    )
+
+
+def _plugin_roots(plugin) -> tuple[Path, ...]:
+    """The directories that belong to this plugin.
+
+    A package brings its own ``static_dir``; a plugin from the registry owns its folder under
+    ``src/plugins/``. Everything under ``static/src/shared/`` belongs to the core, so no plugin
+    owns it.
+    """
+    package = _package_of(plugin.id)
+    if package is not None:
+        return (package.static_dir,)
+    return (PLUGIN_ROOT / plugin.id,)
+
+
+def _module_path(plugin, module: str) -> Path:
+    """The file behind a view module: the plugin's own directory plus the part of the path it owns.
+
+    A package serves `plugin-static/<id>/…` out of its `static_dir`, so the prefix stays in the
+    browser and comes off here; a built-in module is a path under `static/`.
+    """
+    prefix = f"{plugins_module.PACKAGE_MOUNT_PREFIX}/{plugin.id}/"
+    rest = module[len(prefix):] if module.startswith(prefix) else module
+    package = _package_of(plugin.id)
+    return (package.static_dir / rest) if package is not None else (STATIC / rest)
+
+
+def _view_file(plugin, view) -> Path:
+    """The file behind a view."""
+    return _module_path(plugin, view.module)
+
+
 def _client_owners(entry: Path) -> set[str]:
-    """The plugin ids whose client modules the view pulls in, by folder under `src/plugins/`."""
+    """Which plugins the client modules in the view's subtree belong to.
+
+    Ownership follows the same root as the analysis: a file under a plugin's own directory is that
+    plugin's, and a file under `static/src/shared/` is the core's. A file that falls under neither
+    is a mistake, not an empty answer — see the tests that use this.
+    """
     owners: set[str] = set()
     for file in _module_files(entry):
-        try:
-            relative = file.relative_to(PLUGIN_ROOT)
-        except ValueError:
-            continue
-        if len(relative.parts) > 1:
-            owners.add(relative.parts[0])
+        for plugin in all_plugins():
+            if any(root == file or root in file.parents for root in _plugin_roots(plugin)):
+                owners.add(plugin.id)
     return owners
 
 
@@ -313,7 +355,7 @@ class RegistryInvariantTests(unittest.TestCase):
         with _shipped_settings() as settings_path:
             payload = frontend_payload(settings_path)
         for plugin in payload:
-            self.assertEqual(set(plugin), {"id", "label", "auxiliary", "views"})
+            self.assertEqual(set(plugin), {"id", "label", "auxiliary", "styles", "views"})
             for view in plugin["views"]:
                 # The exact key set, so a field that cannot be serialised fails here instead of at
                 # json.dumps.
@@ -381,20 +423,22 @@ class ViewEndpointTests(unittest.TestCase):
         from `shared/`, and the URLs a view builds by hand for downloads and streams.
         """
         app_paths = _app_paths()
-        for view in iter_views():
-            paths = _api_paths(STATIC / view.module)
-            for path in sorted(paths):
-                self.assertTrue(
-                    _is_served(path, app_paths),
-                    f"view {view.route} builds {path}, which no mounted route serves",
-                )
+        for plugin in all_plugins():
+            for view in plugin.views:
+                paths = _api_paths(_view_file(plugin, view))
+                for path in sorted(paths):
+                    self.assertTrue(
+                        _is_served(path, app_paths),
+                        f"view {view.route} builds {path}, which no mounted route serves",
+                    )
 
     def test_the_path_analysis_finds_something(self) -> None:
         """A check on the analysis itself: if it finds nothing, it proves nothing."""
         with_paths = [
             view.route
-            for view in iter_views()
-            if _api_paths(STATIC / view.module)
+            for plugin in all_plugins()
+            for view in plugin.views
+            if _api_paths(_view_file(plugin, view))
         ]
         self.assertGreaterEqual(len(with_paths), 18, f"only found paths for {with_paths}")
 
@@ -402,16 +446,18 @@ class ViewEndpointTests(unittest.TestCase):
         """`icons` is frontend-only, and no other view quietly lost its backend."""
         empty = sorted(
             view.route
-            for view in iter_views()
-            if not _api_paths(STATIC / view.module)
+            for plugin in all_plugins()
+            for view in plugin.views
+            if not _api_paths(_view_file(plugin, view))
         )
         self.assertEqual(empty, ["icons"])
 
     def test_other_views_reach_at_least_two_endpoints(self) -> None:
         """A smoke check on the analysis itself: if it finds nothing, it proves nothing."""
         counts = {
-            view.route: len(_api_paths(STATIC / view.module))
-            for view in iter_views()
+            view.route: len(_api_paths(_view_file(plugin, view)))
+            for plugin in all_plugins()
+            for view in plugin.views
             if view.route != "icons"
         }
         thin = {route: count for route, count in counts.items() if count < 2}
@@ -431,7 +477,8 @@ class ViewEndpointTests(unittest.TestCase):
         payload — only that category is in the menu, and its views still reach everything.
         """
         app_paths = _app_paths()
-        for plugin in PLUGINS:
+        plugin_by_id = {item.id: item for item in all_plugins()}
+        for plugin in all_plugins():
             with self.subTest(category=plugin.id):
                 with _settings({"plugins": {"enabled": [plugin.id]}}) as settings_path:
                     payload = frontend_payload(settings_path)
@@ -440,7 +487,8 @@ class ViewEndpointTests(unittest.TestCase):
                     self.assertTrue(views, f"{plugin.id} has no views")
                     for view in views:
                         route = str(view["route"])
-                        for path in sorted(_api_paths(STATIC / str(view["module"]))):
+                        entry = plugin_by_id[str(plugin.id)]
+                        for path in sorted(_api_paths(_module_path(entry, str(view["module"])))):
                             self.assertTrue(
                                 _is_served(path, app_paths),
                                 f"view {route} builds {path}, which no mounted route serves",
@@ -455,9 +503,9 @@ class ClientOwnershipTests(unittest.TestCase):
     """
 
     def test_no_view_imports_another_plugins_client(self) -> None:
-        for plugin in PLUGINS:
+        for plugin in all_plugins():
             for view in plugin.views:
-                owners = _client_owners(STATIC / view.module)
+                owners = _client_owners(_view_file(plugin, view))
                 self.assertEqual(
                     owners - {plugin.id},
                     set(),
@@ -466,9 +514,9 @@ class ClientOwnershipTests(unittest.TestCase):
 
     def test_the_scan_finds_a_client_for_every_view_with_paths(self) -> None:
         """A check on the check: a view with endpoints must pull in a client module."""
-        for plugin in PLUGINS:
+        for plugin in all_plugins():
             for view in plugin.views:
-                entry = STATIC / view.module
+                entry = _view_file(plugin, view)
                 if _api_paths(entry):
                     self.assertTrue(
                         _client_owners(entry),
@@ -488,8 +536,9 @@ class WebSocketTests(unittest.TestCase):
     def test_every_socket_the_client_connects_to_is_registered(self) -> None:
         found = {
             path
-            for view in iter_views()
-            for path in _socket_paths(STATIC / view.module)
+            for plugin in all_plugins()
+            for view in plugin.views
+            for path in _socket_paths(_view_file(plugin, view))
         }
         self.assertTrue(found, "no websocket paths found in the views; the check would be empty")
         registered = _registered_sockets()
@@ -518,7 +567,7 @@ class PluginSwitchTests(unittest.TestCase):
         self.assertIn("plugins", committed)
         self.assertNotIn("enabled", committed["plugins"])
         with _shipped_settings() as settings_path:
-            self.assertEqual(enabled_plugins(settings_path), PLUGINS)
+            self.assertEqual(enabled_plugins(settings_path), all_plugins())
 
     def test_only_the_named_categories_are_on(self) -> None:
         with _settings({"plugins": {"enabled": ["image-pool"]}}) as settings_path:
@@ -628,10 +677,10 @@ class PluginSwitchTests(unittest.TestCase):
             {"plugins": {"enabled": ["image-pool"]}},
             local={"plugins": None},
         ) as settings_path:
-            self.assertEqual(enabled_plugins(settings_path), PLUGINS)
+            self.assertEqual(enabled_plugins(settings_path), all_plugins())
 
         with _settings({"plugins": None}) as settings_path:
-            self.assertEqual(enabled_plugins(settings_path), PLUGINS)
+            self.assertEqual(enabled_plugins(settings_path), all_plugins())
 
     def test_an_explicit_null_turns_everything_on(self) -> None:
         """`enabled: null` is the one way `local.json` reverses the base file instead of narrowing
@@ -642,7 +691,7 @@ class PluginSwitchTests(unittest.TestCase):
             {"plugins": {"enabled": ["image-pool"]}},
             local={"plugins": {"enabled": None}},
         ) as settings_path:
-            self.assertEqual(enabled_plugins(settings_path), PLUGINS)
+            self.assertEqual(enabled_plugins(settings_path), all_plugins())
 
     def test_the_route_answers_500_when_the_switch_is_wrong(self) -> None:
         """A typo must not serve a half-empty menu.

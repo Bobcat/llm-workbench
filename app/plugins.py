@@ -24,9 +24,15 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass
+from importlib.metadata import entry_points
 from pathlib import Path
 
+from fastapi import APIRouter
+
 FRONTEND_GLOBAL = "__LLM_WORKBENCH_PLUGINS__"
+# Where a package registers itself, and the path prefix its frontend files are served under.
+ENTRY_POINT_GROUP = "llm_workbench.plugins"
+PACKAGE_MOUNT_PREFIX = "plugin-static"
 
 # The environment variable is how a deployment keeps its settings outside the repo, and how the
 # browser check drives the workbench against the shipped defaults on a machine that has switched
@@ -63,13 +69,16 @@ class View:
 class Plugin:
     """One sidebar category, or one standalone item when ``auxiliary`` is set.
 
-    ``id`` is the key in ``plugins.enabled``; it is not shown anywhere.
+    ``id`` is the key in ``plugins.enabled``; it is not shown anywhere. ``styles`` is for plugins
+    from an installed package: the shell loads those stylesheets for an enabled plugin, and the
+    registry's own plugins leave it empty.
     """
 
     id: str
     label: str
     views: tuple[View, ...]
     auxiliary: bool = False
+    styles: tuple[str, ...] = ()
 
 
 PLUGINS: tuple[Plugin, ...] = (
@@ -294,8 +303,102 @@ PLUGINS: tuple[Plugin, ...] = (
 
 
 def iter_views() -> tuple[View, ...]:
-    """Every view, in sidebar order, whether its category is on or not."""
+    """Every view of the registry's own plugins, in sidebar order.
+
+    This is the set the hand-written sidebar pin measures; what discovery finds is covered by
+    :func:`all_plugins`, which the analyses use.
+    """
     return tuple(view for plugin in PLUGINS for view in plugin.views)
+
+
+@dataclass(frozen=True)
+class PluginPackage:
+    """A plugin that an installed package brought along, with what the core has to mount.
+
+    The registry's own plugins don't use this: their routers are mounted by ``app/router.py`` and
+    their files are served from ``static/``. A package brings its addresses and its frontend files
+    along, and the core mounts both — the same rule as for the registry's own plugins, where the
+    core owns every address.
+    """
+
+    plugin: Plugin
+    static_dir: Path
+    routers: tuple[APIRouter, ...] = ()
+
+
+_DISCOVERED: tuple[PluginPackage, ...] | None = None
+
+
+def _discover_packages() -> tuple[PluginPackage, ...]:
+    """Every installed package that registered itself, sorted by plugin id.
+
+    The factory runs here, at import time, because that is when the mounts are built. Every problem
+    raises with the entry point named: one broken package must not leave the workbench half-built,
+    and silently skipping it would look like the plugin was never installed.
+    """
+    found: list[PluginPackage] = []
+    for entry_point in sorted(entry_points(group=ENTRY_POINT_GROUP), key=lambda item: item.name):
+        named = f"{entry_point.name} ({entry_point.value})"
+        try:
+            package = entry_point.load()()
+        except Exception as error:  # noqa: BLE001 - reported as a load failure, with the name
+            raise ValueError(f"plugin entry point {named} failed to load: {error}") from error
+        if not isinstance(package, PluginPackage):
+            raise ValueError(f"plugin entry point {named} did not return a PluginPackage")
+        _validate_package(package, named)
+        found.append(package)
+    return tuple(sorted(found, key=lambda item: item.plugin.id))
+
+
+def _validate_package(package: PluginPackage, named: str) -> None:
+    plugin = package.plugin
+    if not package.static_dir.is_dir():
+        raise ValueError(
+            f"plugin {plugin.id} from {named} has no static_dir at {package.static_dir}"
+        )
+    for view in plugin.views:
+        prefix = f"{PACKAGE_MOUNT_PREFIX}/{plugin.id}/"
+        if not view.module.startswith(prefix):
+            raise ValueError(
+                f"view {view.route} of plugin {plugin.id} must live under {prefix}, "
+                f"not {view.module}"
+            )
+
+
+def _check_collisions(packages: tuple[PluginPackage, ...]) -> None:
+    """Refuse a duplicate plugin id or route instead of letting the last one win.
+
+    With packages in play a collision is a runtime case rather than a typo in one file, and the
+    frontend used to resolve it by silently keeping the last view. Failing at load names both sides.
+    """
+    plugins = PLUGINS + tuple(package.plugin for package in packages)
+    ids: dict[str, int] = {}
+    routes: dict[str, str] = {}
+    for plugin in plugins:
+        ids[plugin.id] = ids.get(plugin.id, 0) + 1
+        for view in plugin.views:
+            if view.route in routes and routes[view.route] != plugin.id:
+                raise ValueError(
+                    f"route {view.route} is declared by both {routes[view.route]} and {plugin.id}"
+                )
+            routes[view.route] = plugin.id
+    duplicates = sorted(plugin_id for plugin_id, count in ids.items() if count > 1)
+    if duplicates:
+        raise ValueError(f"duplicate plugin id: {', '.join(duplicates)}")
+
+
+def discovered_packages() -> tuple[PluginPackage, ...]:
+    """What discovery found, read once and kept: the mounts are built at import."""
+    global _DISCOVERED
+    if _DISCOVERED is None:
+        _DISCOVERED = _discover_packages()
+        _check_collisions(_DISCOVERED)
+    return _DISCOVERED
+
+
+def all_plugins() -> tuple[Plugin, ...]:
+    """Every plugin that exists here: the registry's own first, then what packages brought."""
+    return PLUGINS + tuple(package.plugin for package in discovered_packages())
 
 
 def _load_json_object(path: Path) -> dict[str, object]:
@@ -370,7 +473,7 @@ def enabled_plugins(settings_path: Path | str = DEFAULT_SETTINGS_PATH) -> tuple[
     payload = _merge_json_objects(base_payload, local_payload)
     enabled = _enabled_entry(payload)
     if enabled is None:
-        return PLUGINS
+        return all_plugins()
     # Which of the two files the switch really came from. `local.json` wins from the base file and
     # is the documented place to switch categories off, so naming the base file unconditionally
     # sends the reader to the file where nothing is wrong.
@@ -380,7 +483,7 @@ def enabled_plugins(settings_path: Path | str = DEFAULT_SETTINGS_PATH) -> tuple[
     if not enabled:
         raise ValueError(f"plugins.enabled in {source} is empty, which would leave no menu at all")
 
-    known = {plugin.id for plugin in PLUGINS}
+    known = {plugin.id for plugin in all_plugins()}
     unknown = sorted({entry for entry in enabled if entry not in known})
     if unknown:
         raise ValueError(
@@ -388,7 +491,7 @@ def enabled_plugins(settings_path: Path | str = DEFAULT_SETTINGS_PATH) -> tuple[
         )
 
     wanted = set(enabled)
-    return tuple(plugin for plugin in PLUGINS if plugin.id in wanted)
+    return tuple(plugin for plugin in all_plugins() if plugin.id in wanted)
 
 
 def route_aliases() -> dict[str, str]:
@@ -399,7 +502,8 @@ def route_aliases() -> dict[str, str]:
     """
     return {
         alias: view.route
-        for view in iter_views()
+        for plugin in all_plugins()
+        for view in plugin.views
         for alias in view.aliases
     }
 
@@ -413,6 +517,7 @@ def frontend_payload(
             "id": plugin.id,
             "label": plugin.label,
             "auxiliary": plugin.auxiliary,
+            "styles": list(plugin.styles),
             "views": [
                 {
                     "id": view.id,
