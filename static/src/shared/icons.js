@@ -17,9 +17,10 @@ function checkedIconName(name) {
 export function iconMarkup(name, className = '') {
   const value = String(name || '');
   const classes = ['app-icon', className].filter(Boolean).join(' ');
-  // `..` is refused here as well as in the core: the path passes the pattern and then resolves
-  // outside the plugin's own mount once the browser normalises the URL.
-  if (PLUGIN_ICON_PATTERN.test(value) && !value.split('/').includes('..')) {
+  // Refused here as well as in the core: these pass the pattern and then resolve outside the
+  // plugin's own mount once the browser decodes and normalises the URL.
+  const escapes = value.split('/').includes('..') || /[%\\]/.test(value);
+  if (PLUGIN_ICON_PATTERN.test(value) && !escapes) {
     // Resolved against the document base, like a view module, so it also works under a subpath.
     const url = new URL(value, document.baseURI).href;
     return `<img class="${classes}" src="${escapeAttr(url)}" alt="">`;

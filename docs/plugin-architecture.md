@@ -460,6 +460,16 @@ dus alleen bij als de shell de vorm controleert (`plugin-static/<eigen-id>/…`)
 zoals bij de andere drie velden. Al het andere blijft de sprite-symbol uit `static/assets/icons.svg`,
 en de JS-toets die elke view-icoon in de sprite controleert gaat over die gevallen.
 
+**Hoe een pakket de core importeert.** Relatief, zoals elke module in de repo:
+`../../src/shared/api/request.js` voor de fetch-helper, `../../src/shared/ui-helpers.js` voor het
+escapen. Die vorm resolvet in de browser naar `/src/shared/…` en werkt dus ook onder een subpad. De
+importcontrole leest imports in diezelfde URL-ruimte, zodat deze sanctie toegestaan is en een pad dat
+naar een *andere* plugin wijst — ook in de absolute vorm `/src/plugins/<ander>/api.js` — gemeld wordt.
+
+**De id van een plugin is `^[a-z0-9-]+$`**, dezelfde vorm die het frontendpatroon voor een icoonpad
+eist. Een id met een spatie of een hoofdletter zou mounten en daarna de sidebar laten vallen, want
+`iconMarkup` gooit op een pad dat daar niet aan voldoet.
+
 `styles` is een nieuwe sleutel op plugin-niveau in de payload, standaard een lege lijst. Daarmee
 verandert de pin in `test_payload_carries_only_frontend_data`, die de sleutelverzameling per plugin
 exact vastlegt — dat is de bedoeling van die pin, en het staat hier zodat het geen verrassing is.
@@ -564,13 +574,18 @@ pad en de stylesheet gelinkt.
 4. *Paden en iconen.* Een `module` van een plugin is relatief en resolvet ook onder een subpad goed;
    een `icon` dat een pad is wordt op zijn vorm gecontroleerd, geëscapet én moet bestaan in de
    `static_dir` van zijn plugin — anders is een typefout een gebroken plaatje dat geen enkele toets
-   ziet. Een sprite-id blijft een sprite-symbol.
-5. *De payload.* Zonder entry points is de payload identiek aan die van fase 4; met een plugin erin
+   ziet. Een sprite-id blijft een sprite-symbol. Een padveld dat de mount verlaat wordt geweigerd in
+   elke codering die de browser begrijpt: `..`, `%2e%2e`, en een backslash als scheidingsteken. De id
+   van een plugin is `^[a-z0-9-]+$`, dezelfde vorm die het icoonpatroon eist.
+5. *Imports.* Een pakket importeert de core relatief (`../../src/shared/…`) en dat is toegestaan; een
+   import die naar een andere plugin wijst wordt gemeld, ook in de absolute vorm
+   (`/src/plugins/<ander>/api.js`).
+6. *De payload.* Zonder entry points is de payload identiek aan die van fase 4; met een plugin erin
    heeft die plugin er `styles` bij, en de payloadpin noemt die sleutel.
-6. *Botsen en faalmodes.* Een dubbele plugin-id, een dubbele routenaam, een ontbrekende `static_dir`
+7. *Botsen en faalmodes.* Een dubbele plugin-id, een dubbele routenaam, een ontbrekende `static_dir`
    en een entry point dat gooit laten alle vier het laden falen met een melding die de plugin of het
    entry point noemt.
-7. *De pin.* De handgeschreven sidebarpin blijft over de ingebouwde set gaan: wat in de repo zit hoort
+8. *De pin.* De handgeschreven sidebarpin blijft over de ingebouwde set gaan: wat in de repo zit hoort
    vastgepind, wat geïnstalleerd is niet.
 
 ## 4. Bekende gaten en geaccepteerde schuld

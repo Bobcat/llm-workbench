@@ -256,6 +256,24 @@ class DiscoveryValidationTests(unittest.TestCase):
                         plugins_module.discovered_packages()
             self.assertIn("must live under", str(raised.exception))
 
+    def test_a_dotdot_encoding_is_refused(self) -> None:
+        """The browser decodes `%2e` and treats a backslash as a separator; so does the check."""
+        for value in ("plugin-static/fake/%2e%2e/secret.js", "plugin-static/fake/..\\..\\secret.js"):
+            for module, style in ((value, None), (None, value)):
+                with _fake_package("fake") as package:
+                    with _discovered(_repackage(package, module=module, styles=(style,) if style else None)):
+                        with self.assertRaises(ValueError):
+                            plugins_module.discovered_packages()
+
+    def test_a_plugin_id_must_be_a_path_segment(self) -> None:
+        """A space or a capital mounts fine and then breaks the sidebar's icon pattern."""
+        for plugin_id in ("Fake", "fake name", "fake_underscore"):
+            with _fake_package(plugin_id) as package:
+                with _discovered(package):
+                    with self.assertRaises(ValueError) as raised:
+                        plugins_module.discovered_packages()
+            self.assertIn("must match", str(raised.exception))
+
     def test_a_collision_is_refused_every_time(self) -> None:
         """The cache is only filled after the collision check, so a rejected load stays rejected."""
         with _fake_package("image-pool") as package:
@@ -345,6 +363,27 @@ class PackageFileTests(unittest.TestCase):
 
         self.assertEqual(len(found), 1, found)
         self.assertIn("leaves the plugin", found[0])
+
+    def test_a_core_import_is_allowed_and_an_absolute_one_is_reported(self) -> None:
+        """The sanctioned way to reach the core, and the absolute way to reach another plugin."""
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location("tpr", REPO_ROOT / "tests" / "test_plugin_registry.py")
+        tpr = importlib.util.module_from_spec(spec)
+        sys.modules["tpr"] = tpr
+        spec.loader.exec_module(tpr)
+
+        cases = (
+            ("import { fetchJson } from '../../src/shared/api/request.js';\n", False),
+            ("import { api } from '/src/plugins/llm-pool/api.js';\n", True),
+        )
+        for source, expected in cases:
+            with _fake_package("fake") as package:
+                view = package.static_dir / "view.js"
+                view.write_text(source, encoding="utf-8")
+                with _discovered(package):
+                    found = tpr._imports_leaving_plugin(package.plugin, view)
+            self.assertEqual(bool(found), expected, f"{source.strip()}: {found}")
 
     def test_a_missing_icon_file_is_reported(self) -> None:
         import importlib.util
@@ -442,7 +481,11 @@ class EndToEndDiscoveryTests(unittest.TestCase):
         self.assertEqual(found["api_body"], {"status": "ok"})
 
     def test_without_packages_the_menu_is_the_registry(self) -> None:
-        """The other half of the promise: no entry points means no change at all."""
+        """The other half of the promise: no entry points means no change at all.
+
+        This assumes the environment has no plugin package installed — in this repository it has
+        none, and a machine that installed one is not running this suite to measure that.
+        """
         script = textwrap.dedent(
             """
             import json

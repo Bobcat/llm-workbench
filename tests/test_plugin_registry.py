@@ -21,6 +21,7 @@ from __future__ import annotations
 import contextlib
 import importlib
 import json
+import posixpath
 import os
 import re
 import subprocess
@@ -28,6 +29,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from urllib.parse import unquote
 
 from fastapi import APIRouter
 from fastapi.testclient import TestClient
@@ -399,12 +401,18 @@ class CoreMountTests(unittest.TestCase):
                 )
 
     def test_the_mounted_api_holds_nothing_else(self) -> None:
-        """The mirror: no endpoint is mounted that no module in `app/` defines."""
+        """The mirror: no endpoint is mounted that the core or a package does not define.
+
+        A plugin package brings its own routers — that is the promise of phase 5 — so they count as
+        defined here, just as `all_plugins()` is the set the other analyses measure.
+        """
         defined = {
             "/api" + route.path
             for router in _router_module_objects().values()
             for route in router.routes
         }
+        for package in plugins_module.discovered_packages():
+            defined |= {"/api" + route.path for router in package.routers for route in router.routes}
         self.assertEqual(_app_paths(), defined)
 
 
@@ -499,16 +507,40 @@ class ViewEndpointTests(unittest.TestCase):
 CORE_TREES = (STATIC / "src" / "shared", STATIC / "foundation")
 
 
-def _imports_leaving_plugin(plugin, entry: Path) -> list[str]:
-    """Relative imports that resolve outside the view's own plugin and outside the core.
+def _plugin_url_prefix(plugin) -> str:
+    """The URL space of a plugin: its own mount for a package, its folder for a built-in."""
+    if _package_of(plugin.id) is not None:
+        return f"/{plugins_module.PACKAGE_MOUNT_PREFIX}/{plugin.id}/"
+    return f"/src/plugins/{plugin.id}/"
 
-    The browser resolves an import against the URL of the module and this analysis against the file
-    system, and for a package those two can disagree: `../../src/plugins/llm-pool/api.js` from a
-    module under `/plugin-static/demo/` lands in the workbench's own static tree, while on disk it
-    points outside the package. That is the same escape as a `..` in `module` or `icon`, one level
-    deeper, so it is reported here instead of being walked into.
+
+def _url_of(plugin, file: Path) -> str:
+    """The URL the browser would load this file from, which is what imports resolve against."""
+    package = _package_of(plugin.id)
+    if package is not None:
+        return f"/{plugins_module.PACKAGE_MOUNT_PREFIX}/{plugin.id}/{file.relative_to(package.static_dir).as_posix()}"
+    return f"/{file.relative_to(STATIC).as_posix()}"
+
+
+def _file_of(plugin, url: str) -> Path | None:
+    """The file behind a URL, or None when it is not one this plugin can read."""
+    package = _package_of(plugin.id)
+    prefix = f"/{plugins_module.PACKAGE_MOUNT_PREFIX}/{plugin.id}/"
+    if package is not None:
+        return package.static_dir / url[len(prefix):] if url.startswith(prefix) else None
+    return STATIC / url.lstrip("/") if url.startswith("/src/") or url.startswith("/foundation/") else None
+
+
+def _imports_leaving_plugin(plugin, entry: Path) -> list[str]:
+    """Relative and absolute imports that resolve outside the view's plugin and outside the core.
+
+    The browser resolves an import against the URL of the module, so that is the space this check
+    works in. That matters for a package: `../../src/shared/api/request.js` is how it reaches the
+    core's fetch helper — allowed, and what phase 4 prescribes — while the same specifier shape can
+    point at another plugin (`/src/plugins/llm-pool/api.js`), which is exactly the dependency the
+    address rule forbids. Reading the resolved URL catches both; reading the specifier as a path
+    catches neither.
     """
-    allowed = (entry.parent, *CORE_TREES, *_plugin_roots(plugin))
     found: list[str] = []
     seen: set[Path] = set()
     stack = [entry]
@@ -517,13 +549,26 @@ def _imports_leaving_plugin(plugin, entry: Path) -> list[str]:
         if current in seen or not current.exists():
             continue
         seen.add(current)
+        module_url = _url_of(plugin, current)
+        allowed = (
+            posixpath.dirname(module_url) + "/",
+            _plugin_url_prefix(plugin),
+            "/src/shared/",
+            "/foundation/",
+        )
         source = current.read_text(encoding="utf-8", errors="replace")
-        for specifier in re.findall(r"""from\s*['"](\.[^'"]+)['"]""", source):
-            target = (current.parent / specifier).resolve()
-            if not any(root == target or root in target.parents for root in allowed):
+        for specifier in re.findall(r"""from\s*['"]([^'"]+)['"]""", source):
+            if not specifier.startswith("."):
+                decoded = specifier
+            else:
+                decoded = posixpath.join(posixpath.dirname(module_url), specifier)
+            target_url = posixpath.normpath(unquote(decoded).replace("\\", "/"))
+            if not any(target_url.startswith(prefix) for prefix in allowed):
                 found.append(f"{current.name} imports {specifier}, which leaves the plugin")
                 continue
-            stack.append(target)
+            target = _file_of(plugin, target_url)
+            if target is not None:
+                stack.append(target)
     return found
 
 
