@@ -193,6 +193,32 @@ class DiscoveryValidationTests(unittest.TestCase):
                     plugins_module.discovered_packages()
         self.assertIn("plugin-static/fake/", str(raised.exception))
 
+    def test_an_icon_outside_the_plugins_own_mount_is_refused(self) -> None:
+        with _fake_package("fake") as package:
+            view = package.plugin.views[0]
+            stray = Plugin(
+                id=package.plugin.id,
+                label=package.plugin.label,
+                views=(View(**{**view.__dict__, "icon": "plugin-static/andere/icon.svg"}),),
+                styles=package.plugin.styles,
+            )
+            with _discovered(PluginPackage(plugin=stray, static_dir=package.static_dir)):
+                with self.assertRaises(ValueError) as raised:
+                    plugins_module.discovered_packages()
+        self.assertIn("icon", str(raised.exception))
+
+    def test_a_sprite_icon_id_is_still_allowed(self) -> None:
+        with _fake_package("fake") as package:
+            view = package.plugin.views[0]
+            sprite = Plugin(
+                id=package.plugin.id,
+                label=package.plugin.label,
+                views=(View(**{**view.__dict__, "icon": "languages"}),),
+                styles=package.plugin.styles,
+            )
+            with _discovered(PluginPackage(plugin=sprite, static_dir=package.static_dir)):
+                self.assertEqual([item.plugin.id for item in plugins_module.discovered_packages()], ["fake"])
+
     def test_a_duplicate_plugin_id_is_refused(self) -> None:
         with _fake_package("image-pool") as package:
             with _discovered(package):
