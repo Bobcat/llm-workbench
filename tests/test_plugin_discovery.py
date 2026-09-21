@@ -111,6 +111,35 @@ def _fake_package(
         yield package
 
 
+def _repackage(
+    package: PluginPackage,
+    *,
+    module: str | None = None,
+    icon: str | None = None,
+    styles: tuple[str, ...] | None = None,
+) -> PluginPackage:
+    """The same package with one path field replaced, for the validation tests."""
+    views = tuple(
+        View(**{
+            **view.__dict__,
+            **({"module": module} if module is not None else {}),
+            **({"icon": icon} if icon is not None else {}),
+        })
+        for view in package.plugin.views
+    )
+    return PluginPackage(
+        plugin=Plugin(
+            id=package.plugin.id,
+            label=package.plugin.label,
+            views=views,
+            auxiliary=package.plugin.auxiliary,
+            styles=styles if styles is not None else package.plugin.styles,
+        ),
+        static_dir=package.static_dir,
+        routers=package.routers,
+    )
+
+
 @contextlib.contextmanager
 def _discovered(*packages: PluginPackage):
     """Let discovery find exactly these packages, through the real code path.
@@ -195,29 +224,45 @@ class DiscoveryValidationTests(unittest.TestCase):
 
     def test_an_icon_outside_the_plugins_own_mount_is_refused(self) -> None:
         with _fake_package("fake") as package:
-            view = package.plugin.views[0]
-            stray = Plugin(
-                id=package.plugin.id,
-                label=package.plugin.label,
-                views=(View(**{**view.__dict__, "icon": "plugin-static/andere/icon.svg"}),),
-                styles=package.plugin.styles,
-            )
-            with _discovered(PluginPackage(plugin=stray, static_dir=package.static_dir)):
+            with _discovered(_repackage(package, icon="plugin-static/andere/icon.svg")):
                 with self.assertRaises(ValueError) as raised:
                     plugins_module.discovered_packages()
         self.assertIn("icon", str(raised.exception))
 
     def test_a_sprite_icon_id_is_still_allowed(self) -> None:
         with _fake_package("fake") as package:
-            view = package.plugin.views[0]
-            sprite = Plugin(
-                id=package.plugin.id,
-                label=package.plugin.label,
-                views=(View(**{**view.__dict__, "icon": "languages"}),),
-                styles=package.plugin.styles,
-            )
-            with _discovered(PluginPackage(plugin=sprite, static_dir=package.static_dir)):
-                self.assertEqual([item.plugin.id for item in plugins_module.discovered_packages()], ["fake"])
+            with _discovered(_repackage(package, icon="languages")):
+                self.assertEqual(
+                    [item.plugin.id for item in plugins_module.discovered_packages()], ["fake"]
+                )
+
+    def test_a_dotdot_path_is_refused(self) -> None:
+        """The prefix check alone is not enough: a `..` passes it and leaves the mount anyway."""
+        for module, icon in (
+            ("plugin-static/fake/../../src/workflows/chat/index.js", None),
+            (None, "plugin-static/fake/../../assets/icons.svg"),
+        ):
+            with _fake_package("fake") as package:
+                with _discovered(_repackage(package, module=module, icon=icon)):
+                    with self.assertRaises(ValueError) as raised:
+                        plugins_module.discovered_packages()
+            self.assertIn("plugin-static/fake/", str(raised.exception))
+
+    def test_a_style_outside_the_plugin_is_refused(self) -> None:
+        for style in ("https://evil.example/x.css", "/etc/passwd", "plugin-static/fake/../../a.css"):
+            with _fake_package("fake") as package:
+                with _discovered(_repackage(package, styles=(style,))):
+                    with self.assertRaises(ValueError) as raised:
+                        plugins_module.discovered_packages()
+            self.assertIn("must live under", str(raised.exception))
+
+    def test_a_collision_is_refused_every_time(self) -> None:
+        """The cache is only filled after the collision check, so a rejected load stays rejected."""
+        with _fake_package("image-pool") as package:
+            with _discovered(package):
+                for attempt in (1, 2):
+                    with self.assertRaises(ValueError, msg=f"attempt {attempt} did not raise"):
+                        plugins_module.discovered_packages()
 
     def test_a_duplicate_plugin_id_is_refused(self) -> None:
         with _fake_package("image-pool") as package:
@@ -282,6 +327,24 @@ class PackageAnalysisTests(unittest.TestCase):
 
 class PackageFileTests(unittest.TestCase):
     """The check that a package's files exist, with a package that is missing one."""
+
+    def test_an_import_leaving_the_plugin_is_reported(self) -> None:
+        """The browser resolves it into the workbench's static tree; the analysis must see it."""
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location("tpr", REPO_ROOT / "tests" / "test_plugin_registry.py")
+        tpr = importlib.util.module_from_spec(spec)
+        sys.modules["tpr"] = tpr
+        spec.loader.exec_module(tpr)
+
+        with _fake_package("fake") as package:
+            view = package.static_dir / "view.js"
+            view.write_text("import { api } from '../../src/plugins/llm-pool/api.js';\n", encoding="utf-8")
+            with _discovered(package):
+                found = tpr._imports_leaving_plugin(package.plugin, view)
+
+        self.assertEqual(len(found), 1, found)
+        self.assertIn("leaves the plugin", found[0])
 
     def test_a_missing_icon_file_is_reported(self) -> None:
         import importlib.util

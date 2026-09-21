@@ -495,6 +495,38 @@ class ViewEndpointTests(unittest.TestCase):
                             )
 
 
+# The trees a module may reach into without leaving its own plugin: the shared helpers and the shell.
+CORE_TREES = (STATIC / "src" / "shared", STATIC / "foundation")
+
+
+def _imports_leaving_plugin(plugin, entry: Path) -> list[str]:
+    """Relative imports that resolve outside the view's own plugin and outside the core.
+
+    The browser resolves an import against the URL of the module and this analysis against the file
+    system, and for a package those two can disagree: `../../src/plugins/llm-pool/api.js` from a
+    module under `/plugin-static/demo/` lands in the workbench's own static tree, while on disk it
+    points outside the package. That is the same escape as a `..` in `module` or `icon`, one level
+    deeper, so it is reported here instead of being walked into.
+    """
+    allowed = (entry.parent, *CORE_TREES, *_plugin_roots(plugin))
+    found: list[str] = []
+    seen: set[Path] = set()
+    stack = [entry]
+    while stack:
+        current = stack.pop()
+        if current in seen or not current.exists():
+            continue
+        seen.add(current)
+        source = current.read_text(encoding="utf-8", errors="replace")
+        for specifier in re.findall(r"""from\s*['"](\.[^'"]+)['"]""", source):
+            target = (current.parent / specifier).resolve()
+            if not any(root == target or root in target.parents for root in allowed):
+                found.append(f"{current.name} imports {specifier}, which leaves the plugin")
+                continue
+            stack.append(target)
+    return found
+
+
 def _missing_view_files() -> list[str]:
     """View modules and path icons that a plugin names but that are not there.
 
@@ -518,6 +550,15 @@ class ViewFileTests(unittest.TestCase):
 
     def test_every_view_module_and_path_icon_exists(self) -> None:
         self.assertEqual(_missing_view_files(), [])
+
+    def test_no_view_imports_outside_its_own_plugin(self) -> None:
+        problems = [
+            f"view {view.route}: {problem}"
+            for plugin in all_plugins()
+            for view in plugin.views
+            for problem in _imports_leaving_plugin(plugin, _view_file(plugin, view))
+        ]
+        self.assertEqual(problems, [])
 
 
 class ClientOwnershipTests(unittest.TestCase):

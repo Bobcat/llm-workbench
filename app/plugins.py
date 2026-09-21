@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 import os
+import posixpath
 from dataclasses import dataclass
 from importlib.metadata import entry_points
 from pathlib import Path
@@ -350,25 +351,44 @@ def _discover_packages() -> tuple[PluginPackage, ...]:
     return tuple(sorted(found, key=lambda item: item.plugin.id))
 
 
+def _checked_asset_path(plugin_id: str, value: str) -> bool:
+    """Whether a path field stays inside the plugin's own mount.
+
+    A raw prefix comparison is not enough: ``plugin-static/mine/../../src/x.js`` starts with the
+    right prefix and leaves the mount anyway once the browser normalises it. So the path is
+    normalised first, and a path that climbs out — with `..` or by being absolute — is refused.
+    """
+    prefix = f"{PACKAGE_MOUNT_PREFIX}/{plugin_id}/"
+    normalised = posixpath.normpath(value)
+    return normalised.startswith(prefix) and ".." not in normalised.split("/")
+
+
 def _validate_package(package: PluginPackage, named: str) -> None:
     plugin = package.plugin
     if not package.static_dir.is_dir():
         raise ValueError(
             f"plugin {plugin.id} from {named} has no static_dir at {package.static_dir}"
         )
+    prefix = f"{PACKAGE_MOUNT_PREFIX}/{plugin.id}/"
     for view in plugin.views:
-        prefix = f"{PACKAGE_MOUNT_PREFIX}/{plugin.id}/"
-        if not view.module.startswith(prefix):
+        if not _checked_asset_path(plugin.id, view.module):
             raise ValueError(
                 f"view {view.route} of plugin {plugin.id} must live under {prefix}, "
                 f"not {view.module}"
             )
         # An icon is either a sprite symbol or a file of this plugin. A path anywhere else is
         # refused here rather than rendering as a broken image or an unsafe value in the sidebar.
-        if "/" in view.icon and not view.icon.startswith(prefix):
+        if "/" in view.icon and not _checked_asset_path(plugin.id, view.icon):
             raise ValueError(
                 f"icon {view.icon} of view {view.route} in plugin {plugin.id} must live under "
                 f"{prefix}"
+            )
+    # Stylesheets are files of this plugin too: an external URL or a path outside the mount would
+    # let a package pull in whatever it likes without the core noticing.
+    for style in plugin.styles:
+        if not _checked_asset_path(plugin.id, style):
+            raise ValueError(
+                f"style {style} of plugin {plugin.id} must live under {prefix}"
             )
 
 
@@ -398,8 +418,11 @@ def discovered_packages() -> tuple[PluginPackage, ...]:
     """What discovery found, read once and kept: the mounts are built at import."""
     global _DISCOVERED
     if _DISCOVERED is None:
-        _DISCOVERED = _discover_packages()
-        _check_collisions(_DISCOVERED)
+        # Only cached after the collision check: a cache filled by a rejected load would answer the
+        # next caller with the very set that was refused.
+        discovered = _discover_packages()
+        _check_collisions(discovered)
+        _DISCOVERED = discovered
     return _DISCOVERED
 
 
