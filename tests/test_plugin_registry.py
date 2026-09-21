@@ -495,6 +495,31 @@ class ViewEndpointTests(unittest.TestCase):
                             )
 
 
+def _missing_view_files() -> list[str]:
+    """View modules and path icons that a plugin names but that are not there.
+
+    A sprite id is checked against the sprite by the JS suite; a path icon is a file, and nothing
+    else would notice a typo in it. The design asks for this check in phase 5, because a plugin
+    from a package brings its own files.
+    """
+    missing: list[str] = []
+    for plugin in all_plugins():
+        for view in plugin.views:
+            entry = _view_file(plugin, view)
+            if not entry.exists():
+                missing.append(f"view {view.route}: module {entry} does not exist")
+            if "/" in view.icon and not _module_path(plugin, view.icon).exists():
+                missing.append(f"view {view.route}: icon {view.icon} does not exist")
+    return missing
+
+
+class ViewFileTests(unittest.TestCase):
+    """Every file a view names has to be there, for the registry and for a package alike."""
+
+    def test_every_view_module_and_path_icon_exists(self) -> None:
+        self.assertEqual(_missing_view_files(), [])
+
+
 class ClientOwnershipTests(unittest.TestCase):
     """Which client a view may use.
 
