@@ -102,7 +102,7 @@ function applyPluginStyles(plugins) {
       const path = String(style || '');
       // The core refuses a path outside the plugin's own mount; this is the same guard on the one
       // field that reaches the page through the DOM API instead of through markup.
-      if (!path || loaded.has(path) || path.split('/').includes('..')) return;
+      if (!path || loaded.has(path) || path.split('/').includes('..') || /[%\\]/.test(path)) return;
       const link = document.createElement('link');
       link.rel = 'stylesheet';
       link.href = new URL(path, document.baseURI).href;

@@ -24,7 +24,9 @@ from __future__ import annotations
 import json
 import os
 import posixpath
+import re
 from dataclasses import dataclass
+from urllib.parse import unquote
 from importlib.metadata import entry_points
 from pathlib import Path
 
@@ -33,6 +35,9 @@ from fastapi import APIRouter
 FRONTEND_GLOBAL = "__LLM_WORKBENCH_PLUGINS__"
 # Where a package registers itself, and the path prefix its frontend files are served under.
 ENTRY_POINT_GROUP = "llm_workbench.plugins"
+# The id ends up in the mount path and in the frontend's icon pattern, so it has to be a shape both
+# can live with. A space or a capital would mount fine and then break the sidebar.
+PLUGIN_ID_PATTERN = re.compile(r"^[a-z0-9-]+$")
 PACKAGE_MOUNT_PREFIX = "plugin-static"
 
 # The environment variable is how a deployment keeps its settings outside the repo, and how the
@@ -354,17 +359,24 @@ def _discover_packages() -> tuple[PluginPackage, ...]:
 def _checked_asset_path(plugin_id: str, value: str) -> bool:
     """Whether a path field stays inside the plugin's own mount.
 
-    A raw prefix comparison is not enough: ``plugin-static/mine/../../src/x.js`` starts with the
-    right prefix and leaves the mount anyway once the browser normalises it. So the path is
-    normalised first, and a path that climbs out — with `..` or by being absolute — is refused.
+    The browser is the reference here, not `posixpath`: it decodes percent escapes and treats a
+    backslash as a separator, so ``%2e%2e/`` and ``..\\..`` leave the mount even though a raw
+    comparison says they stay. The value is therefore decoded and normalised the way the URL parser
+    does it, and only compared after that.
     """
     prefix = f"{PACKAGE_MOUNT_PREFIX}/{plugin_id}/"
-    normalised = posixpath.normpath(value)
+    decoded = unquote(value).replace("\\", "/")
+    normalised = posixpath.normpath(decoded)
     return normalised.startswith(prefix) and ".." not in normalised.split("/")
 
 
 def _validate_package(package: PluginPackage, named: str) -> None:
     plugin = package.plugin
+    if not PLUGIN_ID_PATTERN.match(plugin.id):
+        raise ValueError(
+            f"plugin id {plugin.id!r} from {named} must match {PLUGIN_ID_PATTERN.pattern}: it ends "
+            "up in the mount path and in the frontend's icon pattern"
+        )
     if not package.static_dir.is_dir():
         raise ValueError(
             f"plugin {plugin.id} from {named} has no static_dir at {package.static_dir}"
