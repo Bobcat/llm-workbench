@@ -28,6 +28,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 from urllib.parse import unquote
 
@@ -38,6 +39,8 @@ from app import plugins as plugins_module
 from app.main import app
 from app.plugins import (
     PLUGINS,
+    Plugin,
+    View,
     all_plugins,
     enabled_plugins,
     frontend_payload,
@@ -375,6 +378,37 @@ class RegistryInvariantTests(unittest.TestCase):
                         "aliases",
                     },
                 )
+
+
+class BuiltInAssetTests(unittest.TestCase):
+    """A built-in plugin may bring its own stylesheet and its own icon file, like a package.
+
+    The mechanism is the same for both: the payload carries `styles` and an icon may be a path, and
+    the shell loads and renders them. What differs is the root — `src/plugins/<id>/` in the repo,
+    `plugin-static/<id>/` for a package.
+    """
+
+    def test_styles_and_a_path_icon_reach_the_payload(self) -> None:
+        built_in = Plugin(
+            id="asset-probe",
+            label="Asset probe",
+            styles=("src/plugins/asset-probe/probe.css",),
+            views=(
+                View(
+                    id="asset-probe-view",
+                    route="asset-probe-view",
+                    name="Probe",
+                    icon="src/plugins/asset-probe/icon.svg",
+                    module="src/workflows/probe/index.js",
+                    factory="createProbeView",
+                ),
+            ),
+        )
+        with unittest.mock.patch.object(plugins_module, "PLUGINS", (built_in,)):
+            payload = frontend_payload()
+
+        self.assertEqual(payload[0]["styles"], ["src/plugins/asset-probe/probe.css"])
+        self.assertEqual(payload[0]["views"][0]["icon"], "src/plugins/asset-probe/icon.svg")
 
 
 class CoreMountTests(unittest.TestCase):

@@ -94,7 +94,53 @@ test('every view icon exists in the icon sprite', async () => {
   const defined = new Set([...sprite.matchAll(/<symbol[^>]*\bid="([^"]+)"/g)].map((m) => m[1]));
   assert.ok(defined.size > 0, 'no <symbol> ids found in static/assets/icons.svg');
   for (const view of WORKFLOWS) {
+    // A path icon is a file of the plugin itself; the Python suite checks that it exists.
+    if (view.icon.includes('/')) continue;
     assert.ok(defined.has(view.icon), `view ${view.route}: icon "${view.icon}" is not in icons.svg`);
+  }
+});
+
+test('an icon is a sprite symbol or a file of the plugin itself', async () => {
+  // A package serves its icon from plugin-static/<id>/, a built-in plugin keeps it in src/plugins/<id>/.
+  // Anything else, and anything that climbs out of that folder, is refused instead of rendered.
+  const script = [
+    'globalThis.document = { baseURI: "http://workbench.test/" };',
+    `const { iconMarkup } = await import(${JSON.stringify(pathToFileURL(path.join(STATIC, 'src', 'shared', 'icons.js')).href)});`,
+    'const out = {};',
+    'for (const value of [',
+    '  "languages",',
+    '  "plugin-static/mine/icon.svg",',
+    '  "src/plugins/image-pool/icon.svg",',
+    '  "plugin-static/mine/../../assets/icons.svg",',
+    '  "src/plugins/mine/../../assets/icons.svg",',
+    '  "https://evil.example/x.svg",',
+    ']) {',
+    '  try { out[value] = iconMarkup(value); } catch (error) { out[value] = `gooit: ${error.message}`; }',
+    '}',
+    'console.log(JSON.stringify(out));',
+  ].join('\n');
+
+  const output = execFileSync(process.execPath, ['--input-type=module', '-e', script], {
+    encoding: 'utf8',
+    stdio: 'pipe',
+  });
+  const out = JSON.parse(output.trim().split('\n').pop());
+
+  assert.match(out.languages, /<svg/, 'a sprite symbol should stay an svg');
+  assert.equal(
+    out['plugin-static/mine/icon.svg'],
+    '<img class="app-icon" src="http://workbench.test/plugin-static/mine/icon.svg" alt="">',
+  );
+  assert.equal(
+    out['src/plugins/image-pool/icon.svg'],
+    '<img class="app-icon" src="http://workbench.test/src/plugins/image-pool/icon.svg" alt="">',
+  );
+  for (const escaping of [
+    'plugin-static/mine/../../assets/icons.svg',
+    'src/plugins/mine/../../assets/icons.svg',
+    'https://evil.example/x.svg',
+  ]) {
+    assert.match(out[escaping], /^gooit:/, `${escaping} should be refused`);
   }
 });
 
