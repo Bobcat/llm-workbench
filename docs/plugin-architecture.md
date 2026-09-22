@@ -70,7 +70,7 @@ aan wat ze toont.
 | `id` | stabiele view-id |
 | `route` | hash-route |
 | `name` | sidebar-label |
-| `icon` | symbol-id in `static/assets/icons.svg` |
+| `icon` | symbol-id in `static/assets/icons.svg`, of een pad onder de eigen map (`src/plugins/<id>/…` voor een ingebouwde plugin, `plugin-static/<id>/…` voor een pakket) |
 | `tooltip` | optioneel; valt terug op `name` |
 | `persistent` | view blijft in de DOM bij wegnavigeren |
 | `module` | pad dat tegen `document.baseURI` wordt geresolveerd; onder de static root voor een ingebouwde plugin, onder de eigen mount (`plugin-static/<id>/…`) voor een plugin uit een pakket |
@@ -454,7 +454,9 @@ De mount aan de serverkant blijft `/plugin-static/<plugin-id>`, want dat is een 
 onder een subpad strippt de proxy dat voorvoegsel, net als bij de rest van de app.
 
 `icon` mag voor een plugin een pad zijn in plaats van een sprite-id, maar alleen van deze vorm: een
-relatief pad onder de eigen mount. `iconMarkup` laat vandaag alleen `^[a-z0-9-]+$` toe en gooit op
+relatief pad onder de eigen map — `plugin-static/<id>/…` voor een pakket, `src/plugins/<id>/…` voor
+een ingebouwde plugin, die zijn bestanden in de repo heeft. Voor beide geldt dezelfde wacht in
+`iconMarkup` en dezelfde weigering van een pad dat eruit klimt. `iconMarkup` laat vandaag alleen `^[a-z0-9-]+$` toe en gooit op
 al het andere, en die wacht is precies wat het icoon nu veilig maakt in `innerHTML`; een pad kan er
 dus alleen bij als de shell de vorm controleert (`plugin-static/<eigen-id>/…`) en de waarde escapet,
 zoals bij de andere drie velden. Al het andere blijft de sprite-symbol uit `static/assets/icons.svg`,
@@ -612,9 +614,12 @@ Deze zijn bewust blijven liggen; ze horen bij een latere fase.
   de gecommitte set, maar met packages buiten de repo is een botsing een runtime-geval zonder
   afgesproken uitkomst. **Opgelost in fase 5:** een dubbele plugin-id of routenaam laat het laden
   falen met een melding die beide kanten noemt.
-- `css/app.css` is één globaal `@import`-manifest van 25 regels en er is één globale
-  iconensprite; een plugin kan nog geen eigen assets bijdragen. **Bewust uitgesteld in fase 3:** het
-  levert nu vooral een nettere indeling op en betaalt zich pas terug bij plugins van buiten de repo.
+- ~~`css/app.css` is één globaal `@import`-manifest van 25 regels en er is één globale
+  iconensprite; een plugin kan nog geen eigen assets bijdragen.~~ **Opgelost voor het mechanisme:**
+  een plugin — ingebouwd of uit een pakket — mag een eigen stylesheet en een eigen icoonbestand
+  meebrengen, met de eigen map als wortel. **Wat openblijft:** `css/app.css` zelf is nog steeds één
+  manifest; het per categorie splitsen is een eigen beslissing, want het levert een nettere indeling
+  op en geen nieuwe mogelijkheid.
 - ~~**Zeven kopieën van de settings-loader.**~~ **Opgelost.** Ze staan nu in `app/settings_files.py`,
   met de twee varianten naast elkaar en de reden erbij: `load_object` is soepel voor de
   dienstinstellingen, `load_object_or_raise` weigert een bestand dat geen object is en noemt het pad,
