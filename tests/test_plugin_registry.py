@@ -380,6 +380,25 @@ class RegistryInvariantTests(unittest.TestCase):
                 )
 
 
+def _built_in_asset_problems(plugins) -> list[str]:
+    """Built-in asset paths that do not name the plugin's own folder.
+
+    A package has this check in the core (`_checked_asset_path`); a built-in plugin is core code and
+    has none, so the rule is measured here instead of assumed. Without it a view of one plugin could
+    quietly point at another plugin's file, and only the hand-written sidebar pin would notice.
+    """
+    problems: list[str] = []
+    for plugin in plugins:
+        prefix = f"src/plugins/{plugin.id}/"
+        for view in plugin.views:
+            if "/" in view.icon and not view.icon.startswith(prefix):
+                problems.append(f"view {view.route}: icon {view.icon} is not under {prefix}")
+        for style in plugin.styles:
+            if not style.startswith(prefix):
+                problems.append(f"plugin {plugin.id}: style {style} is not under {prefix}")
+    return problems
+
+
 class BuiltInAssetTests(unittest.TestCase):
     """A built-in plugin may bring its own stylesheet and its own icon file, like a package.
 
@@ -409,6 +428,30 @@ class BuiltInAssetTests(unittest.TestCase):
 
         self.assertEqual(payload[0]["styles"], ["src/plugins/asset-probe/probe.css"])
         self.assertEqual(payload[0]["views"][0]["icon"], "src/plugins/asset-probe/icon.svg")
+
+    def test_every_built_in_asset_path_is_in_its_own_folder(self) -> None:
+        self.assertEqual(_built_in_asset_problems(PLUGINS), [])
+
+    def test_a_foreign_asset_path_is_reported(self) -> None:
+        """The check on the check: a path that names another plugin's folder must be found."""
+        stray = Plugin(
+            id="stray",
+            label="Stray",
+            styles=("src/plugins/iemand-anders/stray.css",),
+            views=(
+                View(
+                    id="stray-view",
+                    route="stray-view",
+                    name="Stray",
+                    icon="src/plugins/iemand-anders/icon.svg",
+                    module="src/workflows/stray/index.js",
+                    factory="createStrayView",
+                ),
+            ),
+        )
+        problems = _built_in_asset_problems((stray,))
+        self.assertEqual(len(problems), 2, problems)
+        self.assertIn("src/plugins/stray/", problems[0])
 
 
 class CoreMountTests(unittest.TestCase):

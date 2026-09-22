@@ -144,6 +144,57 @@ test('an icon is a sprite symbol or a file of the plugin itself', async () => {
   }
 });
 
+test('a plugin asset path is its own folder, never someone else\'s and never an url', async () => {
+  const script = [
+    `const { isPluginAssetPath } = await import(${JSON.stringify(pathToFileURL(path.join(STATIC, 'src', 'shared', 'plugin-assets.js')).href)});`,
+    'const out = {};',
+    'for (const value of [',
+    '  "src/plugins/llm-pool/icon.svg",',
+    '  "src/plugins/llm-pool/theme.css",',
+    '  "plugin-static/mine/icon.svg",',
+    '  "https://evil.example/x.css",',
+    '  "//evil.example/x.css",',
+    '  "/etc/x.css",',
+    '  "src/workflows/chat/x.css",',
+    '  "src/plugins/llm-pool/../../assets/icons.svg",',
+    '  "src/plugins/llm-pool/%2e%2e/x.svg",',
+    '  "src/plugins/llm-pool/..\\\\x.svg",',
+    '  "src/plugins//icon.svg",',
+    '  "src/plugins/llm-pool/",',
+    '  "languages",',
+    ']) { out[value] = isPluginAssetPath(value); }',
+    'console.log(JSON.stringify(out));',
+  ].join('\n');
+
+  const output = execFileSync(process.execPath, ['--input-type=module', '-e', script], {
+    encoding: 'utf8',
+    stdio: 'pipe',
+  });
+  const out = JSON.parse(output.trim().split('\n').pop());
+
+  for (const allowed of [
+    'src/plugins/llm-pool/icon.svg',
+    'src/plugins/llm-pool/theme.css',
+    'plugin-static/mine/icon.svg',
+  ]) {
+    assert.equal(out[allowed], true, `${allowed} should be a plugin asset path`);
+  }
+  for (const refused of [
+    'https://evil.example/x.css',
+    '//evil.example/x.css',
+    '/etc/x.css',
+    'src/workflows/chat/x.css',
+    'src/plugins/llm-pool/../../assets/icons.svg',
+    'src/plugins/llm-pool/%2e%2e/x.svg',
+    'src/plugins/llm-pool/..\\x.svg',
+    'src/plugins//icon.svg',
+    'src/plugins/llm-pool/',
+    'languages',
+  ]) {
+    assert.equal(out[refused], false, `${refused} should be refused`);
+  }
+});
+
 test('a missing generated global is reported, not thrown', () => {
   // app.js has to keep running to be able to show this, so the module reports the problem
   // instead of throwing at import time. The browser check covers that the report reaches the
