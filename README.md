@@ -388,6 +388,12 @@ The tests are mostly `unittest`-style tests and can also be run with:
 ./.venv/bin/python -m unittest discover -s tests
 ```
 
+Five tests in `tests/test_replay_api.py` create a replay session and therefore need
+a running `translation-services` that has the `translate_realtime_first` and
+`translate_realtime_second` prompts. Without them those tests skip with that reason
+instead of failing on a missing `session_id`; the rest of the suite runs without any
+service.
+
 There is no JavaScript build step. The frontend plugin contract does have a test
 suite, which needs the Node `node --test` runner; Node is not a declared project
 dependency.
