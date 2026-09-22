@@ -410,6 +410,49 @@ def verify(base: str, checks: Checks) -> None:
         busy.close()
         checks.note("busy indicator: shell and view halves both covered, retired event is gone")
 
+        # --- a refused replay start reaches the user instead of an undefined session ---
+        # The replay routes used to answer 200 with an {"error": ...} body, so the view read
+        # `session_id` off an error payload and carried on with "undefined". They answer a real
+        # status now; this pins the view half of that contract: the reason is shown and nothing
+        # downstream runs. The create call is intercepted, so no translation-services is needed.
+        refused_start = browser.new_page()
+        start_alerts: list[str] = []
+        start_requests: list[str] = []
+
+        def collect_dialog(dialog) -> None:
+            start_alerts.append(dialog.message)
+            dialog.accept()
+
+        refused_start.on("dialog", collect_dialog)
+        refused_start.on("request", lambda request: start_requests.append(request.url))
+        detail = "Prompt 'translate_realtime_first' not found in translation-services."
+        refused_start.route(
+            "**/api/replay/session",
+            lambda route: route.fulfill(
+                status=404,
+                content_type="application/json",
+                body=json.dumps({"detail": detail}),
+            ),
+        )
+        refused_start.goto(f"{base}/#replay-translate")
+        try:
+            refused_start.wait_for_selector("#startBtn", timeout=10000)
+            refused_start.click("#startBtn")
+            refused_start.wait_for_timeout(1500)
+            checks.check(
+                start_alerts == [f"Failed to start: {detail}"],
+                f"a refused start was not shown to the user: {start_alerts}",
+            )
+            carried_on = [url for url in start_requests if "/replay/undefined" in url]
+            checks.check(
+                not carried_on,
+                f"the view kept working with an undefined session: {carried_on}",
+            )
+        except Exception as error:  # noqa: BLE001 - reported as a problem
+            problems.append(f"a refused replay start was not reported: {error}")
+        refused_start.close()
+        checks.note("refused replay start: the api status reaches the user, no undefined session")
+
         # --- the sidebar is rendered from the global that /plugins.js sets ---
         # Python owns the list; this is the wiring between the two.
         served = browser.new_page()
@@ -664,8 +707,8 @@ def main() -> int:
             print(f"  - {problem}")
         return 1
     print("\nOK: sidebar, routes, aliases, persistence, theming, placeholder, error panel, retry,")
-    print("    busy indicator, a single-category menu, no refetch on a deterministic failure, and")
-    print("    no error-level log on a discarded view.")
+    print("    busy indicator, a refused replay start, a single-category menu, no refetch on a")
+    print("    deterministic failure, and no error-level log on a discarded view.")
     return 0
 
 
