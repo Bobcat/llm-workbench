@@ -336,7 +336,10 @@ function init() {
   if (pluginLoadError) {
     appRoot.append(buildErrorPanel(
       'Could not load the plugin list',
-      'Reload the page. If this keeps happening, check that the workbench server is running.\n\n'
+      'Reload the page. If the list still does not arrive, check that the workbench server is '
+      + 'running, and check plugins.enabled in config/settings.json (or config/local.json): a '
+      + 'category id that does not exist makes /plugins.js fail, and the server log names the file.'
+      + '\n\n'
       + pluginLoadError.message,
     ));
     return;
