@@ -478,6 +478,15 @@ def verify(base: str, checks: Checks) -> None:
                 solo.eval_on_selector_all("#appRoot > *", "els => els.length") == 1,
                 "a single-category menu does not hold exactly one view",
             )
+            # A hash typed during the session, not just on load: without the fallback the address
+            # bar would keep showing a route the workbench is not on.
+            solo.evaluate("window.location.hash = '#chat'")
+            solo.wait_for_timeout(300)
+            checks.check(
+                solo.url.endswith("#image-pool-models"),
+                f"a hash outside the menu was left in the address bar: {solo.url}",
+            )
+
             # A bookmark to a view whose category is off has no route to resolve. The shell falls
             # back to the landing route, which is what makes a shrunk menu harmless for old links.
             solo.goto(f"{base}/#chat")

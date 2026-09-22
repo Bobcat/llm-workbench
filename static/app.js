@@ -361,6 +361,20 @@ function init() {
   const normalizedHash = normalizeRoute(hash);
   const initialRoute = router.has(normalizedHash) ? normalizedHash : defaultRoute;
 
+  // A hash the workbench cannot resolve — a bookmark to a category that is switched off, or junk —
+  // would otherwise leave the address bar showing a route the workbench is not on, because the
+  // router leaves the url alone on a popstate. Fall back to the landing route and rewrite the hash,
+  // the same way a cold start does. Bound to both events: a fragment change fires `hashchange`, and
+  // `popstate` only in some browsers.
+  function syncHashToLanding() {
+    const current = normalizeRoute(window.location.hash.replace(/^#/, ''));
+    if (router.has(current)) return;
+    router.navigate(defaultRoute, null, { replace: true, url: `#${defaultRoute}` });
+  }
+
+  window.addEventListener('popstate', syncHashToLanding);
+  window.addEventListener('hashchange', syncHashToLanding);
+
   router.start(initialRoute, null, { url: `#${initialRoute}` });
 }
 
