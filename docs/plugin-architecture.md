@@ -609,11 +609,10 @@ Deze zijn bewust blijven liggen; ze horen bij een latere fase.
   `prompt-library`). Zolang een plugin adressen bezat, was dat een afhankelijkheid tussen
   categorieën. Nu de core de adressen bezit, leunt een view nergens meer op: hij gebruikt wat de
   workbench aanbiedt. Dat is precies waarom dit model gekozen is.
-- **Routebotsingen hebben geen gedefinieerd gedrag.** `WORKFLOWS_BY_ROUTE`
-  (`static/src/plugins/registry.js:53`) laat bij een dubbele route stil de laatste winnen. De testsuite vangt dat voor
-  de gecommitte set, maar met packages buiten de repo is een botsing een runtime-geval zonder
-  afgesproken uitkomst. **Opgelost in fase 5:** een dubbele plugin-id of routenaam laat het laden
-  falen met een melding die beide kanten noemt.
+- ~~**Routebotsingen hebben geen gedefinieerd gedrag.**~~ **Opgelost in fase 5:** een dubbele
+  plugin-id of routenaam laat het laden falen met een melding die beide kanten noemt. Daarvoor won
+  bij een dubbele route stil de laatste (`WORKFLOWS_BY_ROUTE` in `static/src/plugins/registry.js`),
+  wat met packages buiten de repo een runtime-geval zonder afgesproken uitkomst was.
 - ~~`css/app.css` is één globaal `@import`-manifest van 25 regels en er is één globale
   iconensprite; een plugin kan nog geen eigen assets bijdragen.~~ **Opgelost voor het mechanisme:**
   een plugin — ingebouwd of uit een pakket — mag een eigen stylesheet en een eigen icoonbestand
