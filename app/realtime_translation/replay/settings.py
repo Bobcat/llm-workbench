@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 from realtime_translation_engine import PreviewTranslationSettings
+from app.settings_files import load_object, merge_objects
 
 
 DEFAULT_SETTINGS_PATH = Path(__file__).resolve().parents[3] / "config" / "settings.json"
@@ -31,34 +32,11 @@ class ReplaySettings:
     second_pass: SecondPassSettings = field(default_factory=SecondPassSettings)
 
 
-def _load_json_object(path: Path) -> dict[str, object]:
-    if not path.exists():
-        return {}
-    raw_text = path.read_text(encoding="utf-8")
-    if raw_text.strip() == "":
-        return {}
-    payload = json.loads(raw_text)
-    if not isinstance(payload, dict):
-        return {}
-    return dict(payload)
-
-
-def _merge_json_objects(base: dict[str, object], override: dict[str, object]) -> dict[str, object]:
-    merged: dict[str, object] = dict(base)
-    for key, value in override.items():
-        base_value = merged.get(key)
-        if isinstance(base_value, dict) and isinstance(value, dict):
-            merged[key] = _merge_json_objects(base_value, value)
-        else:
-            merged[key] = value
-    return merged
-
-
 def load_replay_settings(path: str | Path = DEFAULT_SETTINGS_PATH) -> ReplaySettings:
     settings_path = Path(path)
-    payload = _load_json_object(settings_path)
-    local_payload = _load_json_object(settings_path.with_name("local.json"))
-    payload = _merge_json_objects(payload, local_payload)
+    payload = load_object(settings_path)
+    local_payload = load_object(settings_path.with_name("local.json"))
+    payload = merge_objects(payload, local_payload)
     replay_payload = payload.get("replay", {}) if isinstance(payload, dict) else {}
     first_pass_payload = (
         replay_payload.get("first_pass", {})
