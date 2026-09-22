@@ -8,8 +8,44 @@ from fastapi.testclient import TestClient
 from app.main import app
 from app.realtime_translation.replay.sessions import _sessions
 
+# Creating a replay session asks translation-services for these two; they are the service's, not
+# this repository's.
+REPLAY_PROMPTS = ("translate_realtime_first", "translate_realtime_second")
+
+_PROMPTS_AVAILABLE: bool | None = None
+
+
+def _replay_prompts_available() -> bool:
+    """Whether the translation-services behind the workbench has the prompts a session needs.
+
+    Without them the service answers with an error in a 200 body, and every test here that creates a
+    session fails on a missing ``session_id`` — a failure that looks like a workbench bug but is a
+    missing fixture in a service this repository does not contain. Probed once, through the same
+    route the workbench itself uses, so those tests skip with that reason instead of failing.
+    """
+    global _PROMPTS_AVAILABLE
+    if _PROMPTS_AVAILABLE is None:
+        try:
+            response = TestClient(app, raise_server_exceptions=False).get(
+                "/api/translation/prompts"
+            )
+            payload = response.json()
+        except Exception:  # noqa: BLE001 - an unreachable service is the same situation
+            _PROMPTS_AVAILABLE = False
+        else:
+            ids = {str(prompt.get("id", "")) for prompt in payload.get("prompts", [])}
+            _PROMPTS_AVAILABLE = set(REPLAY_PROMPTS) <= ids
+    return _PROMPTS_AVAILABLE
+
+
+needs_replay_prompts = unittest.skipUnless(
+    _replay_prompts_available(),
+    f"translation-services has no {', '.join(REPLAY_PROMPTS)}; run it with the replay prompt library",
+)
+
 
 class ReplayApiTests(unittest.TestCase):
+    @needs_replay_prompts
     def test_create_session_resolves_relative_sample_path_from_repo_root(self) -> None:
         client = TestClient(app)
 
@@ -39,6 +75,7 @@ class ReplayApiTests(unittest.TestCase):
         self.assertIn("sample_p_c_120s.pc", sample_names)
         self.assertIn("sample_c_only_120s.pc", sample_names)
 
+    @needs_replay_prompts
     def test_set_second_pass_prompt_accepts_second_pass_prompt(self) -> None:
         client = TestClient(app)
         create_response = client.post(
@@ -58,6 +95,7 @@ class ReplayApiTests(unittest.TestCase):
         self.assertEqual(payload.get("status"), "ok")
         self.assertEqual(payload.get("prompt_id"), "translate_realtime_second")
 
+    @needs_replay_prompts
     def test_set_second_pass_model_uses_second_pass_backend_terms(self) -> None:
         client = TestClient(app)
         create_response = client.post(
@@ -78,6 +116,7 @@ class ReplayApiTests(unittest.TestCase):
         self.assertEqual(payload.get("second_pass_model"), "google_gemma-4-E4B-it-Q5_K_M-gguf")
         self.assertTrue(payload.get("second_pass_enabled"))
 
+    @needs_replay_prompts
     def test_replay_websocket_uses_delta_transcript_updates(self) -> None:
         client = TestClient(app)
         create_response = client.post(
@@ -139,6 +178,7 @@ class ReplayApiTests(unittest.TestCase):
             self.assertIn("request_executed", translation_outcome["data"])
             self.assertIn("event_kind", translation_outcome["data"])
 
+    @needs_replay_prompts
     def test_export_includes_llama_cpp_runtime_settings(self) -> None:
         client = TestClient(app)
         create_response = client.post(
