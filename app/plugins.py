@@ -31,6 +31,7 @@ from importlib.metadata import entry_points
 from pathlib import Path
 
 from fastapi import APIRouter
+from app.settings_files import load_object_or_raise, merge_objects
 
 FRONTEND_GLOBAL = "__LLM_WORKBENCH_PLUGINS__"
 # Where a package registers itself, and the path prefix its frontend files are served under.
@@ -443,41 +444,6 @@ def all_plugins() -> tuple[Plugin, ...]:
     return PLUGINS + tuple(package.plugin for package in discovered_packages())
 
 
-def _load_json_object(path: Path) -> dict[str, object]:
-    # A local copy of the loader the service settings use, six of which already exist. Folding them
-    # into one module is a cleanup of its own; it is not part of this switch. One deliberate
-    # difference: a file whose root is not an object is an error here instead of being ignored.
-    # `["image-pool"]` where an object belongs is the same class of mistake as an unknown category
-    # id, and silently reading it as "no switch" shows every category while the reader believes
-    # their list was applied.
-    if not path.exists():
-        return {}
-    raw_text = path.read_text(encoding="utf-8")
-    if raw_text.strip() == "":
-        return {}
-    try:
-        payload = json.loads(raw_text)
-    except json.JSONDecodeError as error:
-        # The decoder says what is wrong and where, but not in which of the two files. `local.json`
-        # is the file an operator hand-edits, and a stray comma there is the likeliest accident, so
-        # the file name is the one thing the message cannot do without.
-        raise ValueError(f"{path} is not valid JSON: {error}") from error
-    if not isinstance(payload, dict):
-        raise ValueError(f"{path} must contain a JSON object")
-    return dict(payload)
-
-
-def _merge_json_objects(base: dict[str, object], override: dict[str, object]) -> dict[str, object]:
-    merged: dict[str, object] = dict(base)
-    for key, value in override.items():
-        base_value = merged.get(key)
-        if isinstance(base_value, dict) and isinstance(value, dict):
-            merged[key] = _merge_json_objects(base_value, value)
-        else:
-            merged[key] = value
-    return merged
-
-
 def _enabled_entry(payload: dict[str, object]) -> object | None:
     """The raw ``plugins.enabled`` value of one settings file, before the two are merged."""
     section = payload.get("plugins")
@@ -501,8 +467,8 @@ def enabled_plugins(settings_path: Path | str = DEFAULT_SETTINGS_PATH) -> tuple[
     """
     path = Path(settings_path)
     local_path = path.with_name("local.json")
-    base_payload = _load_json_object(path)
-    local_payload = _load_json_object(local_path)
+    base_payload = load_object_or_raise(path)
+    local_payload = load_object_or_raise(local_path)
     # A `plugins` section of the wrong shape is a mistake one level above `enabled`. Left alone it
     # would be merged away and the list beside it ignored, so the menu would show every category
     # while the reader believes their switch was applied. `null` counts as absent.
@@ -512,7 +478,7 @@ def enabled_plugins(settings_path: Path | str = DEFAULT_SETTINGS_PATH) -> tuple[
             raise ValueError(
                 f"plugins in {candidate_path} must be an object, not {type(section).__name__}"
             )
-    payload = _merge_json_objects(base_payload, local_payload)
+    payload = merge_objects(base_payload, local_payload)
     enabled = _enabled_entry(payload)
     if enabled is None:
         return all_plugins()

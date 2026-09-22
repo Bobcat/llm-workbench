@@ -6,34 +6,12 @@ from pathlib import Path
 from urllib import error, parse, request
 
 from fastapi import APIRouter, Body, HTTPException, Response
+from app.settings_files import load_object, merge_objects
 
 router = APIRouter(prefix="/video-pool", tags=["video-pool"])
 
 DEFAULT_SETTINGS_PATH = Path(__file__).resolve().parents[2] / "config" / "settings.json"
 DEFAULT_VIDEO_POOL_API_BASE_URL = "http://127.0.0.1:8014"
-
-
-def _load_json_object(path: Path) -> dict[str, object]:
-    if not path.exists():
-        return {}
-    raw_text = path.read_text(encoding="utf-8")
-    if raw_text.strip() == "":
-        return {}
-    payload = json.loads(raw_text)
-    if not isinstance(payload, dict):
-        return {}
-    return dict(payload)
-
-
-def _merge_json_objects(base: dict[str, object], override: dict[str, object]) -> dict[str, object]:
-    merged: dict[str, object] = dict(base)
-    for key, value in override.items():
-        base_value = merged.get(key)
-        if isinstance(base_value, dict) and isinstance(value, dict):
-            merged[key] = _merge_json_objects(base_value, value)
-        else:
-            merged[key] = value
-    return merged
 
 
 def _video_pool_base_url() -> str:
@@ -42,9 +20,9 @@ def _video_pool_base_url() -> str:
         return env_value.rstrip("/")
 
     settings_path = DEFAULT_SETTINGS_PATH
-    payload = _merge_json_objects(
-        _load_json_object(settings_path),
-        _load_json_object(settings_path.with_name("local.json")),
+    payload = merge_objects(
+        load_object(settings_path),
+        load_object(settings_path.with_name("local.json")),
     )
     video_pool_payload = payload.get("video_pool", {})
     if isinstance(video_pool_payload, dict):

@@ -615,10 +615,10 @@ Deze zijn bewust blijven liggen; ze horen bij een latere fase.
 - `css/app.css` is één globaal `@import`-manifest van 25 regels en er is één globale
   iconensprite; een plugin kan nog geen eigen assets bijdragen. **Bewust uitgesteld in fase 3:** het
   levert nu vooral een nettere indeling op en betaalt zich pas terug bij plugins van buiten de repo.
-- **Zeven kopieën van de settings-loader.** `_load_json_object` en `_merge_json_objects` staan in
-  elke module die settings leest, en `app/plugins.py` heeft er in fase 3 een zevende bij gekregen.
-  Ze samenvoegen is een eigen opruiming, geen fase-3-werk; de kopie in de registratie zegt dat er
-  zelf bij.
+- ~~**Zeven kopieën van de settings-loader.**~~ **Opgelost.** Ze staan nu in `app/settings_files.py`,
+  met de twee varianten naast elkaar en de reden erbij: `load_object` is soepel voor de
+  dienstinstellingen, `load_object_or_raise` weigert een bestand dat geen object is en noemt het pad,
+  want voor de menuschakelaar zou stilte de lijst ernaast weggooien.
 - ~~**Het foutpaneel noemt de instelling niet.**~~ **Opgelost.** Het paneel noemt nu `plugins.enabled`
   en waar die staat, en zegt dat de serverlog het bestand noemt; bij een typefout is herladen niet de
   oplossing en dat staat er nu ook. De global blijft genoemd, want het paneel verschijnt in twee
