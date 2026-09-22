@@ -12,6 +12,18 @@ if TYPE_CHECKING:
     from app.realtime_translation.replay.sessions import ReplaySession
 
 
+class PromptLoadError(ValueError):
+    """A prompt could not be fetched from translation-services.
+
+    ``status_code`` is the HTTP status the API answers with: 404 when the
+    library does not have the prompt, 502 when the service itself failed.
+    """
+
+    def __init__(self, message: str, status_code: int) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+
+
 # Prompts live in the translation-services library (/v1/prompts), one flat list shared
 # with the image pipeline. A prompt has no first/second-pass property of its own — which
 # slot it serves is the caller's choice. The engine still receives plain prompt strings;
@@ -25,10 +37,12 @@ def _load_prompt(prompt_id: str) -> PromptRecord:
             data = json.loads(response.read().decode("utf-8"))
     except error.HTTPError as exc:
         if exc.code == 404:
-            raise ValueError(f"Prompt {prompt_id!r} not found in translation-services.") from exc
-        raise ValueError(f"translation-services /v1/prompts HTTP {exc.code}") from exc
+            raise PromptLoadError(
+                f"Prompt {prompt_id!r} not found in translation-services.", 404
+            ) from exc
+        raise PromptLoadError(f"translation-services /v1/prompts HTTP {exc.code}", 502) from exc
     except (error.URLError, TimeoutError) as exc:
-        raise ValueError(f"translation-services unreachable: {exc}") from exc
+        raise PromptLoadError(f"translation-services unreachable: {exc}", 502) from exc
     return PromptRecord(
         id=str(data.get("id") or prompt_id),
         title=str(data.get("title") or ""),

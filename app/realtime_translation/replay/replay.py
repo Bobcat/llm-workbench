@@ -6,7 +6,7 @@ import uuid
 from collections.abc import Callable
 from pathlib import Path
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
 
@@ -17,6 +17,7 @@ from app.realtime_translation.replay.prompt_selection import _apply_first_pass_p
 from app.realtime_translation.replay.prompt_selection import _apply_second_pass_prompt
 from app.realtime_translation.replay.prompt_selection import _load_first_pass_prompt
 from app.realtime_translation.replay.prompt_selection import _load_second_pass_prompt
+from app.realtime_translation.replay.prompt_selection import PromptLoadError
 from app.realtime_translation.replay.transport import _send_source_update
 from app.realtime_translation.replay.transport import _send_target_update
 from app.realtime_translation.replay.sessions import DEFAULT_FIRST_PASS_PROMPT_ID
@@ -116,8 +117,8 @@ def _set_session_prompt(
 ) -> dict[str, str]:
     try:
         prompt = load_prompt(prompt_id)
-    except ValueError as exc:
-        return {"error": str(exc)}
+    except PromptLoadError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
     apply_prompt(session, prompt)
     session.swap_translator()
@@ -143,14 +144,19 @@ async def create_session(request: CreateSessionRequest):
         path = REPO_ROOT / path
 
     if not path.exists():
-        return {"error": "File not found", "path": str(path.absolute())}
+        raise HTTPException(
+            status_code=404,
+            detail={"error": "File not found", "path": str(path.absolute())},
+        )
 
     settings = load_replay_settings()
     try:
         default_first_pass_prompt = _load_first_pass_prompt(DEFAULT_FIRST_PASS_PROMPT_ID)
         default_second_pass_prompt = _load_second_pass_prompt(DEFAULT_SECOND_PASS_PROMPT_ID)
-    except ValueError as exc:
-        return {"error": str(exc)}
+    except PromptLoadError as exc:
+        # These prompt ids are the server's defaults, not the client's request, so a missing
+        # default is translation-services failing to deliver — never a 404 for this request.
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     session = ReplaySession.create(
         session_id=session_id,
@@ -175,10 +181,10 @@ async def set_speed(session_id: str, request: SpeedRequest):
     """Set playback speed. Works during playback."""
     session = _sessions.get(session_id)
     if not session:
-        return {"error": "Session not found"}
+        raise HTTPException(status_code=404, detail="Session not found")
 
     if request.speed not in SPEED_PRESETS:
-        return {"error": f"Invalid speed: {request.speed}"}
+        raise HTTPException(status_code=400, detail=f"Invalid speed: {request.speed}")
 
     session.speed = request.speed
 
@@ -193,13 +199,15 @@ async def set_speed(session_id: str, request: SpeedRequest):
 async def set_policy(session_id: str, request: PolicyRequest):
     """Set replay policy. Only allowed while idle."""
     if not (session := _sessions.get(session_id)):
-        return {"error": "Session not found"}
+        raise HTTPException(status_code=404, detail="Session not found")
 
     policy = str(request.policy or "").strip().lower()
     if policy not in REPLAY_POLICIES:
-        return {"error": f"Invalid policy: {request.policy}"}
+        raise HTTPException(status_code=400, detail=f"Invalid policy: {request.policy}")
     if session.status != "idle":
-        return {"error": "Policy can only be changed while idle. Reset first."}
+        raise HTTPException(
+            status_code=409, detail="Policy can only be changed while idle. Reset first."
+        )
 
     if policy != session.policy:
         session.policy = policy
@@ -222,7 +230,7 @@ async def set_policy(session_id: str, request: PolicyRequest):
 async def set_model(session_id: str, request: ModelRequest):
     """Set model for translations. Empty string = no translator (passthrough)."""
     if not (session := _sessions.get(session_id)):
-        return {"error": "Session not found"}
+        raise HTTPException(status_code=404, detail="Session not found")
 
     new_model = request.model if request.model else None
     if new_model != session.model:
@@ -245,7 +253,7 @@ async def set_model(session_id: str, request: ModelRequest):
 async def set_second_pass_model(session_id: str, request: SecondPassModelRequest):
     """Set second-pass model. Empty string means second pass is off."""
     if not (session := _sessions.get(session_id)):
-        return {"error": "Session not found"}
+        raise HTTPException(status_code=404, detail="Session not found")
 
     new_second_pass_model = request.model.strip() if request.model else ""
     if new_second_pass_model != session.second_pass_model:
@@ -263,7 +271,7 @@ async def set_second_pass_model(session_id: str, request: SecondPassModelRequest
 async def set_first_pass_prompt(session_id: str, request: FirstPassPromptRequest):
     """Set the first-pass prompt from prompt library."""
     if not (session := _sessions.get(session_id)):
-        return {"error": "Session not found"}
+        raise HTTPException(status_code=404, detail="Session not found")
     return _set_session_prompt(
         session,
         prompt_id=request.prompt_id,
@@ -276,7 +284,7 @@ async def set_first_pass_prompt(session_id: str, request: FirstPassPromptRequest
 async def set_second_pass_prompt(session_id: str, request: FirstPassPromptRequest):
     """Set the second-pass prompt from prompt library."""
     if not (session := _sessions.get(session_id)):
-        return {"error": "Session not found"}
+        raise HTTPException(status_code=404, detail="Session not found")
     return _set_session_prompt(
         session,
         prompt_id=request.prompt_id,
@@ -289,13 +297,13 @@ async def set_second_pass_prompt(session_id: str, request: FirstPassPromptReques
 async def set_first_pass_languages(session_id: str, request: FirstPassLanguagesRequest):
     """Set first-pass source/target languages. Works during playback."""
     if not (session := _sessions.get(session_id)):
-        return {"error": "Session not found"}
+        raise HTTPException(status_code=404, detail="Session not found")
 
     changed = False
     if request.source_language is not None:
         next_source_language = str(request.source_language).strip()
         if next_source_language == "":
-            return {"error": "source_language must not be empty"}
+            raise HTTPException(status_code=400, detail="source_language must not be empty")
         if next_source_language != session.source_language:
             session.source_language = next_source_language
             changed = True
@@ -303,7 +311,7 @@ async def set_first_pass_languages(session_id: str, request: FirstPassLanguagesR
     if request.target_language is not None:
         next_target_language = str(request.target_language).strip()
         if next_target_language == "":
-            return {"error": "target_language must not be empty"}
+            raise HTTPException(status_code=400, detail="target_language must not be empty")
         if next_target_language != session.target_language:
             session.target_language = next_target_language
             changed = True
@@ -330,7 +338,7 @@ async def set_first_pass_languages(session_id: str, request: FirstPassLanguagesR
 async def start_replay(session_id: str):
     """Start or resume playback."""
     if not (session := _sessions.get(session_id)):
-        return {"error": "Session not found"}
+        raise HTTPException(status_code=404, detail="Session not found")
 
     if session.status == "playing":
         return {"status": "already_playing"}
@@ -348,7 +356,7 @@ async def start_replay(session_id: str):
 async def pause_replay(session_id: str):
     """Pause playback."""
     if not (session := _sessions.get(session_id)):
-        return {"error": "Session not found"}
+        raise HTTPException(status_code=404, detail="Session not found")
 
     if session.status != "playing":
         return {"status": "not_playing"}
@@ -370,7 +378,7 @@ async def pause_replay(session_id: str):
 async def reset_replay(session_id: str):
     """Reset playback to the beginning and stop (go to idle state)."""
     if not (session := _sessions.get(session_id)):
-        return {"error": "Session not found"}
+        raise HTTPException(status_code=404, detail="Session not found")
 
     if session.status == "playing" and session.current_task:
         session.current_task.cancel()
@@ -486,10 +494,10 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
 async def export_final(session_id: str):
     """Export final snapshot with source, target, and metrics."""
     if not (session := _sessions.get(session_id)):
-        return {"error": "Session not found"}
+        raise HTTPException(status_code=404, detail="Session not found")
 
     if not session.events:
-        return {"error": "No events in session"}
+        raise HTTPException(status_code=409, detail="No events in session")
 
     def _visible_text(committed: str, preview: str) -> str:
         if not committed or not preview:
