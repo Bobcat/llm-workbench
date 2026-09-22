@@ -571,7 +571,10 @@ def verify(base: str, checks: Checks) -> None:
             "id": "probe-package",
             "label": injected,
             "auxiliary": False,
-            "styles": ["plugin-static/probe-package/plugin.css"],
+            "styles": [
+                "plugin-static/probe-package/plugin.css",
+                "https://evil.example/x.css",
+            ],
             "views": [{
                 "id": "probe-view",
                 "route": "probe-view",
@@ -615,6 +618,10 @@ def verify(base: str, checks: Checks) -> None:
             checks.check(
                 any(href.endswith("/plugin-static/probe-package/plugin.css") for href in links),
                 f"plugin stylesheet not linked: {links}",
+            )
+            checks.check(
+                not any("evil.example" in (href or "") for href in links),
+                f"a stylesheet outside the plugin's own folder was linked: {links}",
             )
         except Exception as error:  # noqa: BLE001 - reported as a problem
             problems.append(f"a packaged plugin was not rendered safely: {error}")

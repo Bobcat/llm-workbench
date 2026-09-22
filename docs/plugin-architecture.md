@@ -95,8 +95,8 @@ Een plugin-auteur heeft dit nodig.
 | | |
 | --- | --- |
 | factory | moet een DOM-element teruggeven; dat element wordt in de host geplaatst |
-| `__onActivate()` | optioneel; aangeroepen zodra de view in de host staat (`static/app.js:195`) |
-| `__onDeactivate()` | optioneel; aangeroepen bij wegnavigeren (`static/app.js:239`) |
+| `__onActivate()` | optioneel; aangeroepen zodra de view in de host staat (`static/app.js:197`) |
+| `__onDeactivate()` | optioneel; aangeroepen bij wegnavigeren (`static/app.js:241`) |
 | `WORKFLOW_BUSY_EVENT` | optioneel; meldt dat er werk loopt, waarop de sidebar een indicator toont. Vijf views doen dit |
 | `__destroy()` | bestaat in twee views maar wordt door de router **nooit** aangeroepen. Reken er niet op |
 
@@ -135,9 +135,9 @@ Vier dingen bewaken het laden, alle in `static/app.js`:
 
 - een gedeelde `pendingView` per route, zodat weg- en terugklikken tijdens een koude load de
   view niet twee keer bouwt;
-- een generatie-teller (`static/app.js:144`, `mountGeneration`) die een load weggooit die ná een nieuwere
+- een generatie-teller (`static/app.js:146`, `mountGeneration`) die een load weggooit die ná een nieuwere
   navigatie binnenkomt; op het succespad logt dat op `debug`, op het faalpad op `error`;
-- een zichtbaar foutpaneel (`static/app.js:159`, `buildViewError`) in plaats van een lege host, omdat
+- een zichtbaar foutpaneel (`static/app.js:161`, `buildViewError`) in plaats van een lege host, omdat
   `RouterCore.navigate()` de promise van `mount()` negeert;
 - een retry met een verse module-URL, maar alleen als de `import()` zelf faalde — een registratie
   die de verkeerde factory noemt wordt niet eindeloos opnieuw opgehaald.
@@ -285,7 +285,7 @@ volledig werken — wie wil, draait per categorie een eigen instantie.
 Wat "uit" betekent: **de categorie staat niet in het menu.** Meer niet. De adressen zijn van de
 core en blijven altijd beschikbaar, dus geen enkele view kan stukgaan doordat een andere categorie
 uit staat. Een bladwijzer naar een view van een uitgezette categorie heeft geen route meer; de shell
-valt dan terug op de landing (`static/app.js:360`, `defaultRoute`) in plaats van een lege host te
+valt dan terug op de landing (`static/app.js:362`, `defaultRoute`) in plaats van een lege host te
 tonen. Dat is bestaand gedrag, maar fase 3 maakt het bereikbaar — en de browsercheck pint het.
 
 Beslissingen:
@@ -482,7 +482,7 @@ static root") gaat in deze fase mee, want die spreekt de nieuwe afspraak tegen.
 **Samenvoegen, en botsen weigeren.** `PLUGINS` blijft de ingebouwde lijst en de bron van waarheid voor
 wat er in de repo zit; `all_plugins()` is die lijst plus wat discovery vindt, in die orde. Binnen het
 gevonden deel wordt op plugin-id gesorteerd, en dat is geen detail: de landingsroute is
-`WORKFLOWS[0]` (`static/app.js:360`), dus de volgorde bepaalt de startpagina en de sidebar. Twee
+`WORKFLOWS[0]` (`static/app.js:362`), dus de volgorde bepaalt de startpagina en de sidebar. Twee
 botsingen worden bij het laden geweigerd in plaats van stil opgelost: een plugin-id die al bestaat,
 en een routenaam die al bestaat. Dat sluit het gat uit sectie 4 met de strengste van de twee opties
 die daar staan.
@@ -639,7 +639,7 @@ Deze zijn bewust blijven liggen; ze horen bij een latere fase.
 - ~~De defaultroute is impliciet `WORKFLOWS[0]`.~~ **Beslist in fase 3:** de landing is de eerste
   view van de eerste categorie die aan staat. Omdat de browser alleen de aangezette categorieën
   krijgt, volgt dat automatisch.
-- ~~`static/app.js:62` (`pluginItemMarkup`) interpoleert `name`, `tooltip` en `route` ongeëscapet in
+- ~~`static/app.js:63` (`pluginItemMarkup`) interpoleert `name`, `tooltip` en `route` ongeëscapet in
   `innerHTML`.~~ **Opgelost in fase 5:** de vier velden worden geëscapet (`escapeHtml`/`escapeAttr`),
   en een pad-icoon moet van vorm kloppen en onder de eigen plugin-mount liggen — de core weigert het
   anders al bij het laden.

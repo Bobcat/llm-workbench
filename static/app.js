@@ -7,6 +7,7 @@ import {
 import { WORKFLOW_BUSY_EVENT } from './src/shared/workflow-activity.js';
 import { PLUGINS, WORKFLOWS, loadView, normalizeRoute, pluginLoadError } from './src/plugins/registry.js';
 import { iconMarkup } from './src/shared/icons.js';
+import { isPluginAssetPath } from './src/shared/plugin-assets.js';
 import { escapeAttr, escapeHtml } from './src/shared/ui-helpers.js';
 
 // === Initialization ===
@@ -100,9 +101,10 @@ function applyPluginStyles(plugins) {
   plugins.forEach((plugin) => {
     (plugin.styles || []).forEach((style) => {
       const path = String(style || '');
-      // The core refuses a path outside the plugin's own mount; this is the same guard on the one
-      // field that reaches the page through the DOM API instead of through markup.
-      if (!path || loaded.has(path) || path.split('/').includes('..') || /[%\\]/.test(path)) return;
+      // The same rule as for a plugin's icon: only its own files, and nothing that resolves out of
+      // that folder. The core checks this for a package, so this is what covers a built-in plugin —
+      // and the one field that reaches the page through the DOM API instead of through markup.
+      if (!path || loaded.has(path) || !isPluginAssetPath(path)) return;
       const link = document.createElement('link');
       link.rel = 'stylesheet';
       link.href = new URL(path, document.baseURI).href;
