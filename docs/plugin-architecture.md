@@ -1,7 +1,7 @@
 # Plugin-architectuur — beslissingen en fase-afbakening
 
-Status: fase 1 tot en met 4 staan op `main` (fase 3 via PR #17, fase 4 via PR #18). Fase 5 is op
-deze branch gebouwd en wacht op review.
+Status: fase 1 tot en met 5 staan op `main` (fase 3 via PR #17, fase 4 via PR #18, fase 5 via
+PR #19).
 Anker: sectie 1 en 2 beschrijven de code op `main`. Fase 1 landde met `783f0bd` en de
 replay-opruiming met `8d73503`; de pdf-fix `a0f79d8` staat op `main` maar raakt deze architectuur
 niet.
@@ -553,7 +553,7 @@ vervolgfase. De ingebouwde plugins blijven in de repo: deze fase voegt de mogeli
 migratie. Hot reload van plugins, een versiebeleid en een pluginregister vallen er ook buiten; één
 gebruiker met first-party pakketten heeft ze niet nodig.
 
-**Gebouwd op deze branch.** Discovery, het mounten, de adresregel, het escapen en de icoon- en
+**Gebouwd in fase 5 (PR #19).** Discovery, het mounten, de adresregel, het escapen en de icoon- en
 styleregels staan er, met veertien nieuwe tests in `tests/test_plugin_discovery.py`: tien in-process
 voor de payload, de schakelaar, de sortering en elke faalmodus apart, en twee end-to-end in een
 subprocess met echte entry-point-metadata, die meten dat een pakket gevonden wordt, dat zijn bestand
