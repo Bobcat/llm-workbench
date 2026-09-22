@@ -511,6 +511,10 @@ def verify(base: str, checks: Checks) -> None:
                 f"panel does not tell the reader what to do: {text!r}",
             )
             checks.check(
+                "plugins.enabled" in text,
+                f"panel does not name the setting that can cause this: {text!r}",
+            )
+            checks.check(
                 "__LLM_WORKBENCH_PLUGINS__" in text,
                 f"panel does not name the missing global: {text!r}",
             )

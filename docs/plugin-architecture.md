@@ -285,7 +285,7 @@ volledig werken — wie wil, draait per categorie een eigen instantie.
 Wat "uit" betekent: **de categorie staat niet in het menu.** Meer niet. De adressen zijn van de
 core en blijven altijd beschikbaar, dus geen enkele view kan stukgaan doordat een andere categorie
 uit staat. Een bladwijzer naar een view van een uitgezette categorie heeft geen route meer; de shell
-valt dan terug op de landing (`static/app.js:357`, `defaultRoute`) in plaats van een lege host te
+valt dan terug op de landing (`static/app.js:360`, `defaultRoute`) in plaats van een lege host te
 tonen. Dat is bestaand gedrag, maar fase 3 maakt het bereikbaar — en de browsercheck pint het.
 
 Beslissingen:
@@ -480,7 +480,7 @@ static root") gaat in deze fase mee, want die spreekt de nieuwe afspraak tegen.
 **Samenvoegen, en botsen weigeren.** `PLUGINS` blijft de ingebouwde lijst en de bron van waarheid voor
 wat er in de repo zit; `all_plugins()` is die lijst plus wat discovery vindt, in die orde. Binnen het
 gevonden deel wordt op plugin-id gesorteerd, en dat is geen detail: de landingsroute is
-`WORKFLOWS[0]` (`static/app.js:357`), dus de volgorde bepaalt de startpagina en de sidebar. Twee
+`WORKFLOWS[0]` (`static/app.js:360`), dus de volgorde bepaalt de startpagina en de sidebar. Twee
 botsingen worden bij het laden geweigerd in plaats van stil opgelost: een plugin-id die al bestaat,
 en een routenaam die al bestaat. Dat sluit het gat uit sectie 4 met de strengste van de twee opties
 die daar staan.
@@ -619,11 +619,10 @@ Deze zijn bewust blijven liggen; ze horen bij een latere fase.
   elke module die settings leest, en `app/plugins.py` heeft er in fase 3 een zevende bij gekregen.
   Ze samenvoegen is een eigen opruiming, geen fase-3-werk; de kopie in de registratie zegt dat er
   zelf bij.
-- **Het foutpaneel noemt de instelling niet.** Een foutieve `plugins.enabled` laat `/plugins.js` met
-  een 500 antwoorden, waarna het bestaande paneel verschijnt: het noemt de global en vraagt de
-  pagina te herladen. Bij een typefout is herladen niet de oplossing — het instellingenbestand moet
-  worden gecorrigeerd. De serverlog noemt het foute id en het bestand waar de lijst echt vandaan
-  komt — `local.json` als die het laatst zegt, anders het basisbestand.
+- ~~**Het foutpaneel noemt de instelling niet.**~~ **Opgelost.** Het paneel noemt nu `plugins.enabled`
+  en waar die staat, en zegt dat de serverlog het bestand noemt; bij een typefout is herladen niet de
+  oplossing en dat staat er nu ook. De global blijft genoemd, want het paneel verschijnt in twee
+  gevallen: een lijst die niet aankomt en een lijst die de server weigert.
 - **Een hashwijziging tijdens de sessie laat de url staan.** Een deep link naar een view van een
   uitgezette categorie landt netjes op de landing, maar wie tijdens de sessie `#chat` in de
   adresbalk zet terwijl die categorie uit staat, houdt `#chat` in de balk terwijl de view op de
