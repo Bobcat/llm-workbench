@@ -506,6 +506,11 @@ Regel 2 is geen goede intentie maar een toets: de padaanalyse eist per view dat 
 door de core of door de eigen plugin gediend wordt. Zonder die toets komt de afhankelijkheid terug
 die fase 3 weghaalde — vijf views buiten LLM Pool leunden op `/api/models` zonder dat iemand het zag.
 
+Die toets leest **statische** imports, ook in de absolute vorm. Wat een plugin bewust dynamisch
+importeert — `import('/src/plugins/<ander>/api.js')` — valt erbuiten, en dat is precies waarom de
+grens first-party is: zonder isolatie is dat niet af te dwingen, en een plugin die het doet is code
+die je sowieso draait.
+
 Die toets heeft wel een wortel nodig. Elke helper in `tests/test_plugin_registry.py` begint nu bij
 `STATIC / view.module`, en `pathlib` vervangt de basis zodra dat pad absoluut is: van
 `/plugin-static/mine/view.js` maakt het `/plugin-static/mine/view.js`, dat niet bestaat. Het gevolg
