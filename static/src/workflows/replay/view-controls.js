@@ -270,9 +270,6 @@ export function createReplayViewControls(options) {
     }
 
     const result = await api.setReplayPolicy(sessionId, normalized);
-    if (result?.error) {
-      throw new Error(result.error);
-    }
     updatePolicyDisplay(result.policy || normalized);
   }
 
@@ -287,19 +284,11 @@ export function createReplayViewControls(options) {
   }
 
   async function applyFirstPassPromptToSession(targetSessionId, promptId) {
-    const result = await api.setFirstPassPrompt(targetSessionId, promptId);
-    if (result?.error) {
-      throw new Error(result.error);
-    }
-    return result;
+    return api.setFirstPassPrompt(targetSessionId, promptId);
   }
 
   async function applySecondPassPromptToSession(targetSessionId, promptId) {
-    const result = await api.setSecondPassPrompt(targetSessionId, promptId);
-    if (result?.error) {
-      throw new Error(result.error);
-    }
-    return result;
+    return api.setSecondPassPrompt(targetSessionId, promptId);
   }
 
   async function applyFirstPassLanguagesToSession(targetSessionId, { sourceLanguage, targetLanguage }) {
@@ -307,9 +296,6 @@ export function createReplayViewControls(options) {
       source_language: normalizeReplayLanguage(sourceLanguage),
       target_language: normalizeReplayLanguage(targetLanguage),
     });
-    if (result?.error) {
-      throw new Error(result.error);
-    }
     updateSourceLanguageDisplay(result.source_language || sourceLanguage);
     updateTargetLanguageDisplay(result.target_language || targetLanguage);
     return result;
