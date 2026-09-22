@@ -1,12 +1,22 @@
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from fastapi.testclient import TestClient
+from promptlib import PromptRecord
 
 from app.main import app
+from app.realtime_translation.replay.prompt_selection import PromptLoadError
+from app.realtime_translation.replay.sessions import REPLAY_POLICIES
+from app.realtime_translation.replay.sessions import ReplaySession
 from app.realtime_translation.replay.sessions import _sessions
+from app.realtime_translation.replay.settings import load_replay_settings
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+SAMPLE_FILE = REPO_ROOT / "data" / "realtime_translation" / "sample" / "sample_p_c_120s.pc"
+SAMPLE_RELATIVE = "data/realtime_translation/sample/sample_p_c_120s.pc"
 
 # Creating a replay session asks translation-services for these two; they are the service's, not
 # this repository's.
@@ -229,6 +239,178 @@ class ReplayApiTests(unittest.TestCase):
         self.assertIn("Model flash attn: on", content)
         self.assertIn("Model K type: q4_0", content)
         self.assertIn("Model V type: q4_0", content)
+
+
+class ReplayErrorStatusTests(unittest.TestCase):
+    """Failures answer with a real HTTP status instead of ``200`` plus an ``error`` body.
+
+    A session is built here directly from the shipped sample file, so these tests do not need
+    translation-services: the state they exercise (unknown session, bad preset, empty language,
+    session without events) is local to the workbench.
+    """
+
+    def setUp(self) -> None:
+        self.client = TestClient(app)
+        self._created: list[str] = []
+
+    def tearDown(self) -> None:
+        for session_id in self._created:
+            _sessions.pop(session_id, None)
+
+    def _session(self, *, events: list[object] | None = None) -> str:
+        session_id = f"test-{len(self._created)}-{id(self)}"
+        prompt = PromptRecord(id="test_prompt", title="test", prompt_text="", system_prompt="")
+        session = ReplaySession.create(
+            session_id=session_id,
+            file_path=SAMPLE_FILE,
+            settings=load_replay_settings(),
+            default_first_pass_prompt=prompt,
+            default_second_pass_prompt=prompt,
+        )
+        if events is not None:
+            session.events = events
+        _sessions[session_id] = session
+        self._created.append(session_id)
+        return session_id
+
+    def test_unknown_session_answers_404_on_every_session_route(self) -> None:
+        routes = [
+            ("/speed", {"speed": "fast7"}),
+            ("/policy", {"policy": sorted(REPLAY_POLICIES)[0]}),
+            ("/model", {"model": "some-model"}),
+            ("/second-pass-model", {"model": "some-model"}),
+            ("/first-pass-prompt", {"prompt_id": "some-prompt"}),
+            ("/second-pass-prompt", {"prompt_id": "some-prompt"}),
+            ("/first-pass-languages", {"source_language": "en"}),
+            ("/start", None),
+            ("/pause", None),
+            ("/reset", None),
+        ]
+
+        for suffix, body in routes:
+            with self.subTest(route=suffix):
+                response = self.client.post(f"/api/replay/absent-session{suffix}", json=body)
+                self.assertEqual(response.status_code, 404)
+                self.assertEqual(response.json(), {"detail": "Session not found"})
+
+        export_response = self.client.get("/api/replay/absent-session/export")
+        self.assertEqual(export_response.status_code, 404)
+        self.assertEqual(export_response.json(), {"detail": "Session not found"})
+
+    def test_missing_sample_file_answers_404_with_the_resolved_path(self) -> None:
+        response = self.client.post(
+            "/api/replay/session",
+            json={"file_path": "data/realtime_translation/sample/does_not_exist.pc"},
+        )
+
+        self.assertEqual(response.status_code, 404)
+        detail = response.json()["detail"]
+        self.assertEqual(detail["error"], "File not found")
+        self.assertTrue(detail["path"].endswith("sample/does_not_exist.pc"))
+
+    def test_invalid_speed_preset_answers_400(self) -> None:
+        session_id = self._session()
+
+        response = self.client.post(
+            f"/api/replay/{session_id}/speed",
+            json={"speed": "ludicrous"},
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json(), {"detail": "Invalid speed: ludicrous"})
+
+    def test_invalid_policy_answers_400_and_policy_change_while_playing_answers_409(self) -> None:
+        session_id = self._session()
+        valid_policy = sorted(REPLAY_POLICIES)[0]
+
+        invalid_response = self.client.post(
+            f"/api/replay/{session_id}/policy",
+            json={"policy": "not-a-policy"},
+        )
+        self.assertEqual(invalid_response.status_code, 400)
+        self.assertEqual(invalid_response.json(), {"detail": "Invalid policy: not-a-policy"})
+
+        _sessions[session_id].status = "playing"
+        busy_response = self.client.post(
+            f"/api/replay/{session_id}/policy",
+            json={"policy": valid_policy},
+        )
+        self.assertEqual(busy_response.status_code, 409)
+        self.assertEqual(
+            busy_response.json(),
+            {"detail": "Policy can only be changed while idle. Reset first."},
+        )
+
+    def test_empty_language_answers_400(self) -> None:
+        session_id = self._session()
+
+        source_response = self.client.post(
+            f"/api/replay/{session_id}/first-pass-languages",
+            json={"source_language": "   "},
+        )
+        self.assertEqual(source_response.status_code, 400)
+        self.assertEqual(source_response.json(), {"detail": "source_language must not be empty"})
+
+        target_response = self.client.post(
+            f"/api/replay/{session_id}/first-pass-languages",
+            json={"target_language": ""},
+        )
+        self.assertEqual(target_response.status_code, 400)
+        self.assertEqual(target_response.json(), {"detail": "target_language must not be empty"})
+
+    def test_export_without_events_answers_409(self) -> None:
+        session_id = self._session(events=[])
+
+        response = self.client.get(f"/api/replay/{session_id}/export")
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json(), {"detail": "No events in session"})
+
+    @mock.patch(
+        "app.realtime_translation.replay.prompt_selection._load_prompt",
+        side_effect=PromptLoadError("Prompt 'translate_realtime_first' not found.", 404),
+    )
+    def test_absent_prompt_answers_404(self, _load_prompt: mock.Mock) -> None:
+        session_id = self._session()
+
+        response = self.client.post(
+            f"/api/replay/{session_id}/first-pass-prompt",
+            json={"prompt_id": "translate_realtime_first"},
+        )
+
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.json(), {"detail": "Prompt 'translate_realtime_first' not found."})
+
+    @mock.patch(
+        "app.realtime_translation.replay.replay._load_first_pass_prompt",
+        side_effect=PromptLoadError("translation-services unreachable: refused", 502),
+    )
+    def test_unreachable_translation_services_answers_502_on_session_create(
+        self, _load_first_pass_prompt: mock.Mock
+    ) -> None:
+        response = self.client.post("/api/replay/session", json={"file_path": SAMPLE_RELATIVE})
+
+        self.assertEqual(response.status_code, 502)
+        self.assertEqual(
+            response.json(),
+            {"detail": "translation-services unreachable: refused"},
+        )
+
+    @mock.patch(
+        "app.realtime_translation.replay.replay._load_first_pass_prompt",
+        side_effect=PromptLoadError("Prompt 'translate_realtime_first' not found.", 404),
+    )
+    def test_missing_default_prompt_answers_502_on_session_create(
+        self, _load_first_pass_prompt: mock.Mock
+    ) -> None:
+        """The default prompt id is the server's choice, so its absence is an upstream failure."""
+        response = self.client.post("/api/replay/session", json={"file_path": SAMPLE_RELATIVE})
+
+        self.assertEqual(response.status_code, 502)
+        self.assertEqual(
+            response.json(),
+            {"detail": "Prompt 'translate_realtime_first' not found."},
+        )
 
 
 if __name__ == "__main__":
