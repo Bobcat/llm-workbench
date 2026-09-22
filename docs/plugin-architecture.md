@@ -623,13 +623,10 @@ Deze zijn bewust blijven liggen; ze horen bij een latere fase.
   en waar die staat, en zegt dat de serverlog het bestand noemt; bij een typefout is herladen niet de
   oplossing en dat staat er nu ook. De global blijft genoemd, want het paneel verschijnt in twee
   gevallen: een lijst die niet aankomt en een lijst die de server weigert.
-- **Een hashwijziging tijdens de sessie laat de url staan.** Een deep link naar een view van een
-  uitgezette categorie landt netjes op de landing, maar wie tijdens de sessie `#chat` in de
-  adresbalk zet terwijl die categorie uit staat, houdt `#chat` in de balk terwijl de view op de
-  landing blijft staan — tot de volgende herlaadbeurt. Dat is bestaand gedrag van de router voor
-  elke onbekende route (`#foo` doet hetzelfde); fase 3 maakt het alleen bereikbaar. In Chromium
-  gemeten. Vervolgstap, zoals bij de routebotsingen: normaliseer de hash naar de landing, net als
-  bij een koude start.
+- ~~**Een hashwijziging tijdens de sessie laat de url staan.**~~ **Opgelost.** De shell normaliseert
+  een hash die hij niet kan oplossen naar de landingsroute, net als bij een koude start, en
+  herschrijft de url daarbij. Dat geldt voor een view van een uitgezette categorie én voor elke
+  andere onbekende route; de browsercheck meet het met een hashwijziging tijdens de sessie.
 - ~~De shell hardcodeert `replay-translate`.~~ **Opgelost** als losse opruiming vóór fase 2, in een
   eigen commit op de fase-2-branch. Replay publiceert nu `WORKFLOW_BUSY_EVENT` zoals de vijf andere
   views, en `app.js` noemt geen enkele view meer bij naam — op één na: de fallback
