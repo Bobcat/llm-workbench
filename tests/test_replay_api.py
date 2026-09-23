@@ -305,8 +305,8 @@ class ReplayErrorStatusTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 404)
         detail = response.json()["detail"]
-        self.assertEqual(detail["error"], "File not found")
-        self.assertTrue(detail["path"].endswith("sample/does_not_exist.pc"))
+        self.assertTrue(detail.startswith("File not found: "), detail)
+        self.assertTrue(detail.endswith("sample/does_not_exist.pc"), detail)
 
     def test_invalid_speed_preset_answers_400(self) -> None:
         session_id = self._session()
