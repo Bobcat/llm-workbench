@@ -144,10 +144,9 @@ async def create_session(request: CreateSessionRequest):
         path = REPO_ROOT / path
 
     if not path.exists():
-        raise HTTPException(
-            status_code=404,
-            detail={"error": "File not found", "path": str(path.absolute())},
-        )
+        # One string, not an object: the frontend reads `detail` and would drop a `path` beside it,
+        # and that path is what tells the reader which file was tried.
+        raise HTTPException(status_code=404, detail=f"File not found: {path.absolute()}")
 
     settings = load_replay_settings()
     try:

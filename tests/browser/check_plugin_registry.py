@@ -429,7 +429,9 @@ def verify(base: str, checks: Checks) -> None:
         refused_start.route(
             "**/api/replay/session",
             lambda route: route.fulfill(
-                status=404,
+                # 502 is what the server answers here: the prompt id is its own default, not the
+                # client's. The view treats any non-2xx the same, so the fixture follows the rule.
+                status=502,
                 content_type="application/json",
                 body=json.dumps({"detail": detail}),
             ),
