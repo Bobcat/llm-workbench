@@ -50,6 +50,7 @@ from app.plugins import (
 )
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+CSS_DIR = REPO_ROOT / "static" / "css"
 STATIC = REPO_ROOT / "static"
 PLUGIN_ROOT = STATIC / "src" / "plugins"
 # The committed defaults, read directly rather than through app.plugins: that module resolves the
@@ -397,6 +398,62 @@ def _built_in_asset_problems(plugins) -> list[str]:
             if not style.startswith(prefix):
                 problems.append(f"plugin {plugin.id}: style {style} is not under {prefix}")
     return problems
+
+
+class CssManifestTests(unittest.TestCase):
+    """Every stylesheet is either the shell's shared manifest or exactly one category's own.
+
+    The split moved a category's css next to its views and into `styles` in `app/plugins.py`. A file
+    that nobody declares stops being loaded without any error, so the bookkeeping is measured here:
+    each file under `static/css/` is imported by `css/app.css`, each file under a plugin's `styles/`
+    is declared by that plugin, and no file is claimed twice.
+    """
+
+    def _imported(self) -> list[str]:
+        text = (CSS_DIR / "app.css").read_text(encoding="utf-8")
+        return re.findall(r'@import url\("\./([^"]+)"\)', text)
+
+    def _linked_after_plugin_styles(self) -> list[str]:
+        """The shell and theme sheets, which `index.html` links after the plugin stylesheets."""
+        html = (REPO_ROOT / "static" / "index.html").read_text(encoding="utf-8")
+        return re.findall(r'<link rel="stylesheet" href="css/([^"]+)" data-after-plugin-styles>', html)
+
+    def test_the_manifest_only_imports_files_that_exist(self) -> None:
+        missing = sorted(path for path in self._imported() if not (CSS_DIR / path).exists())
+        self.assertEqual(missing, [])
+
+    def test_every_stylesheet_under_css_is_imported_by_the_manifest(self) -> None:
+        imported = {CSS_DIR / path for path in self._imported()}
+        linked = {CSS_DIR / path for path in self._linked_after_plugin_styles()}
+        on_disk = {path for path in CSS_DIR.rglob("*.css") if path != CSS_DIR / "app.css"}
+
+        orphans = sorted(str(path.relative_to(REPO_ROOT)) for path in on_disk - imported - linked)
+        self.assertEqual(orphans, [], "stylesheets under static/css that nothing loads")
+
+    def test_the_shell_and_the_theme_are_linked_after_the_plugin_stylesheets(self) -> None:
+        """The cascade is base -> category -> shell/theme; these two have to stay last."""
+        self.assertEqual(self._linked_after_plugin_styles(), ["shell.css", "themes/dark.css"])
+
+        html = (REPO_ROOT / "static" / "index.html").read_text(encoding="utf-8")
+        self.assertLess(html.index('href="css/app.css"'), html.index("data-after-plugin-styles"))
+
+    def test_every_plugin_stylesheet_is_declared_by_its_plugin_and_exists(self) -> None:
+        declared = {style for plugin in PLUGINS for style in plugin.styles}
+
+        missing = sorted(style for style in declared if not (REPO_ROOT / "static" / style).exists())
+        self.assertEqual(missing, [])
+
+        on_disk = {
+            str(path.relative_to(REPO_ROOT / "static"))
+            for path in (REPO_ROOT / "static" / "src" / "plugins").rglob("*.css")
+        }
+        self.assertEqual(sorted(on_disk - declared), [], "plugin stylesheets nobody declares")
+
+    def test_no_stylesheet_is_both_shared_and_a_plugins(self) -> None:
+        imported = {f"static/css/{path}" for path in self._imported()}
+        declared = {style for plugin in PLUGINS for style in plugin.styles}
+
+        self.assertEqual(sorted(imported & declared), [])
 
 
 class BuiltInAssetTests(unittest.TestCase):

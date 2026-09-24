@@ -76,9 +76,10 @@ class View:
 class Plugin:
     """One sidebar category, or one standalone item when ``auxiliary`` is set.
 
-    ``id`` is the key in ``plugins.enabled``; it is not shown anywhere. ``styles`` is for plugins
-    from an installed package: the shell loads those stylesheets for an enabled plugin, and the
-    registry's own plugins leave it empty.
+    ``id`` is the key in ``plugins.enabled``; it is not shown anywhere. ``styles`` are the
+    stylesheets the shell loads for an enabled plugin: a category's own views are styled by its own
+    files, so switching a category off leaves its css out too. A stylesheet that views of more than
+    one category use stays in ``static/css/`` and is imported by ``css/app.css``.
     """
 
     id: str
@@ -101,6 +102,12 @@ PLUGINS: tuple[Plugin, ...] = (
                 module="src/workflows/replay/index.js",
                 factory="createReplayView",
             ),
+        ),
+        styles=(
+            "src/plugins/realtime-translation/styles/replay-layout.css",
+            "src/plugins/realtime-translation/styles/replay-transcript-debug.css",
+            "src/plugins/realtime-translation/styles/replay-dialogs.css",
+            "src/plugins/realtime-translation/styles/replay-responsive.css",
         ),
     ),
     Plugin(
@@ -202,6 +209,9 @@ PLUGINS: tuple[Plugin, ...] = (
                 factory="createImageTrainView",
             ),
         ),
+        styles=(
+            "src/plugins/image-pool/styles/image-training.css",
+        ),
     ),
     Plugin(
         id="video-pool",
@@ -289,6 +299,13 @@ PLUGINS: tuple[Plugin, ...] = (
                 factory="createTranslationPromptsView",
             ),
         ),
+        styles=(
+            "src/plugins/translation-services/styles/pdf-translation.css",
+            "src/plugins/translation-services/styles/pdf-translation-regression.css",
+            "src/plugins/translation-services/styles/pdf-testing.css",
+            "src/plugins/translation-services/styles/pdf-anatomy.css",
+            "src/plugins/translation-services/styles/image-translation-regression.css",
+        ),
     ),
     Plugin(
         id="developer",
@@ -304,6 +321,9 @@ PLUGINS: tuple[Plugin, ...] = (
                 factory="createIconsView",
                 persistent=False,
             ),
+        ),
+        styles=(
+            "src/plugins/developer/styles/icons.css",
         ),
     ),
 )

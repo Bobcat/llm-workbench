@@ -92,12 +92,17 @@ function renderWorkflows() {
   updateSidebarScrollState();
 }
 
-// A plugin from an installed package can bring its own stylesheet. Loaded once per path, for the
-// plugins that are in the menu; the paths are relative, so they resolve like the view modules do.
+// A plugin can bring its own stylesheet: one from an installed package, and since the css split
+// every category's own files. Loaded once per path, for the plugins that are in the menu; the paths
+// are relative, so they resolve like the view modules do.
 function applyPluginStyles(plugins) {
   const loaded = new Set(
     [...document.querySelectorAll('link[data-plugin-style]')].map((link) => link.dataset.pluginStyle),
   );
+  // The shell and the theme have to keep winning from a category's own css, so `index.html` links
+  // those after this list and every plugin link goes in front of them. Without that link the links
+  // are appended, which is what a host page without the marker gets.
+  const anchor = document.head.querySelector('link[data-after-plugin-styles]');
   plugins.forEach((plugin) => {
     (plugin.styles || []).forEach((style) => {
       const path = String(style || '');
@@ -109,7 +114,7 @@ function applyPluginStyles(plugins) {
       link.rel = 'stylesheet';
       link.href = new URL(path, document.baseURI).href;
       link.dataset.pluginStyle = path;
-      document.head.append(link);
+      document.head.insertBefore(link, anchor);
       loaded.add(path);
     });
   });
