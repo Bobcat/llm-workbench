@@ -115,6 +115,11 @@ def _set_session_prompt(
     load_prompt: Callable[[str], PromptRecord],
     apply_prompt: Callable[[ReplaySession, PromptRecord], None],
 ) -> dict[str, str]:
+    # An empty id would ask translation-services for the whole collection (`/v1/prompts/`), whose
+    # list answer is not a prompt — a 502 for a request the client got wrong.
+    if not str(prompt_id or "").strip():
+        raise HTTPException(status_code=400, detail="prompt_id must not be empty")
+
     try:
         prompt = load_prompt(prompt_id)
     except PromptLoadError as exc:

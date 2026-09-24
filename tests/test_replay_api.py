@@ -381,6 +381,21 @@ class ReplayErrorStatusTests(unittest.TestCase):
         self.assertEqual(response.status_code, 404)
         self.assertEqual(response.json(), {"detail": "Prompt 'translate_realtime_first' not found."})
 
+    def test_empty_prompt_id_answers_400(self) -> None:
+        """An empty id would fetch the whole prompt collection and blame the service for the list."""
+        session_id = self._session()
+
+        for route in ("first-pass-prompt", "second-pass-prompt"):
+            for prompt_id in ("", "   "):
+                with self.subTest(route=route, prompt_id=prompt_id):
+                    response = self.client.post(
+                        f"/api/replay/{session_id}/{route}",
+                        json={"prompt_id": prompt_id},
+                    )
+
+                    self.assertEqual(response.status_code, 400)
+                    self.assertEqual(response.json(), {"detail": "prompt_id must not be empty"})
+
     @mock.patch(
         "app.realtime_translation.replay.replay._load_first_pass_prompt",
         side_effect=PromptLoadError("translation-services unreachable: refused", 502),
