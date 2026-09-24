@@ -1,25 +1,21 @@
+/* What the shell itself needs, in cascade order.
+ *
+ * A stylesheet that only one category's views use lives with that category
+ * (`src/plugins/<id>/styles/`, declared as `styles` in `app/plugins.py`) and is linked by the
+ * shell at boot. What stays here is shared: base tokens, the shell's own components, and the css
+ * that views of more than one category use. `css/shell.css` and `themes/dark.css` are not here
+ * either — they have to stay last in the cascade, so `index.html` links them after the plugin
+ * stylesheets. See docs/plugin-architecture.md, section 4.
+ */
 @import url("./tokens.css");
 @import url("./components/visibility.css");
 @import url("./components/icons.css");
-@import url("./workflows/replay/layout.css");
-@import url("./workflows/replay/transcript-debug.css");
-@import url("./workflows/replay/dialogs.css");
-@import url("./workflows/replay/responsive.css");
 @import url("./components/model-pool/layout.css");
 @import url("./workflows/model-libraries.css");
 @import url("./components/model-pool/details.css");
 @import url("./components/workflow-form/layout.css");
 @import url("./workflows/generation.css");
-@import url("./workflows/image-training.css");
 @import url("./components/workflow-form/fields.css");
 @import url("./workflows/chat.css");
 @import url("./workflows/image-translation.css");
-@import url("./workflows/pdf-translation.css");
 @import url("./workflows/omnidoc.css");
-@import url("./workflows/pdf-translation-regression.css");
-@import url("./workflows/pdf-testing.css");
-@import url("./workflows/pdf-anatomy.css");
-@import url("./workflows/icons.css");
-@import url("./workflows/image-translation-regression.css");
-@import url("./shell.css");
-@import url("./themes/dark.css");

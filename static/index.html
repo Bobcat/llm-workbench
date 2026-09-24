@@ -44,6 +44,10 @@
     }());
   </script>
   <link rel="stylesheet" href="css/app.css">
+  <!-- The shell and the theme come after the plugin stylesheets, which the shell links at boot;
+       `applyPluginStyles` inserts them before the first link carrying this attribute. -->
+  <link rel="stylesheet" href="css/shell.css" data-after-plugin-styles>
+  <link rel="stylesheet" href="css/themes/dark.css" data-after-plugin-styles>
 </head>
 <body>
   <div class="app-container">

@@ -95,8 +95,8 @@ Een plugin-auteur heeft dit nodig.
 | | |
 | --- | --- |
 | factory | moet een DOM-element teruggeven; dat element wordt in de host geplaatst |
-| `__onActivate()` | optioneel; aangeroepen zodra de view in de host staat (`static/app.js:197`) |
-| `__onDeactivate()` | optioneel; aangeroepen bij wegnavigeren (`static/app.js:241`) |
+| `__onActivate()` | optioneel; aangeroepen zodra de view in de host staat (`static/app.js:202`) |
+| `__onDeactivate()` | optioneel; aangeroepen bij wegnavigeren (`static/app.js:246`) |
 | `WORKFLOW_BUSY_EVENT` | optioneel; meldt dat er werk loopt, waarop de sidebar een indicator toont. Vijf views doen dit |
 | `__destroy()` | bestaat in twee views maar wordt door de router **nooit** aangeroepen. Reken er niet op |
 
@@ -135,9 +135,9 @@ Vier dingen bewaken het laden, alle in `static/app.js`:
 
 - een gedeelde `pendingView` per route, zodat weg- en terugklikken tijdens een koude load de
   view niet twee keer bouwt;
-- een generatie-teller (`static/app.js:146`, `mountGeneration`) die een load weggooit die ná een nieuwere
+- een generatie-teller (`static/app.js:151`, `mountGeneration`) die een load weggooit die ná een nieuwere
   navigatie binnenkomt; op het succespad logt dat op `debug`, op het faalpad op `error`;
-- een zichtbaar foutpaneel (`static/app.js:161`, `buildViewError`) in plaats van een lege host, omdat
+- een zichtbaar foutpaneel (`static/app.js:166`, `buildViewError`) in plaats van een lege host, omdat
   `RouterCore.navigate()` de promise van `mount()` negeert;
 - een retry met een verse module-URL, maar alleen als de `import()` zelf faalde — een registratie
   die de verkeerde factory noemt wordt niet eindeloos opnieuw opgehaald.
@@ -285,7 +285,7 @@ volledig werken — wie wil, draait per categorie een eigen instantie.
 Wat "uit" betekent: **de categorie staat niet in het menu.** Meer niet. De adressen zijn van de
 core en blijven altijd beschikbaar, dus geen enkele view kan stukgaan doordat een andere categorie
 uit staat. Een bladwijzer naar een view van een uitgezette categorie heeft geen route meer; de shell
-valt dan terug op de landing (`static/app.js:362`, `defaultRoute`) in plaats van een lege host te
+valt dan terug op de landing (`static/app.js:367`, `defaultRoute`) in plaats van een lege host te
 tonen. Dat is bestaand gedrag, maar fase 3 maakt het bereikbaar — en de browsercheck pint het.
 
 Beslissingen:
@@ -482,7 +482,7 @@ static root") gaat in deze fase mee, want die spreekt de nieuwe afspraak tegen.
 **Samenvoegen, en botsen weigeren.** `PLUGINS` blijft de ingebouwde lijst en de bron van waarheid voor
 wat er in de repo zit; `all_plugins()` is die lijst plus wat discovery vindt, in die orde. Binnen het
 gevonden deel wordt op plugin-id gesorteerd, en dat is geen detail: de landingsroute is
-`WORKFLOWS[0]` (`static/app.js:362`), dus de volgorde bepaalt de startpagina en de sidebar. Twee
+`WORKFLOWS[0]` (`static/app.js:367`), dus de volgorde bepaalt de startpagina en de sidebar. Twee
 botsingen worden bij het laden geweigerd in plaats van stil opgelost: een plugin-id die al bestaat,
 en een routenaam die al bestaat. Dat sluit het gat uit sectie 4 met de strengste van de twee opties
 die daar staan.
@@ -616,9 +616,15 @@ Deze zijn bewust blijven liggen; ze horen bij een latere fase.
 - ~~`css/app.css` is één globaal `@import`-manifest van 25 regels en er is één globale
   iconensprite; een plugin kan nog geen eigen assets bijdragen.~~ **Opgelost voor het mechanisme:**
   een plugin — ingebouwd of uit een pakket — mag een eigen stylesheet en een eigen icoonbestand
-  meebrengen, met de eigen map als wortel. **Wat openblijft:** `css/app.css` zelf is nog steeds één
-  manifest; het per categorie splitsen is een eigen beslissing, want het levert een nettere indeling
-  op en geen nieuwe mogelijkheid.
+  meebrengen, met de eigen map als wortel. **Ook gesplitst:** `css/app.css` is van 25 naar 12 regels
+  gegaan. De elf stylesheets die alleen door de views van één categorie gebruikt worden, staan nu in
+  `static/src/plugins/<id>/styles/` en die categorie declareert ze als `styles`; wat blijft staan is
+  wat de shell zelf nodig heeft plus de css die views van meer dan één categorie gebruiken
+  (`components/model-pool/`, `components/workflow-form/`, `workflows/model-libraries.css`,
+  `workflows/generation.css`, `workflows/chat.css`, `workflows/image-translation.css`,
+  `workflows/omnidoc.css`). `css/shell.css` en `themes/dark.css` zitten niet meer in het manifest
+  maar in `static/index.html` ná de pluginlinks, zodat de gelaagdheid base → categorie → shell/thema
+  blijft zoals hij was; `applyPluginStyles` voegt de pluginlinks vóór die twee in.
 - ~~**Zeven kopieën van de settings-loader.**~~ **Opgelost.** Ze staan nu in `app/settings_files.py`,
   met de twee varianten naast elkaar en de reden erbij: `load_object` is soepel voor de
   dienstinstellingen, `load_object_or_raise` weigert een bestand dat geen object is en noemt het pad,
