@@ -673,6 +673,35 @@ def verify(base: str, checks: Checks) -> None:
         packaged.close()
         checks.note("packaged plugin: label escaped, stylesheet linked, path icon rendered as an image")
 
+        # --- a category's css sits between the core manifest and the shell ---
+        # The split moved each category's own stylesheets into `styles`, which the shell links at
+        # boot. They have to land after `css/app.css` and before `css/shell.css`/`themes/dark.css`:
+        # the other order would let a category override the shell and the theme at equal
+        # specificity. Measured on the served page, because that is where the order exists.
+        order = browser.new_page()
+        order.goto(f"{base}/#replay-translate")
+        order.wait_for_selector("#appRoot > *", timeout=10000)
+        sheets = order.evaluate("""
+          () => [...document.querySelectorAll('link[rel="stylesheet"]')]
+            .map((link) => new URL(link.href).pathname.replace(/^\\//, ''))
+            .filter((path) => path.startsWith('css/') || path.startsWith('src/plugins/'))
+        """)
+        checks.check("css/app.css" in sheets, f"the core manifest is not loaded: {sheets}")
+        checks.check("css/shell.css" in sheets, f"the shell stylesheet is not loaded: {sheets}")
+        category_sheets = [sheet for sheet in sheets if sheet.startswith("src/plugins/")]
+        checks.check(bool(category_sheets), f"no category stylesheet is loaded at all: {sheets}")
+        for sheet in category_sheets:
+            checks.check(
+                sheets.index("css/app.css") < sheets.index(sheet) < sheets.index("css/shell.css"),
+                f"{sheet} is not between the core manifest and the shell: {sheets}",
+            )
+        checks.check(
+            sheets.index("css/themes/dark.css") > sheets.index("css/shell.css"),
+            f"the theme is loaded before the shell: {sheets}",
+        )
+        order.close()
+        checks.note(f"cascade: {len(category_sheets)} category stylesheets between manifest and shell")
+
         checks.check(not page_errors, f"page errors: {page_errors}")
         checks.check(not import_failures, f"dynamic import failures: {import_failures}")
         browser.close()
@@ -709,8 +738,8 @@ def main() -> int:
             print(f"  - {problem}")
         return 1
     print("\nOK: sidebar, routes, aliases, persistence, theming, placeholder, error panel, retry,")
-    print("    busy indicator, a refused replay start, a single-category menu, no refetch on a")
-    print("    deterministic failure, and no error-level log on a discarded view.")
+    print("    busy indicator, a refused replay start, the cascade order, a single-category menu,")
+    print("    no refetch on a deterministic failure, and no error-level log on a discarded view.")
     return 0
 
 
