@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import http.client
 import json
 import unittest
 from unittest import mock
@@ -25,6 +26,22 @@ class _Response:
 
     def read(self) -> bytes:
         return self._body
+
+
+class _BrokenResponse:
+    """A response whose body never arrives: the failure happens in ``read()``, after the connect."""
+
+    def __init__(self, failure: BaseException) -> None:
+        self._failure = failure
+
+    def __enter__(self) -> "_BrokenResponse":
+        return self
+
+    def __exit__(self, *exc_info: object) -> None:
+        return None
+
+    def read(self) -> bytes:
+        raise self._failure
 
 
 def _http_error(code: int) -> error.HTTPError:
@@ -67,6 +84,20 @@ class PromptLoadStatusTests(unittest.TestCase):
     def test_timeout_is_a_502(self) -> None:
         self.assertEqual(self._status_code(TimeoutError("timed out")), 502)
 
+    def test_a_connection_that_breaks_mid_answer_is_a_502(self) -> None:
+        # Accepted, then dropped while the body came in: a reset, a restart, a proxy closing early.
+        for label, failure in [
+            ("incomplete read", http.client.IncompleteRead(b"part")),
+            ("connection reset", ConnectionResetError("reset by peer")),
+            ("broken pipe", BrokenPipeError("broken pipe")),
+        ]:
+            with self.subTest(failure=label):
+                with mock.patch(URLOPEN, return_value=_BrokenResponse(failure)):
+                    with self.assertRaises(PromptLoadError) as caught:
+                        _load_prompt("translate_realtime_first")
+
+                self.assertEqual(caught.exception.status_code, 502)
+
     def test_answer_that_cannot_be_read_is_a_502(self) -> None:
         # What a proxy or a wrong port in front of the service answers with.
         for label, body in [
@@ -96,12 +127,20 @@ class PromptLoadStatusTests(unittest.TestCase):
         self.assertIn("translate_realtime_first", str(caught.exception))
 
     def test_a_client_supplied_id_cannot_reshape_the_upstream_request(self) -> None:
+        # One id with every character that could reshape the url: a path separator, a query, a
+        # fragment and a non-ASCII byte. Pinning only "/" would let safe="?" through.
+        client_id = "../../v1/models?admin=1#frag é"
         with mock.patch(URLOPEN, side_effect=_http_error(404)) as urlopen:
             with self.assertRaises(PromptLoadError):
-                _load_prompt("../../v1/models")
+                _load_prompt(client_id)
 
         upstream = urlopen.call_args.args[0]
-        self.assertTrue(upstream.full_url.endswith("/v1/prompts/..%2F..%2Fv1%2Fmodels"), upstream.full_url)
+        self.assertTrue(
+            upstream.full_url.endswith("/v1/prompts/..%2F..%2Fv1%2Fmodels%3Fadmin%3D1%23frag%20%C3%A9"),
+            upstream.full_url,
+        )
+        self.assertEqual(upstream.full_url.count("?"), 0)
+        self.assertEqual(upstream.full_url.count("#"), 0)
         self.assertEqual(upstream.get_method(), "GET")
         self.assertEqual(urlopen.call_args.kwargs["timeout"], 5.0)
 

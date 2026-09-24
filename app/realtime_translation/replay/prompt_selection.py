@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import http.client
 import json
 from typing import TYPE_CHECKING
 from urllib import error, parse, request
@@ -45,6 +46,11 @@ def _load_prompt(prompt_id: str) -> PromptRecord:
         raise PromptLoadError(f"translation-services /v1/prompts HTTP {exc.code}", 502) from exc
     except (error.URLError, TimeoutError) as exc:
         raise PromptLoadError(f"translation-services unreachable: {exc}", 502) from exc
+    except (OSError, http.client.HTTPException) as exc:
+        # The connection was accepted and then broke while the body came in: a reset, a service
+        # restarting mid-answer, a proxy closing early (`IncompleteRead`). None of those are a
+        # URLError, and without this they reach the client as a 500 for the other side's problem.
+        raise PromptLoadError(f"translation-services broke off the answer: {exc}", 502) from exc
 
     # The service answered, so a body we cannot read is its failure, not ours: a proxy in front of
     # it, or a wrong port hitting another service, answers with HTML. Without this the decode error
