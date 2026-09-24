@@ -1,7 +1,10 @@
 # Plugin-architectuur — beslissingen en fase-afbakening
 
 Status: fase 1 tot en met 5 staan op `main` (fase 3 via PR #17, fase 4 via PR #18, fase 5 via
-PR #19).
+PR #19) en sectie 4 is dicht. De laatste twee punten daar gingen via PR #20 (het foutpaneel, de
+hash-terugval, `app/settings_files.py`, `styles` voor een ingebouwde plugin) en PR #25 (de css per
+categorie); PR #24 gaf de replay-sessieroutes echte HTTP-statussen, geen fase maar een gat in het
+contract dat de fase-5-review aanwees.
 Anker: sectie 1 en 2 beschrijven de code op `main`. Fase 1 landde met `783f0bd` en de
 replay-opruiming met `8d73503`; de pdf-fix `a0f79d8` staat op `main` maar raakt deze architectuur
 niet.
@@ -597,7 +600,8 @@ pad en de stylesheet gelinkt.
 
 ## 4. Bekende gaten en geaccepteerde schuld
 
-Deze zijn bewust blijven liggen; ze horen bij een latere fase.
+Alles wat hier stond is opgelost; de lijst blijft staan als verslag van wat er open was en waarom,
+met per punt waar het dichtging. Er is geen open punt meer in deze sectie.
 
 - ~~`registry.js` importeert de manifesten handmatig, `app/router.py` heeft 16 handgeschreven
   `include_router`-regels, en `ROUTE_ALIASES` staat globaal.~~ **Opgelost in fase 2.** De
