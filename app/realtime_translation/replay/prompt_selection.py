@@ -29,12 +29,14 @@ class PromptLoadError(ValueError):
 # slot it serves is the caller's choice. The engine still receives plain prompt strings;
 # we fetch the {system, user} entry here and map it onto a PromptRecord.
 def _load_prompt(prompt_id: str) -> PromptRecord:
+    # quote(safe="") matters: prompt_id comes straight from the client, and without it an id like
+    # "../../v1/models" would address another upstream endpoint instead of a prompt.
     safe_id = parse.quote(str(prompt_id or ""), safe="")
     url = f"{_base_url()}/v1/prompts/{safe_id}"
     req = request.Request(url, method="GET", headers={"Accept": "application/json"})
     try:
         with request.urlopen(req, timeout=5.0) as response:
-            data = json.loads(response.read().decode("utf-8"))
+            body = response.read()
     except error.HTTPError as exc:
         if exc.code == 404:
             raise PromptLoadError(
@@ -43,6 +45,19 @@ def _load_prompt(prompt_id: str) -> PromptRecord:
         raise PromptLoadError(f"translation-services /v1/prompts HTTP {exc.code}", 502) from exc
     except (error.URLError, TimeoutError) as exc:
         raise PromptLoadError(f"translation-services unreachable: {exc}", 502) from exc
+
+    # The service answered, so a body we cannot read is its failure, not ours: a proxy in front of
+    # it, or a wrong port hitting another service, answers with HTML. Without this the decode error
+    # reaches the client as a 500, which blames the workbench for a problem on the other side.
+    try:
+        data = json.loads(body.decode("utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise PromptLoadError(f"translation-services sent an unreadable answer: {exc}", 502) from exc
+    if not isinstance(data, dict):
+        raise PromptLoadError(
+            f"translation-services sent {type(data).__name__} instead of a prompt", 502
+        )
+
     return PromptRecord(
         id=str(data.get("id") or prompt_id),
         title=str(data.get("title") or ""),
