@@ -126,30 +126,15 @@ export function createPdfTranslationView() {
                 </label>
                 <label class="translation-prompts-field">
                   <span>Page layout</span>
-                  <select id="pdfPageLayoutMode" title="How a DOCUMENT page is laid out. auto chooses typeset for each born-digital page and fit for each scanned or hybrid page. fit puts every translated block back into its source box. typeset asks the compositor to re-set every page from its layout. The compositor may still use fit when its existing page gate declines typesetting.">
-                    <option value="auto" selected>auto — typeset digital, fit scanned/hybrid</option>
-                    <option value="fit">fit — each block back in its own box</option>
-                    <option value="typeset">typeset — re-set the page from its layout</option>
-                  </select>
-                </label>
-                <label class="translation-prompts-field">
-                  <span>Omnidoc preview</span>
-                  <select id="pdfOmnidocSingleLaneFlow" title="Build a separate experimental PDF. A page is translated in that artifact only when Omnidoc proves one ordinary text lane and the Omnidoc compositor accepts the complete page. Every withheld source page becomes a blank notice page with its reason. The preview never uses the selected legacy page layout as a fallback; Translated PDF continues to use that layout.">
-                    <option value="off" selected>off — no placement preview</option>
-                    <option value="on">on — build strict preview</option>
-                  </select>
-                </label>
-                <label class="translation-prompts-field">
-                  <span>Omnidoc page layout</span>
-                  <select id="pdfOmnidocPageLayoutMode" title="Only affects the Omnidoc placement preview. Auto flows a proven terminal text lane and keeps other pages bounded. Flowing requests that same route wherever it is proven: terminal text keeps the requested type scale and may continue on another page, while earlier locally bounded text can still shrink. Pages without such a lane remain bounded. Bounded keeps text on its source page and may reduce its size locally. The Translated PDF uses the separate Page layout setting.">
-                    <option value="auto" selected>auto — choose per page</option>
+                  <select id="pdfOmnidocPageLayoutMode" title="How Omnidoc places the translated PDF. Auto flows a proven terminal text lane and keeps other pages bounded. Flowing requests that route wherever it is proven; text may continue on an added page. Pages without a proven flow remain bounded. Bounded keeps text within the source page's fixed frames and may reduce its size locally.">
+                    <option value="auto">auto — choose per page</option>
                     <option value="flowing">flowing — where proven</option>
-                    <option value="bounded">bounded — fit on source pages</option>
+                    <option value="bounded" selected>bounded — fit on source pages</option>
                   </select>
                 </label>
                 <label class="translation-prompts-field">
                   <span>Page scale</span>
-                  <select id="pdfPageScale" title="typeset only: the type size as a fraction of the source's own. Dutch runs longer than English, so a re-set page takes lines its source did not have; smaller type in the SAME column buys them back. The design solves one scale per document from what its pages have room for; until that solve is wired in, this picks it by hand. The reference system sets the transformer paper at 0.90 of the source size.">
+                  <select id="pdfPageScale" title="The Omnidoc type size as a fraction of the source's own. Smaller type gives longer translations more room. The caller's selected scale is the upper bound; placement does not multiply it by another hidden scale.">
                     <option value="1.0" selected>1.00 — the source's own size</option>
                     <option value="0.97">0.97</option>
                     <option value="0.94">0.94</option>
@@ -172,39 +157,10 @@ export function createPdfTranslationView() {
                   </select>
                 </label>
                 <label class="translation-prompts-field">
-                  <span>Render size mode</span>
-                  <select id="pdfRenderSizeMode" title="How a render group's one font size is chosen from its lines: median resists one under-measured (lowercase) line dragging the whole block down; min never overflows the smallest line's band. Changing this re-renders every page of the shown document from its cached translations (no new translation).">
-                    <option value="median" selected>median — default</option>
-                    <option value="min">min — never overflow</option>
-                  </select>
-                </label>
-                <label class="translation-prompts-field">
                   <span>Erase fill</span>
                   <select id="pdfEraseFillMode" title="How erased source text is filled. flat paints each erased line with its sampled background colour; inpaint is the hybrid model-based fill — flat paint on designed flat ground, model reconstruction where the ground varies (GPU-only).">
                     <option value="flat">flat — one colour</option>
                     <option value="inpaint" selected>inpaint — hybrid fill</option>
-                  </select>
-                </label>
-                <label class="translation-prompts-field">
-                  <span>Size metric</span>
-                  <select id="pdfSizeMetricMode" title="Where a line's source size comes from. extent sizes from the OCR polygon's full ink extent; band clamps each line to its strong ink band scaled by the document's own norm, so sparse tall glyphs (parentheses, brackets) cannot inflate a line past its siblings (one-sided, only shrinks an outlier). fill sizes each line so its rendered ink is as tall as the source line's ink — note that a born-digital page declares its own sizes, so fill has no effect there.">
-                    <option value="extent" selected>extent — polygon</option>
-                    <option value="band">band — clamp outliers</option>
-                    <option value="fill">fill — match source ink</option>
-                  </select>
-                </label>
-                <label class="translation-prompts-field">
-                  <span>Size cohort</span>
-                  <select id="pdfSizeCohortMode" title="Cross-element size uniformity from the VLM font-size (pt) label. off sizes each element from its own measured height. vlm groups elements the VLM gave one pt and, when their measured heights agree, snaps the whole cohort to its median — so a list the VLM judged one size renders uniform. A cohort whose heights disagree keeps per-element sizing.">
-                    <option value="off">off — per element</option>
-                    <option value="vlm" selected>vlm — snap siblings</option>
-                  </select>
-                </label>
-                <label class="translation-prompts-field">
-                  <span>Width fit</span>
-                  <select id="pdfWidthFitMode" title="How a translation wider than its original line is fitted. footprint keeps it inside the original line's width (condense, then shrink); extend to margin first widens into verified clean background right of the line (never over other text, ink or a surface change), capped at the right margin of the text band the line sits in, so short list items keep their size without crossing a column gutter or running into a page margin.">
-                    <option value="footprint" selected>footprint — exact fit</option>
-                    <option value="extend_to_margin">extend to margin — grow, stop at the margin</option>
                   </select>
                 </label>
               </div>
@@ -396,15 +352,9 @@ export function createPdfTranslationView() {
   const translatorSelect = container.querySelector('#pdfTranslatorModel');
   const translationPromptSelect = container.querySelector('#pdfTranslationPrompt');
   const pageCategoryModeSelect = container.querySelector('#pdfPageCategoryMode');
-  const renderSizeModeSelect = container.querySelector('#pdfRenderSizeMode');
   const eraseFillModeSelect = container.querySelector('#pdfEraseFillMode');
-  const sizeMetricModeSelect = container.querySelector('#pdfSizeMetricMode');
-  const sizeCohortModeSelect = container.querySelector('#pdfSizeCohortMode');
-  const widthFitModeSelect = container.querySelector('#pdfWidthFitMode');
   const outputModeSelect = container.querySelector('#pdfOutputMode');
   const structureModeSelect = container.querySelector('#pdfStructureMode');
-  const pageLayoutModeSelect = container.querySelector('#pdfPageLayoutMode');
-  const omnidocSingleLaneFlowSelect = container.querySelector('#pdfOmnidocSingleLaneFlow');
   const omnidocPageLayoutModeSelect = container.querySelector('#pdfOmnidocPageLayoutMode');
   const doclayoutOverlaySelect = container.querySelector('#pdfDoclayoutOverlay');
   const paddleocrV5OverlaySelect = container.querySelector('#pdfPaddleocrV5Overlay');
@@ -491,20 +441,10 @@ export function createPdfTranslationView() {
     pageConcurrencyInput.disabled = settingsLocked;
     translationPromptSelect.disabled = settingsLocked;
     pageCategoryModeSelect.disabled = settingsLocked;
-    renderSizeModeSelect.disabled = renderLocked;
     eraseFillModeSelect.disabled = renderLocked;
-    sizeMetricModeSelect.disabled = renderLocked;
-    sizeCohortModeSelect.disabled = renderLocked;
-    widthFitModeSelect.disabled = renderLocked;
     outputModeSelect.disabled = renderLocked;
     structureModeSelect.disabled = renderLocked;
-    pageLayoutModeSelect.disabled = renderLocked;
-    omnidocSingleLaneFlowSelect.disabled = renderLocked;
     omnidocPageLayoutModeSelect.disabled = renderLocked;
-    // Always settable, even while the layout mode is still `fit` — the fit path ignores the
-    // flag, so the only thing disabling it bought was an ordering trap: this state is
-    // recomputed after a render, so picking `typeset` left the scale locked until a render
-    // had already run at 1.00, and only the run after that could carry 0.90.
     pageScaleSelect.disabled = renderLocked;
     doclayoutOverlaySelect.disabled = renderLocked;
     paddleocrV5OverlaySelect.disabled = renderLocked;
@@ -516,18 +456,10 @@ export function createPdfTranslationView() {
   // re-render, so the two can never drift apart.
   function renderFlags() {
     return {
-      render_size_mode: String(renderSizeModeSelect.value || 'median'),
       erase_fill_mode: String(eraseFillModeSelect.value || 'inpaint'),
-      size_metric_mode: String(sizeMetricModeSelect.value || 'extent'),
-      size_cohort_mode: String(sizeCohortModeSelect.value || 'vlm'),
-      width_fit_mode: String(widthFitModeSelect.value || 'footprint'),
       pdf_output_mode: String(outputModeSelect.value || 'vector'),
       pdf_structure_mode: String(structureModeSelect.value || 'source_only'),
-      page_layout_mode: String(pageLayoutModeSelect.value || 'auto'),
-      omnidoc_single_lane_flow: String(
-        omnidocSingleLaneFlowSelect.value || 'off'
-      ) === 'on',
-      omnidoc_page_layout_mode: String(omnidocPageLayoutModeSelect.value || 'auto'),
+      omnidoc_page_layout_mode: String(omnidocPageLayoutModeSelect.value || 'bounded'),
       page_scale: Number(pageScaleSelect.value || 1),
       doclayout_overlay: String(doclayoutOverlaySelect.value || 'off') === 'on',
       paddleocr_v5_overlay: String(paddleocrV5OverlaySelect.value || 'off') === 'on',
@@ -578,19 +510,9 @@ export function createPdfTranslationView() {
       : String(options.page_concurrency);
     setSelectValue(translationPromptSelect, options?.translation_prompt_id);
     setSelectValue(pageCategoryModeSelect, options?.page_category_mode);
-    setSelectValue(renderSizeModeSelect, options?.render_size_mode || 'median');
     setSelectValue(eraseFillModeSelect, options?.erase_fill_mode || 'inpaint');
-    setSelectValue(sizeMetricModeSelect, options?.size_metric_mode || 'extent');
-    setSelectValue(sizeCohortModeSelect, options?.size_cohort_mode || 'vlm');
-    setSelectValue(widthFitModeSelect, options?.width_fit_mode || 'footprint');
     setSelectValue(outputModeSelect, options?.pdf_output_mode || 'vector');
     setSelectValue(structureModeSelect, options?.pdf_structure_mode || 'source_only');
-    // Runs from before `auto` existed omitted this field and therefore used the old fit default.
-    setSelectValue(pageLayoutModeSelect, options?.page_layout_mode || 'fit');
-    setSelectValue(
-      omnidocSingleLaneFlowSelect,
-      options?.omnidoc_single_lane_flow ? 'on' : 'off',
-    );
     setSelectValue(omnidocPageLayoutModeSelect, options?.omnidoc_page_layout_mode || 'bounded');
     const pageScale = Number(options?.page_scale ?? 1);
     setSelectValue(
@@ -826,7 +748,7 @@ export function createPdfTranslationView() {
         } else if (isRerendering) {
           isRerendering = false;
           setStatus(String(result?.state) === 'completed'
-            ? `Re-rendered (${String(renderSizeModeSelect.value)}, ${String(eraseFillModeSelect.value)}, ${String(widthFitModeSelect.value)}).`
+            ? `Re-rendered (${String(omnidocPageLayoutModeSelect.value)}, scale ${String(pageScaleSelect.value)}, ${String(eraseFillModeSelect.value)}).`
             : `Re-render ${String(result?.state || 'ended')}.`);
         } else {
           loadRecentRequests(`current:${currentRequestId}`);
@@ -1269,9 +1191,9 @@ export function createPdfTranslationView() {
       // share against the stage sum instead and state the factor once, on its own row.
       const fontCallCount = Number(m.font_detection_call_count_total || 0);
       const fontCorrectedCount = Number(m.font_corrected_unit_count_total || 0);
-      const previewPages = pages.filter((page) => page?.omnidoc_preview);
-      const previewAdmitted = previewPages.filter(
-        (page) => page.omnidoc_preview.status === 'admitted',
+      const placementPages = pages.filter((page) => page?.omnidoc_placement);
+      const placementAdmitted = placementPages.filter(
+        (page) => page.omnidoc_placement.status === 'admitted',
       ).length;
       const stages = [
         ['OCR', sum('ocr_wall_ms')],
@@ -1286,10 +1208,8 @@ export function createPdfTranslationView() {
         ['Translation', sum('translation_wall_ms')],
         ['Build target Omnidoc', m.target_omnidoc_wall_ms],
         ['Inventory placement', m.placement_inventory_wall_ms],
-        ['Plan placement', typeof m.replacement_wall_ms_total === 'number' ? m.replacement_wall_ms_total : sum('replacement_wall_ms')],
+        ['Plan placement', typeof m.omnidoc_placement_wall_ms_total === 'number' ? m.omnidoc_placement_wall_ms_total : sum('replacement_wall_ms')],
         ['Assemble PDF', m.assemble_wall_ms],
-        ['Plan Omnidoc preview', m.omnidoc_preview_placement_wall_ms_total],
-        ['Assemble Omnidoc preview', m.omnidoc_preview_assemble_wall_ms],
       ];
       const measured = stages.filter(([, v]) => typeof v === 'number');
       const stageTotal = measured.reduce((a, [, v]) => a + v, 0);
@@ -1347,12 +1267,12 @@ export function createPdfTranslationView() {
           ? row('Stored page analyses', `${mib(m.analysis_storage_bytes)} · largest ${mib(m.analysis_largest_page_bytes)}`, 'trt-l1',
             'Serialized analysis state retained for the source-first boundary. Translation reloads one record per active page worker.')
           : '',
-        previewPages.length
+        placementPages.length
           ? row(
-            'Omnidoc preview',
-            `${previewAdmitted}/${previewPages.length} pages admitted`,
+            'Omnidoc placement',
+            `${placementAdmitted}/${placementPages.length} pages admitted`,
             'trt-l1',
-            'Only admitted pages use Omnidoc placement in the separate preview PDF. Every withheld source page is replaced by a blank notice page with its reason.',
+            'Admitted pages use Omnidoc placement in the translated PDF. Every withheld source page is replaced by a blank notice page with its reason.',
           )
           : '',
         ...stages.map(stage),
@@ -1395,13 +1315,13 @@ export function createPdfTranslationView() {
     timingsEl.innerHTML = [
       row('Page total', ms(total), 'trt-total'),
       row('Effective layout', escapeHtml(String(page?.effective_page_layout_mode || '—')), 'trt-l1'),
-      page?.omnidoc_preview
+      page?.omnidoc_placement
         ? row(
-          'Omnidoc preview',
+          'Omnidoc placement',
           escapeHtml(
-            page.omnidoc_preview.status === 'admitted'
+            page.omnidoc_placement.status === 'admitted'
               ? 'admitted'
-              : `withheld · ${page.omnidoc_preview.reason || 'unspecified'}`,
+              : `withheld · ${page.omnidoc_placement.reason || 'unspecified'}`,
           ),
           'trt-l1',
         )
@@ -1719,7 +1639,6 @@ export function createPdfTranslationView() {
     'omnidoc-layout-metrics': 'Omnidoc · layout measurements',
     'omnidoc-layout-metrics-status': 'Omnidoc · layout measurement failed',
     'omnidoc-placement-plan': 'Omnidoc · placement plan',
-    'omnidoc-preview': 'Omnidoc · placement preview',
     'omnidoc-coverage': 'Omnidoc · analysis incomplete',
     rendered: 'Translated PDF',
     doclayout: 'PP-DocLayoutV2',
@@ -1730,9 +1649,9 @@ export function createPdfTranslationView() {
 
   function artifactLabel(name, result) {
     const label = ARTIFACT_LABELS[name] || name;
-    if (name !== 'omnidoc-preview') return label;
+    if (name !== 'rendered') return label;
     const statuses = (result?.response?.document?.pages || [])
-      .map((page) => page?.omnidoc_preview)
+      .map((page) => page?.omnidoc_placement)
       .filter(Boolean);
     if (!statuses.length) return label;
     const admitted = statuses.filter((status) => status.status === 'admitted').length;
@@ -1757,7 +1676,7 @@ export function createPdfTranslationView() {
         || (name !== 'input' && String(artifact.mime_type || '').toLowerCase().includes('pdf'));
     });
     const artifactOrder = [
-      'rendered', 'omnidoc-preview', 'omnidoc', 'omnidoc-target', 'omnidoc-placement-plan', 'omnidoc-layout-metrics', 'omnidoc-layout-metrics-status', 'paddleocr-v5', 'doclayout', 'doclayout-plus-l', 'doclayout-v3',
+      'rendered', 'omnidoc', 'omnidoc-target', 'omnidoc-placement-plan', 'omnidoc-layout-metrics', 'omnidoc-layout-metrics-status', 'paddleocr-v5', 'doclayout', 'doclayout-plus-l', 'doclayout-v3',
     ];
     const rank = (name) => {
       const index = artifactOrder.indexOf(name);
@@ -1962,9 +1881,8 @@ export function createPdfTranslationView() {
   modelSelect.addEventListener('change', updateModelSelectColor);
   // A render flag changing on a completed document re-renders it; with nothing loaded the new
   // value simply rides along on the next translation.
-  [renderSizeModeSelect, eraseFillModeSelect, sizeMetricModeSelect, sizeCohortModeSelect,
-    widthFitModeSelect, outputModeSelect, structureModeSelect, pageLayoutModeSelect,
-    omnidocSingleLaneFlowSelect, omnidocPageLayoutModeSelect, pageScaleSelect, doclayoutOverlaySelect,
+  [eraseFillModeSelect, outputModeSelect, structureModeSelect,
+    omnidocPageLayoutModeSelect, pageScaleSelect, doclayoutOverlaySelect,
     paddleocrV5OverlaySelect].forEach(
     (select) => select.addEventListener('change', rerenderRequest));
 
