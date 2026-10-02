@@ -151,7 +151,11 @@ This repo does not own:
   client of its own plugin and, where needed, the shared core client — never
   another plugin's.
 - `static/src/workflows/` contains the workflow views.
-- `static/css/` contains shared application styling.
+- `static/css/` contains what the shell itself needs plus the styling that more
+  than one category uses.
+- `static/src/plugins/<category-id>/styles/` is the css of one plugin, declared as
+  `styles` in the registry and linked by the shell — a category that is switched
+  off leaves its stylesheets out too.
 
 ### Support Files
 
