@@ -374,6 +374,11 @@ picks up frontend edits without clearing anything. There is no build step and no
 asset fingerprinting, so a browser is never told by URL that a module changed;
 revalidation is what keeps that workable.
 
+The one frontend input that is not a static file is `/plugins.js`, which
+`app/plugins.py` generates at import: restart the server after a pull that touches
+`app/`, or a running process keeps serving its old payload beside the new
+stylesheets and a category whose css moved with its plugin loads without it.
+
 ## Verification
 
 Run the Python tests:
