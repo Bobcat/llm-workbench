@@ -145,6 +145,13 @@ export function createPdfTranslationView() {
                   </select>
                 </label>
                 <label class="translation-prompts-field">
+                  <span>Column room</span>
+                  <select id="pdfColumnRoom" title="Bounded only. On, a translation that needs more height than its source frame may take the empty room its column has: the blocks below move along, gaps above headings close a little, or the gap under it shrinks, after the revision has had its turn. Nothing leaves its column, no type shrinks. Off keeps bounded placement strict.">
+                    <option value="off" selected>off — strict bounded</option>
+                    <option value="on">on — empty room in the column</option>
+                  </select>
+                </label>
+                <label class="translation-prompts-field">
                   <span>Doclayout overlay</span>
                   <select id="pdfDoclayoutOverlay" title="Also produce three PDFs showing what PP-DocLayoutV2, plus-L and V3 returned for each page: one box per raw region with its label and confidence, drawn on the source page. V2 feeds the translation pipeline; plus-L and V3 are comparison artifacts. Off by default because the two comparison models and three overlay documents add work. Pick them in the Artifact selector above once the run finishes.">
                     <option value="off" selected>off</option>
@@ -362,6 +369,7 @@ export function createPdfTranslationView() {
   const paddleocrV5OverlaySelect = container.querySelector('#pdfPaddleocrV5Overlay');
   const artifactSelect = container.querySelector('#pdfArtifact');
   const pageScaleSelect = container.querySelector('#pdfPageScale');
+  const columnRoomSelect = container.querySelector('#pdfColumnRoom');
   const inputPreview = container.querySelector('#pdfInputPreview');
   const inputEmpty = container.querySelector('#pdfInputEmpty');
   const outputPreview = container.querySelector('#pdfOutputPreview');
@@ -451,6 +459,7 @@ export function createPdfTranslationView() {
     structureModeSelect.disabled = renderLocked;
     omnidocPageLayoutModeSelect.disabled = renderLocked;
     pageScaleSelect.disabled = renderLocked;
+    columnRoomSelect.disabled = renderLocked;
     doclayoutOverlaySelect.disabled = renderLocked;
     paddleocrV5OverlaySelect.disabled = renderLocked;
     artifactSelect.disabled = isBusy;
@@ -466,6 +475,7 @@ export function createPdfTranslationView() {
       pdf_structure_mode: String(structureModeSelect.value || 'source_only'),
       omnidoc_page_layout_mode: String(omnidocPageLayoutModeSelect.value || 'bounded'),
       page_scale: Number(pageScaleSelect.value || 1),
+      omnidoc_column_room_enabled: String(columnRoomSelect.value || 'off') === 'on',
       doclayout_overlay: String(doclayoutOverlaySelect.value || 'off') === 'on',
       paddleocr_v5_overlay: String(paddleocrV5OverlaySelect.value || 'off') === 'on',
     };
@@ -526,6 +536,7 @@ export function createPdfTranslationView() {
       `${Number.isFinite(pageScale) ? pageScale.toFixed(2) : '1.00'} — from request`,
       true,
     );
+    setSelectValue(columnRoomSelect, options?.omnidoc_column_room_enabled ? 'on' : 'off');
     setSelectValue(doclayoutOverlaySelect, options?.doclayout_overlay ? 'on' : 'off');
     setSelectValue(paddleocrV5OverlaySelect, options?.paddleocr_v5_overlay ? 'on' : 'off');
     lastTargetLang = String(options?.target_lang_code || '');
@@ -1898,7 +1909,7 @@ export function createPdfTranslationView() {
   // A render flag changing on a completed document re-renders it; with nothing loaded the new
   // value simply rides along on the next translation.
   [eraseFillModeSelect, outputModeSelect, structureModeSelect,
-    omnidocPageLayoutModeSelect, pageScaleSelect, doclayoutOverlaySelect,
+    omnidocPageLayoutModeSelect, pageScaleSelect, columnRoomSelect, doclayoutOverlaySelect,
     paddleocrV5OverlaySelect].forEach(
     (select) => select.addEventListener('change', rerenderRequest));
 

@@ -168,8 +168,8 @@ export function createPdfTranslationRegressionView() {
         + 'captured before the settings were recorded</span></div>';
     }
     // The ones that decide which code runs lead; the rest keep their own order.
-    const lead = ['omnidoc_page_layout_mode', 'page_scale', 'analysis_dpi',
-      'erase_fill_mode', 'pdf_structure_mode'];
+    const lead = ['omnidoc_page_layout_mode', 'omnidoc_column_room_enabled', 'page_scale',
+      'analysis_dpi', 'erase_fill_mode', 'pdf_structure_mode'];
     const ordered = [
       ...lead.filter((k) => k in captured),
       ...keys.filter((k) => !lead.includes(k)),
