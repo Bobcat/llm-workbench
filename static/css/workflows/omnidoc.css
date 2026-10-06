@@ -29,6 +29,18 @@
 .placement-item.linked { stroke: #f59e0b; stroke-width: 1.6; }
 .placement-item.selected { fill: #facc1538; stroke: #e11d48; stroke-width: 2; }
 .placement-source-region { fill: transparent; stroke: #0f172a; stroke-width: 1.1; stroke-dasharray: 5 2; pointer-events: none; vector-effect: non-scaling-stroke; }
+.bounded-frame, .bounded-source { cursor: pointer; vector-effect: non-scaling-stroke; }
+.bounded-frame { fill: #2563eb10; stroke: #2563eb; stroke-width: 1; stroke-dasharray: 4 2; }
+.bounded-frame.rule-heading { fill: #ea580c14; stroke: #ea580c; }
+.bounded-frame.rule-table { fill: #0d948814; stroke: #0d9488; }
+.bounded-frame.rule-lanes { fill: #9333ea12; stroke: #9333ea; stroke-dasharray: 6 2 1 2; }
+.bounded-source { fill: transparent; stroke: #0f172a; stroke-width: 1; }
+.bounded-source.outcome-source-ink, .bounded-source.outcome-partly-set { stroke: #dc2626; stroke-width: 1.6; }
+.bounded-line { fill: #16a34a26; stroke: #16a34a; stroke-width: .6; pointer-events: none; vector-effect: non-scaling-stroke; }
+.bounded-frame:hover, .bounded-frame:focus, .bounded-source:hover, .bounded-source:focus { stroke-width: 2; outline: none; }
+.bounded-frame.selected { fill: #facc1540; stroke: #d97706; stroke-width: 2.5; }
+.bounded-source.selected { stroke: #d97706; stroke-width: 2.5; }
+.bounded-hide-frames .bounded-frame, .bounded-hide-sources .bounded-source, .bounded-hide-lines .bounded-line { display: none; }
 .omnidoc-details { overflow: auto; padding: 12px; font-size: 12px; border-left: 1px solid #64748b; }
 .omnidoc-details select { max-width: 100%; width: 100%; margin: 6px 0 12px; }
 .omnidoc-details strong, .omnidoc-details code { display: block; overflow-wrap: anywhere; margin: 5px 0; }
