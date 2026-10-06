@@ -210,6 +210,13 @@ export function createPdfTranslationView() {
                       <option value="document">document — classified once on page 1</option>
                     </select>
                   </label>
+                  <label class="translation-prompts-field">
+                    <span>Abbreviations</span>
+                    <select id="pdfAbbreviationTerms" title="A source abbreviation the translation kept, such as a British GP, gets the term a reader of the target language knows, decided once for the whole document. International abbreviations, names of organisations and terms the target language uses as well stay as they are. Takes effect at translation; a re-render keeps the stored translation.">
+                      <option value="on" selected>on — the reader's own term</option>
+                      <option value="off">off — as the model translated</option>
+                    </select>
+                  </label>
                 </div>
               </div>
             </details>
@@ -269,6 +276,10 @@ export function createPdfTranslationView() {
                 <label class="translation-prompts-field translation-prompts-field-response">
                   <span>Font detection — selected page</span>
                   <textarea id="pdfFontCalls" rows="8" spellcheck="false" placeholder="Font-region calls for this page, with each crop, prompt, response and duration."></textarea>
+                </label>
+                <label class="translation-prompts-field translation-prompts-field-response">
+                  <span>Abbreviations — whole document</span>
+                  <textarea id="pdfAbbreviationCalls" rows="8" spellcheck="false" placeholder="The source abbreviations the translation kept: what the document writes for each and why, and the montage calls that decided it. A page's rewrite call is under Other calls."></textarea>
                 </label>
               </div>
             </details>
@@ -360,6 +371,7 @@ export function createPdfTranslationView() {
   const pageConcurrencyInput = container.querySelector('#pdfPageConcurrency');
   const translatorSelect = container.querySelector('#pdfTranslatorModel');
   const translationPromptSelect = container.querySelector('#pdfTranslationPrompt');
+  const abbreviationTermsSelect = container.querySelector('#pdfAbbreviationTerms');
   const pageCategoryModeSelect = container.querySelector('#pdfPageCategoryMode');
   const eraseFillModeSelect = container.querySelector('#pdfEraseFillMode');
   const outputModeSelect = container.querySelector('#pdfOutputMode');
@@ -403,6 +415,8 @@ export function createPdfTranslationView() {
     other: container.querySelector('#pdfOtherCalls'),
     font: container.querySelector('#pdfFontCalls'),
   };
+  // Document-wide, so outside callEls: switching pages does not clear it.
+  const abbreviationCallsEl = container.querySelector('#pdfAbbreviationCalls');
   const regInfoEl = container.querySelector('#pdfRegInfo');
   const regSubdirSel = container.querySelector('#pdfRegSubdir');
   const regSubdirNew = container.querySelector('#pdfRegSubdirNew');
@@ -453,6 +467,7 @@ export function createPdfTranslationView() {
     translatorSelect.disabled = settingsLocked;
     pageConcurrencyInput.disabled = settingsLocked;
     translationPromptSelect.disabled = settingsLocked;
+    abbreviationTermsSelect.disabled = settingsLocked;
     pageCategoryModeSelect.disabled = settingsLocked;
     eraseFillModeSelect.disabled = renderLocked;
     outputModeSelect.disabled = renderLocked;
@@ -489,6 +504,7 @@ export function createPdfTranslationView() {
       page_concurrency: String(pageConcurrencyInput.value || ''),
       translation_prompt_id: String(translationPromptSelect.value || ''),
       page_category_mode: String(pageCategoryModeSelect.value || ''),
+      abbreviation_terms_enabled: String(abbreviationTermsSelect.value || 'on') === 'on',
       ...renderFlags(),
     };
   }
@@ -524,6 +540,8 @@ export function createPdfTranslationView() {
       ? ''
       : String(options.page_concurrency);
     setSelectValue(translationPromptSelect, options?.translation_prompt_id);
+    // A run that did not record it took the default: on.
+    setSelectValue(abbreviationTermsSelect, options?.abbreviation_terms_enabled === false ? 'off' : 'on');
     setSelectValue(pageCategoryModeSelect, options?.page_category_mode);
     setSelectValue(eraseFillModeSelect, options?.erase_fill_mode || 'inpaint');
     setSelectValue(outputModeSelect, options?.pdf_output_mode || 'vector');
@@ -639,6 +657,7 @@ export function createPdfTranslationView() {
     if (promptId) payload.translation_prompt_id = promptId;
     const categoryMode = String(pageCategoryModeSelect.value || '').trim();
     if (categoryMode) payload.page_category_mode = categoryMode;
+    payload.abbreviation_terms_enabled = String(abbreviationTermsSelect.value || 'on') === 'on';
     Object.assign(payload, translatorFields(model), renderFlags());
     return payload;
   }
@@ -1372,6 +1391,9 @@ export function createPdfTranslationView() {
   // studying one page across renders, and being thrown back to page 1 each time defeats that.
   let callsPage = 0;
   let callsLoadedFor = '';
+  // The document's abbreviation report, fetched once per request when the section is open.
+  let abbreviationsAvailable = false;
+  let abbreviationsLoadedFor = '';
 
   function pagesWithCalls(result) {
     const artifacts = result?.response?.artifacts || {};
@@ -1383,6 +1405,9 @@ export function createPdfTranslationView() {
   }
 
   function syncCallsSection(result) {
+    abbreviationsAvailable = Boolean(result?.response?.artifacts?.abbreviations);
+    if (abbreviationsLoadedFor !== String(currentRequestId || '')) abbreviationsLoadedFor = '';
+    if (callsDetails.open) loadAbbreviations();
     const pages = pagesWithCalls(result);
     if (!pages.length) {
       callsPageSelect.innerHTML = '';
@@ -1517,8 +1542,47 @@ export function createPdfTranslationView() {
     loadCallsForPage();
   });
   callsDetails.addEventListener('toggle', () => {
-    if (callsDetails.open) loadCallsForPage();
+    if (callsDetails.open) {
+      loadCallsForPage();
+      loadAbbreviations();
+    }
   });
+
+  async function loadAbbreviations() {
+    const requestId = String(currentRequestId || '');
+    if (!requestId || abbreviationsLoadedFor === requestId) return;
+    abbreviationsLoadedFor = requestId;
+    if (!abbreviationsAvailable) {
+      abbreviationCallsEl.value = '(none — this run made no abbreviation decisions)';
+      return;
+    }
+    try {
+      const url = `/api/pdf-translation/requests/${encodeURIComponent(requestId)}/artifacts/abbreviations`;
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      abbreviationCallsEl.value = formatAbbreviations(await response.json());
+    } catch (err) {
+      abbreviationsLoadedFor = '';
+      abbreviationCallsEl.value = `Could not load the abbreviation report: ${err.message || err}`;
+    }
+  }
+
+  // Each kept abbreviation with what the document writes for it and the evidence (a definition
+  // in the source, or the model), then the montage calls that decided them.
+  function formatAbbreviations(report) {
+    const decisions = Array.isArray(report?.decisions) ? report.decisions : [];
+    const lines = decisions.map((decision) => {
+      const units = Array.isArray(decision?.units) ? decision.units.length : 0;
+      const what = decision?.term ? `→ ${decision.term}` : '— kept';
+      return `${decision?.abbreviation} ${what}   (${decision?.evidence}; ${units} unit${units === 1 ? '' : 's'})`;
+    });
+    const calls = Array.isArray(report?.montage_calls) ? report.montage_calls : [];
+    return [
+      `# decisions (${decisions.length})\n`
+        + (lines.join('\n') || '(none — the translation kept no source abbreviation)'),
+      ...calls.map((call) => formatCall(call)),
+    ].join('\n\n──────────\n\n');
+  }
 
   function clearOutputPreview() {
     omnidocInspector.hide();
