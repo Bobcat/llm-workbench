@@ -142,6 +142,13 @@ export function createPdfTranslationView() {
                     <option value="0.94">0.94</option>
                     <option value="0.90">0.90 — what the reference system uses</option>
                     <option value="0.85">0.85</option>
+                    <option value="0.80">0.80</option>
+                    <option value="0.75">0.75</option>
+                    <option value="0.70">0.70</option>
+                    <option value="0.65">0.65</option>
+                    <option value="0.60">0.60</option>
+                    <option value="0.55">0.55</option>
+                    <option value="0.50">0.50 — the smallest the service accepts</option>
                   </select>
                 </label>
                 <label class="translation-prompts-field">
