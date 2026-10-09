@@ -190,6 +190,14 @@ export function createPdfTranslationView() {
                     <select id="pdfModel"><option value="">Loading models…</option></select>
                   </label>
                   <label class="translation-prompts-field">
+                    <span>Grouping image budget</span>
+                    <select id="pdfGroupingImageBudget" title="Image tokens per page for the grouping model. Auto gives a scanned page or a page whose text layer is Chinese, Japanese or Korean 1120 and every other page 560. Takes effect at grouping; a re-render keeps the stored grouping.">
+                      <option value="auto" selected>auto — 1120 for scans and CJK, 560 otherwise</option>
+                      <option value="560">560</option>
+                      <option value="1120">1120</option>
+                    </select>
+                  </label>
+                  <label class="translation-prompts-field">
                     <span>Translation model</span>
                     <select id="pdfTranslatorModel"><option value="">Same as grouping model</option></select>
                   </label>
@@ -375,6 +383,7 @@ export function createPdfTranslationView() {
   const statQueueEl = container.querySelector('#pdfStatQueue');
   const rawEl = container.querySelector('#pdfRaw');
   const modelSelect = container.querySelector('#pdfModel');
+  const groupingImageBudgetSelect = container.querySelector('#pdfGroupingImageBudget');
   const pageConcurrencyInput = container.querySelector('#pdfPageConcurrency');
   const translatorSelect = container.querySelector('#pdfTranslatorModel');
   const translationPromptSelect = container.querySelector('#pdfTranslationPrompt');
@@ -471,6 +480,7 @@ export function createPdfTranslationView() {
     if (browseBtn) browseBtn.disabled = isBusy;
     targetInput.disabled = settingsLocked;
     modelSelect.disabled = settingsLocked;
+    groupingImageBudgetSelect.disabled = settingsLocked;
     translatorSelect.disabled = settingsLocked;
     pageConcurrencyInput.disabled = settingsLocked;
     translationPromptSelect.disabled = settingsLocked;
@@ -507,6 +517,7 @@ export function createPdfTranslationView() {
     return {
       target_lang_code: String(targetInput.value || ''),
       grouping_model: String(modelSelect.value || ''),
+      grouping_image_budget: String(groupingImageBudgetSelect.value || 'auto'),
       translator_model: String(translatorSelect.value || ''),
       page_concurrency: String(pageConcurrencyInput.value || ''),
       translation_prompt_id: String(translationPromptSelect.value || ''),
@@ -542,6 +553,7 @@ export function createPdfTranslationView() {
   function applyControlState(options) {
     setSelectValue(targetInput, options?.target_lang_code);
     setSelectValue(modelSelect, options?.grouping_model);
+    setSelectValue(groupingImageBudgetSelect, String(options?.grouping_image_budget ?? 'auto'));
     setSelectValue(translatorSelect, options?.translator_model);
     pageConcurrencyInput.value = options?.page_concurrency == null
       ? ''
@@ -653,6 +665,8 @@ export function createPdfTranslationView() {
     lastTargetLang = targetLang;
     const model = String(modelSelect.value || '').trim();
     if (model) payload.grouping_model = model;
+    const imageBudget = String(groupingImageBudgetSelect.value || 'auto');
+    payload.grouping_image_budget = imageBudget === 'auto' ? 'auto' : Number(imageBudget);
     // Empty means "host default": omit the field entirely rather than guessing a number here.
     const concurrency = Math.round(Number(pageConcurrencyInput.value));
     if (Number.isFinite(concurrency) && concurrency >= 1) {
