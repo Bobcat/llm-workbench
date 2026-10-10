@@ -191,8 +191,8 @@ export function createPdfTranslationView() {
                   </label>
                   <label class="translation-prompts-field">
                     <span>Grouping image budget</span>
-                    <select id="pdfGroupingImageBudget" title="Image tokens per page for the grouping model. Auto gives a scanned page or a page whose text layer is Chinese, Japanese or Korean 1120 and every other page 560. Takes effect at grouping; a re-render keeps the stored grouping.">
-                      <option value="auto" selected>auto — 1120 for scans and CJK, 560 otherwise</option>
+                    <select id="pdfGroupingImageBudget" title="Image tokens per page for the grouping model. Auto gives every page 560; 1120 reads small print better and takes longer. Takes effect at grouping; a re-render keeps the stored grouping.">
+                      <option value="auto" selected>auto — 560</option>
                       <option value="560">560</option>
                       <option value="1120">1120</option>
                     </select>
