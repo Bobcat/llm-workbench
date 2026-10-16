@@ -26,6 +26,8 @@ export function createPlacementPlanInspector(host) {
     const targetElements = new Map(target.elements.map((element) => [element.id, element]));
     const sourceRegions = new Map((source.regions || []).map((region) => [region.id, region]));
     const pageFixedObjectIds = new Set(plan.page_fixed_object_ids);
+    const visibleObject = (item) => showFurniture || item.content_class === 'formula'
+      || !pageFixedObjectIds.has(item.id);
     const pageTargets = plan.targets.filter((item) => item.page_ids.includes(page.id));
     const pageObjects = plan.physical_objects.filter((item) => item.page_id === page.id);
     const allItems = [
@@ -44,7 +46,7 @@ export function createPlacementPlanInspector(host) {
       : pageItems.filter((item) => (
         item.record_kind === 'target'
           ? item.mobility !== 'page_fixed'
-          : !pageFixedObjectIds.has(item.id)
+          : visibleObject(item)
       ));
     const active = allItems.find((item) => item.id === selected) || null;
     const linkedIds = new Set([
@@ -61,14 +63,23 @@ export function createPlacementPlanInspector(host) {
           item.id === selected ? 'selected' : '',
           linkedIds.has(item.id) ? 'linked' : '',
         ].filter(Boolean).join(' ');
-        return `<polygon points="${boxPoints(item.bounding_box)}" class="${classes}" data-placement="${escapeAttr(item.id)}" tabindex="0" role="button" aria-label="${escapeAttr(label)}"><title>${escapeHtml(label)}</title></polygon>`;
+        const frames = item.shape === 'reflowable'
+          ? (item.regions || []).map((ref) => sourceRegions.get(ref.region_id))
+            .filter((region) => region?.page_id === page.id && region.kind !== 'reference'
+              && region.polygon?.length)
+          : [];
+        const footprints = frames.length > 1
+          ? frames.map((region) => polygonPoints(region.polygon))
+          : [boxPoints(item.bounding_box)];
+        return footprints.map((points) => `<polygon points="${points}" class="${classes}" data-placement="${escapeAttr(item.id)}" tabindex="0" role="button" aria-label="${escapeAttr(label)}"><title>${escapeHtml(label)}</title></polygon>`).join('');
       }).join('');
     const objectOverlay = pageObjects
-      .filter((item) => showFurniture || !pageFixedObjectIds.has(item.id))
+      .filter(visibleObject)
       .map((item) => {
         const label = `${item.object_kind} · rigid · ${pageFixedObjectIds.has(item.id) ? 'page_fixed' : 'movable'}`;
         const classes = [
           'placement-item', 'placement-object',
+          pageFixedObjectIds.has(item.id) ? 'fixed' : '',
           item.id === selected ? 'selected' : '',
           linkedIds.has(item.id) ? 'linked' : '',
         ].filter(Boolean).join(' ');
@@ -96,8 +107,8 @@ export function createPlacementPlanInspector(host) {
         <a href="${artifactUrl('omnidoc-placement-plan')}" download="omnidoc-placement-plan.json">Download placement plan</a>
         <label>Page <select data-page>${source.pages.map((item, index) => `<option value="${index}" ${index === pageIndex ? 'selected' : ''}>${item.index + 1}</option>`).join('')}</select> / ${source.pages.length}</label>
         <span>${pageTargets.length} targets · ${pageObjects.length} physical objects · ${pageObjects.filter((item) => pageFixedObjectIds.has(item.id)).length} page-fixed · ${withoutPage.length} targets without page</span>
-        <label><input type="checkbox" data-furniture ${showFurniture ? 'checked' : ''}> Show page-fixed objects</label>
-        <span>Green: flow eligible · dashed blue: withheld · purple: physical object</span>
+        <label><input type="checkbox" data-furniture ${showFurniture ? 'checked' : ''}> Show other page-fixed objects</label>
+        <span>Green: flow eligible · dashed blue: withheld target · purple: physical object · dashed purple: page-fixed</span>
         <span class="omnidoc-coverage" role="status">Inspection only · PDF placement unchanged</span>
       </div>
       <div class="omnidoc-body">
@@ -133,7 +144,7 @@ export function createPlacementPlanInspector(host) {
       if (!showFurniture && (
         active?.record_kind === 'target'
           ? active.mobility === 'page_fixed'
-          : pageFixedObjectIds.has(active?.id)
+          : active && !visibleObject(active)
       )) selected = '';
       render();
     });
