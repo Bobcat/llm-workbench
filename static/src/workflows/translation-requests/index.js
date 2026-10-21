@@ -420,8 +420,6 @@ export function createTranslationRequestsView() {
 
   function buildRequestPayload() {
     const payload = {
-      task: 'translate_image',
-      priority: 'normal',
       // Ask the pipeline for the OCR ("Text planes") + grouping debug overlays. They are off by
       // default (a non-debug caller like the asr app skips that ~1s of full-image rendering); the
       // workbench is the debug surface, so it opts in to populate those artifact previews.

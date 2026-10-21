@@ -17,3 +17,14 @@ class PdfTranslationApiTests(unittest.TestCase):
             path="/v1/requests",
             timeout=15.0,
         )
+
+    def test_a_rerender_goes_to_the_pdf_route(self) -> None:
+        with mock.patch.object(pdf, "_request_json", return_value={}) as request_json:
+            pdf.rerender_request("req_pdf", {"page_scale": 0.9})
+
+        request_json.assert_called_once_with(
+            method="POST",
+            path="/v1/pdf-requests/req_pdf/rerender",
+            payload={"page_scale": 0.9},
+            timeout=60.0,
+        )

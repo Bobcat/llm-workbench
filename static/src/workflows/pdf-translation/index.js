@@ -655,8 +655,6 @@ export function createPdfTranslationView() {
 
   function buildRequestPayload() {
     const payload = {
-      task: 'translate_pdf',
-      priority: 'normal',
       // Source is auto-detected downstream; send a fixed 'auto' to satisfy the pipeline's guard.
       source_lang_code: 'auto',
     };

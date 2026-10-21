@@ -41,7 +41,7 @@ async def submit_request(
 ) -> dict:
     document_bytes = await document_file.read()
     return _submit_document_multipart(
-        path="/v1/requests",
+        path="/v1/pdf-requests",
         request_json=request_json,
         filename=str(document_file.filename or "document.pdf"),
         content_type=str(document_file.content_type or "application/pdf"),
@@ -70,7 +70,7 @@ def rerender_request(request_id: str, body: dict | None = None) -> dict:
     safe_request_id = parse.quote(request_id, safe="")
     return _request_json(
         method="POST",
-        path=f"/v1/requests/{safe_request_id}/rerender",
+        path=f"/v1/pdf-requests/{safe_request_id}/rerender",
         payload=dict(body or {}),
         timeout=60.0,
     )

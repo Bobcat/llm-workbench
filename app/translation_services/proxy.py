@@ -64,7 +64,7 @@ async def submit_request(
 ) -> dict:
     image_bytes = await image_file.read()
     return _request_multipart_json(
-        path="/v1/requests",
+        path="/v1/image-requests",
         request_json=request_json,
         image_filename=str(image_file.filename or "image"),
         image_content_type=str(image_file.content_type or "application/octet-stream"),
@@ -90,7 +90,7 @@ def retranslate_request(request_id: str, body: dict | None = None) -> dict:
     safe_request_id = parse.quote(request_id, safe="")
     return _request_json(
         method="POST",
-        path=f"/v1/requests/{safe_request_id}/retranslate",
+        path=f"/v1/image-requests/{safe_request_id}/retranslate",
         payload=dict(body or {}),
         timeout=60.0,
     )
@@ -101,7 +101,7 @@ def rerender_request(request_id: str, body: dict | None = None) -> dict:
     safe_request_id = parse.quote(request_id, safe="")
     return _request_json(
         method="POST",
-        path=f"/v1/requests/{safe_request_id}/rerender",
+        path=f"/v1/image-requests/{safe_request_id}/rerender",
         payload=dict(body or {}),
         timeout=60.0,
     )
