@@ -20,7 +20,7 @@ const OUTCOMES = {
   'not-set': 'Not set',
 };
 
-// The branch of the plan's frame rule an area took (app/pdf/omnidoc/page_placement.py).
+// The branch of the plan's frame rule an area took (app/pipelines/pdf/omnidoc/page_placement.py).
 function frameRule(area) {
   const kinds = area.kinds || [];
   if ((area.lanes || []).length) return 'lanes';
