@@ -153,7 +153,7 @@ export function createBoundedFramesInspector(host) {
       return total;
     }, {});
     const pageNote = records
-      ? `${records.length} areas · ${counts.set || 0} set · ${counts['partly-set'] || 0} partly set · ${counts['source-ink'] || 0} kept source ink · profile ${escapeHtml(statusPage.diagnostics.typography_profile || '—')}`
+      ? `${records.length} areas · ${counts.set || 0} set · ${counts['partly-set'] || 0} partly set · ${counts['source-ink'] || 0} kept source ink`
       : statusPage
         ? `Not set in bounded areas · ${escapeHtml(statusPage.status || '')}${statusPage.reason ? ` · ${escapeHtml(statusPage.reason)}` : ''}${statusPage.diagnostics?.mode ? ` · ${escapeHtml(statusPage.diagnostics.mode)}` : ''}`
         : 'No placement status for this page';
