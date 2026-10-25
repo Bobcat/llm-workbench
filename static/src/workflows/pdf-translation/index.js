@@ -129,14 +129,6 @@ export function createPdfTranslationView() {
                   </select>
                 </label>
                 <label class="translation-prompts-field">
-                  <span>Page layout</span>
-                  <select id="pdfOmnidocPageLayoutMode" title="How Omnidoc places the translated PDF. Auto flows a proven terminal text lane and keeps other pages bounded. Flowing requests that route wherever it is proven; text may continue on an added page. Pages without a proven flow remain bounded. Bounded keeps text within the source page's fixed frames and may reduce its size locally.">
-                    <option value="auto">auto — choose per page</option>
-                    <option value="flowing">flowing — where proven</option>
-                    <option value="bounded" selected>bounded — fit on source pages</option>
-                  </select>
-                </label>
-                <label class="translation-prompts-field">
                   <span>Page scale</span>
                   <select id="pdfPageScale" title="The Omnidoc type size as a fraction of the source's own. Smaller type gives longer translations more room. The caller's selected scale is the upper bound; placement does not multiply it by another hidden scale.">
                     <option value="1.0" selected>1.00 — the source's own size</option>
@@ -151,13 +143,6 @@ export function createPdfTranslationView() {
                     <option value="0.60">0.60</option>
                     <option value="0.55">0.55</option>
                     <option value="0.50">0.50 — the smallest the service accepts</option>
-                  </select>
-                </label>
-                <label class="translation-prompts-field">
-                  <span>Column room</span>
-                  <select id="pdfColumnRoom" title="Bounded only. On, a translation that needs more height than its source frame may take the empty room its column has: the blocks below move along, gaps above headings close a little, or the gap under it shrinks, after the revision has had its turn. Nothing leaves its column, no type shrinks. Off keeps bounded placement strict.">
-                    <option value="off">off — strict bounded</option>
-                    <option value="on" selected>on — empty room in the column</option>
                   </select>
                 </label>
                 <label class="translation-prompts-field">
@@ -394,12 +379,10 @@ export function createPdfTranslationView() {
   const eraseFillModeSelect = container.querySelector('#pdfEraseFillMode');
   const outputModeSelect = container.querySelector('#pdfOutputMode');
   const structureModeSelect = container.querySelector('#pdfStructureMode');
-  const omnidocPageLayoutModeSelect = container.querySelector('#pdfOmnidocPageLayoutMode');
   const doclayoutOverlaySelect = container.querySelector('#pdfDoclayoutOverlay');
   const paddleocrV5OverlaySelect = container.querySelector('#pdfPaddleocrV5Overlay');
   const artifactSelect = container.querySelector('#pdfArtifact');
   const pageScaleSelect = container.querySelector('#pdfPageScale');
-  const columnRoomSelect = container.querySelector('#pdfColumnRoom');
   const inputPreview = container.querySelector('#pdfInputPreview');
   const inputEmpty = container.querySelector('#pdfInputEmpty');
   const outputPreview = container.querySelector('#pdfOutputPreview');
@@ -492,9 +475,7 @@ export function createPdfTranslationView() {
     eraseFillModeSelect.disabled = renderLocked;
     outputModeSelect.disabled = renderLocked;
     structureModeSelect.disabled = renderLocked;
-    omnidocPageLayoutModeSelect.disabled = renderLocked;
     pageScaleSelect.disabled = renderLocked;
-    columnRoomSelect.disabled = renderLocked;
     doclayoutOverlaySelect.disabled = renderLocked;
     paddleocrV5OverlaySelect.disabled = renderLocked;
     artifactSelect.disabled = isBusy;
@@ -508,9 +489,7 @@ export function createPdfTranslationView() {
       erase_fill_mode: String(eraseFillModeSelect.value || 'inpaint'),
       pdf_output_mode: String(outputModeSelect.value || 'vector'),
       pdf_structure_mode: String(structureModeSelect.value || 'source_only'),
-      omnidoc_page_layout_mode: String(omnidocPageLayoutModeSelect.value || 'bounded'),
       page_scale: Number(pageScaleSelect.value || 1),
-      omnidoc_column_room_enabled: String(columnRoomSelect.value || 'on') === 'on',
       doclayout_overlay: String(doclayoutOverlaySelect.value || 'off') === 'on',
       paddleocr_v5_overlay: String(paddleocrV5OverlaySelect.value || 'off') === 'on',
     };
@@ -568,7 +547,6 @@ export function createPdfTranslationView() {
     setSelectValue(eraseFillModeSelect, options?.erase_fill_mode || 'inpaint');
     setSelectValue(outputModeSelect, options?.pdf_output_mode || 'vector');
     setSelectValue(structureModeSelect, options?.pdf_structure_mode || 'source_only');
-    setSelectValue(omnidocPageLayoutModeSelect, options?.omnidoc_page_layout_mode || 'bounded');
     const pageScale = Number(options?.page_scale ?? 1);
     setSelectValue(
       pageScaleSelect,
@@ -576,8 +554,6 @@ export function createPdfTranslationView() {
       `${Number.isFinite(pageScale) ? pageScale.toFixed(2) : '1.00'} — from request`,
       true,
     );
-    // A run that did not record it took the default: on.
-    setSelectValue(columnRoomSelect, options?.omnidoc_column_room_enabled === false ? 'off' : 'on');
     setSelectValue(doclayoutOverlaySelect, options?.doclayout_overlay ? 'on' : 'off');
     setSelectValue(paddleocrV5OverlaySelect, options?.paddleocr_v5_overlay ? 'on' : 'off');
     lastTargetLang = String(options?.target_lang_code || '');
@@ -806,7 +782,7 @@ export function createPdfTranslationView() {
         } else if (isRerendering) {
           isRerendering = false;
           setStatus(String(result?.state) === 'completed'
-            ? `Re-rendered (${String(omnidocPageLayoutModeSelect.value)}, scale ${String(pageScaleSelect.value)}, ${String(eraseFillModeSelect.value)}).`
+            ? `Re-rendered (scale ${String(pageScaleSelect.value)}, ${String(eraseFillModeSelect.value)}).`
             : `Re-render ${String(result?.state || 'ended')}.`);
         } else {
           loadRecentRequests(`current:${currentRequestId}`);
@@ -2007,8 +1983,7 @@ export function createPdfTranslationView() {
   // A render flag changing on a completed document re-renders it; with nothing loaded the new
   // value simply rides along on the next translation.
   [eraseFillModeSelect, outputModeSelect, structureModeSelect,
-    omnidocPageLayoutModeSelect, pageScaleSelect, columnRoomSelect, doclayoutOverlaySelect,
-    paddleocrV5OverlaySelect].forEach(
+    pageScaleSelect, doclayoutOverlaySelect, paddleocrV5OverlaySelect].forEach(
     (select) => select.addEventListener('change', rerenderRequest));
 
   // Choosing another finished document only re-points the frame — nothing is re-run.
