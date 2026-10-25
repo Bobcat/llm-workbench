@@ -78,6 +78,7 @@
 .story-panel .story-kind li.selected button { font-weight: 600; }
 .story-panel .story-kind button.kept { color: #dc2626; }
 .story-panel .story-kind button.withheld { color: #7c3aed; }
+.story-panel .story-kind button.partly { color: #d97706; }
 .story-panel .story-selected { margin-top: 12px; border-top: 1px solid #64748b; padding-top: 8px; }
 .story-attempts { width: 100%; border-collapse: collapse; }
 .story-attempts th, .story-attempts td { padding: 3px 4px; border-bottom: 1px solid var(--text-muted); text-align: left; vertical-align: top; }

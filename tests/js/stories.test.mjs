@@ -113,13 +113,13 @@ function fakeHost() {
   };
 }
 
-async function shown(pages, { status = admitted, turns = null, document = null } = {}) {
+async function shown(pages, { status = admitted, turns = null, document = null, storiesDocument = stories } = {}) {
   const original = api.getPdfArtifactJson;
   api.getPdfArtifactJson = async (_id, name) => {
     if (name === 'omnidoc-page-turns' && !turns) throw new Error('404');
     return ({
       omnidoc: { pages },
-      'omnidoc-stories': stories,
+      'omnidoc-stories': storiesDocument,
       'omnidoc-placement-status': status,
       'omnidoc-page-turns': turns,
       document,
@@ -200,4 +200,30 @@ test('a group the export kept in its source reads as kept for the story it deliv
   assert.match(html, /4 stories · 1 set · 3 kept source · 1 group\(s\) the export kept in source match no story/);
   // item-4's lines are no longer drawn as delivered: item-7's one line is.
   assert.equal(count(html, /class="story-line"/g), 1);
+});
+
+test('a story one of whose groups the export kept is kept in that frame only', async () => {
+  // Review 3 of PR 181: two lanes, two groups; the export keeps the first in its source and
+  // delivers the second. The second lane's line stays delivered.
+  const split = structuredClone(stories);
+  split.pages[0].stories[0].plan_groups = [
+    { erase_box: [50, 98, 250, 140], frames: ['item-4-lane-0'] },
+    { erase_box: [300, 40, 500, 80], frames: ['item-4-lane-1'] },
+  ];
+  const document = { pages: [{ page: 1, vector: { groups_held: 1, held_group_boxes_pt: [[50, 98, 250, 140]] } }] };
+  const html = await shown([{ id: 'p1', index: 0, width: 600, height: 800 }], { document, storiesDocument: split });
+  assert.match(html, /class="partly">item-4</);
+  assert.match(html, /4 stories · 1 set · 1 partly kept · 2 kept source/);
+  // item-4's first lane: its initial and two lines not delivered; its second lane's line and
+  // item-7's line delivered.
+  assert.equal(count(html, /class="story-line"/g), 2);
+  assert.match(html, /<rect x="50" y="100" width="200" height="40" class="story-frame kind-running-text kept"/);
+  assert.match(html, /<rect x="300" y="40" width="200" height="40" class="story-frame kind-running-text set"/);
+});
+
+test('a group the export kept is counted on a page without a story', async () => {
+  const document = { pages: [{ page: 3, vector: { groups_held: 1, held_group_boxes_pt: [[10, 10, 20, 20]] } }] };
+  const status = { pages: [{ page: 3, page_id: 'p3', status: 'admitted', diagnostics: { mode: 'bounded-regions' } }] };
+  const html = await shown([{ id: 'p3', index: 2, width: 600, height: 800 }], { document, status });
+  assert.match(html, /No story on this page · 1 group\(s\) the export kept in source match no story/);
 });

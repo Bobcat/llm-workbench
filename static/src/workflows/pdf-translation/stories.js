@@ -39,8 +39,9 @@ const rectText = (rect) => `${rect.map((value) => number(value, 1)).join(', ')} 
 // Every story of the run, keyed by the page that set it and its id: a story's frames may stand
 // on another page than the one that set it (a lane over a page turn). What became of it is the
 // final word of the delivery: a page it stands on withheld (a notice page in its place), the
-// part kept in its source after the fitting, its page turn held by the export, or one of its
-// groups kept in its source by the export on a page it otherwise delivered.
+// part kept in its source after the fitting, its page turn held by the export, or groups kept in
+// their source by the export on a page it otherwise delivered: each group on its own, so a story
+// one of whose groups was kept is kept only in the frames that group delivers.
 function collect(storiesDocument, statusDocument, turnsDocument, held) {
   const statuses = new Map((statusDocument?.pages || []).map((page) => [page.page, page]));
   const turns = turnsDocument?.turns || [];
@@ -51,6 +52,9 @@ function collect(storiesDocument, statusDocument, turnsDocument, held) {
     const tried = record.attempts.filter((attempt) => attempt.derived).length;
     const reported = record.chosen ?? Math.max(0, tried - 1);
     const pages = new Set([page.page, ...record.attempts[reported].requested.thread.frames.map((frame) => frame.page)]);
+    const groups = record.plan_groups || [];
+    const heldGroupsOfStory = groups.filter((group) => (held.get(page.page) || []).some((box) => sameBox(box, group.erase_box)));
+    const allHeld = groups.length > 0 && heldGroupsOfStory.length === groups.length;
     return {
       key: `${page.page}:${record.id}`,
       page: page.page,
@@ -62,9 +66,11 @@ function collect(storiesDocument, statusDocument, turnsDocument, held) {
       kept: [
         ...preserved.map((part) => part.reason),
         ...(turn?.status === 'source' ? [`page turn not delivered: ${turn.placement?.reason || turn.reason || 'source'}`] : []),
-        ...((record.plan_groups || []).some((group) => (held.get(page.page) || []).some((box) => sameBox(box, group.erase_box)))
-          ? ['held by the export: its source glyphs could not be erased exactly'] : []),
+        ...(allHeld ? ['held by the export: its source glyphs could not be erased exactly'] : []),
       ],
+      // The frames whose lines a group the export kept in its source would have delivered,
+      // where the story's other groups were delivered.
+      heldFrames: new Set(allHeld ? [] : heldGroupsOfStory.flatMap((group) => group.frames || [])),
       // The attempt the page reports: the chosen one, else the last one set.
       reported,
     };
@@ -89,11 +95,15 @@ function cellMatches(part, record) {
   return part.cell_ids.some((id) => selection.includes(String(id)));
 }
 
-// set: delivered; kept: its source stands there; withheld: a notice page stands there instead.
+// set: delivered; partly: delivered but in the frames of a group the export kept in its source;
+// kept: its source stands there; withheld: a notice page stands there instead.
 function outcome(story) {
   const { record } = story;
   if (story.withheld.length) {
     return { state: 'withheld', text: `Withheld at delivery: ${story.withheld.join(', ')}; a notice page stands in its place` };
+  }
+  if (record.chosen != null && !story.kept.length && story.heldFrames.size) {
+    return { state: 'partly', text: `Set by attempt ${record.chosen + 1} of ${record.attempts.length}, but held by the export in ${[...story.heldFrames].join(', ')}: its source glyphs could not be erased exactly, and that frame keeps its source` };
   }
   if (record.chosen != null && !story.kept.length) {
     return { state: 'set', text: `Set by attempt ${record.chosen + 1} of ${record.attempts.length}` };
@@ -144,7 +154,8 @@ export function createStoryInspector(host) {
       const frames = framesOf(attempt);
       frames.forEach((frame, position) => {
         if (frame.page !== pageNo) return;
-        parts.frames.push(box(frame.rect, `story-frame kind-${story.record.kind} ${state}${chosen}`,
+        const frameState = story.heldFrames.has(frame.id) ? 'kept' : state === 'partly' ? 'set' : state;
+        parts.frames.push(box(frame.rect, `story-frame kind-${story.record.kind} ${frameState}${chosen}`,
           target, `${story.record.id} · frame ${position + 1} of ${frames.length}`));
         if (frames.length > 1) {
           parts.threads.push(`<text x="${frame.rect[0] + 1.5}" y="${frame.rect[1] + 7}" class="story-frame-number">${position + 1}</text>`);
@@ -168,11 +179,12 @@ export function createStoryInspector(host) {
       }
       const derived = attempt.derived;
       if (derived) {
-        const delivered = index === story.record.chosen && state === 'set';
+        const delivered = index === story.record.chosen && (state === 'set' || state === 'partly');
         for (const piece of derived.pieces) {
           if (frames.find((item) => item.id === piece.frame)?.page !== pageNo) continue;
+          const here = delivered && !story.heldFrames.has(piece.frame);
           for (const line of piece.initial ? [piece.initial, ...piece.lines] : piece.lines) {
-            parts.lines.push(box(line.box, `story-line${delivered ? '' : ' unset'}`));
+            parts.lines.push(box(line.box, `story-line${here ? '' : ' unset'}`));
           }
         }
         const refusal = derived.refusal;
@@ -296,11 +308,12 @@ export function createStoryInspector(host) {
     const withheldNote = statusPage && statusPage.status !== 'admitted' && onPage.length
       ? `Page withheld at delivery: ${escapeHtml(statusPage.reason || statusPage.status)} · `
       : '';
-    const pageNote = onPage.length
-      ? `${withheldNote}${onPage.length} stories · ${tally('set')} set · ${tally('kept')} kept source${tally('withheld') ? ` · ${tally('withheld')} withheld` : ''}${unmatched.length ? ` · ${unmatched.length} group(s) the export kept in source match no story` : ''}`
+    const pageNote = (onPage.length
+      ? `${withheldNote}${onPage.length} stories · ${tally('set')} set${tally('partly') ? ` · ${tally('partly')} partly kept` : ''} · ${tally('kept')} kept source${tally('withheld') ? ` · ${tally('withheld')} withheld` : ''}`
       : statusPage?.diagnostics?.mode === 'bounded-regions'
         ? 'No story on this page'
-        : `No story records: ${escapeHtml(statusPage?.diagnostics?.mode || statusPage?.reason || 'not set in bounded areas')}`;
+        : `No story records: ${escapeHtml(statusPage?.diagnostics?.mode || statusPage?.reason || 'not set in bounded areas')}`)
+      + (unmatched.length ? ` · ${unmatched.length} group(s) the export kept in source match no story` : '');
     const list = kinds.map((kind) => `
       <div class="story-kind">
         <label><input type="checkbox" data-kind="${escapeAttr(kind)}" ${hiddenKinds.has(kind) ? '' : 'checked'}> ${escapeHtml(KINDS[kind] || kind)} · ${onPage.filter((story) => story.record.kind === kind).length}</label>
@@ -323,7 +336,7 @@ export function createStoryInspector(host) {
         </select></label>
         ${Object.entries(LAYERS).map(([name, label]) => `<label><input type="checkbox" data-layer="${name}" ${layers[name] ? 'checked' : ''}> ${label}</label>`).join('')}
         <span>${pageNote}</span>
-        <span>Frame colour: kind (red: kept source · purple: page withheld) · numbers and arrows: thread · dark: source the export erases · green: the translation's set lines (orange: not delivered) · red +: overset · grey dotted: the selected story's other attempts</span>
+        <span>Frame colour: kind (red: kept source, a whole story or one frame of it · purple: page withheld) · numbers and arrows: thread · dark: source the export erases · green: the translation's set lines (orange: not delivered) · red +: overset · grey dotted: the selected story's other attempts</span>
       </div>
       <div class="omnidoc-body">
         <div class="omnidoc-page-scroll"><div class="omnidoc-page" style="aspect-ratio:${page.width}/${page.height}">
