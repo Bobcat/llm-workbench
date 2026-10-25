@@ -51,6 +51,7 @@
 .story-frame.kind-footnote-block { --story-color: #c026d3; }
 .story-frame.kind-author-block { --story-color: #16a34a; }
 .story-frame.kept { stroke: #dc2626; stroke-dasharray: 4 2; }
+.story-frame.withheld { stroke: #7c3aed; stroke-dasharray: 2 2; }
 .story-frame:hover, .story-frame:focus { fill: #2563eb1a; stroke-width: 2; outline: none; }
 .story-frame.selected { fill: #facc1533; stroke-width: 2.5; }
 .story-frame-number { font: 600 6px sans-serif; fill: #1e3a8a; pointer-events: none; }
@@ -76,6 +77,7 @@
 .story-panel .story-kind li input { width: auto; }
 .story-panel .story-kind li.selected button { font-weight: 600; }
 .story-panel .story-kind button.kept { color: #dc2626; }
+.story-panel .story-kind button.withheld { color: #7c3aed; }
 .story-panel .story-selected { margin-top: 12px; border-top: 1px solid #64748b; padding-top: 8px; }
 .story-attempts { width: 100%; border-collapse: collapse; }
 .story-attempts th, .story-attempts td { padding: 3px 4px; border-bottom: 1px solid var(--text-muted); text-align: left; vertical-align: top; }

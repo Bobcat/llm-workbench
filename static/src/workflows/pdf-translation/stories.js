@@ -1,7 +1,8 @@
 // The stories a bounded page set, over the page: each story's frames numbered along its thread,
 // the lines each frame holds, the source it gives up, where it ran over or was refused, and the
 // attempts of its fitting (translation-services docs/omnidoc/story-design.md §10). Reads the
-// run's story records (`omnidoc-stories`) beside its placement status; inspection only.
+// run's story records (`omnidoc-stories`) beside its final placement status and its page turns
+// (`omnidoc-page-turns`), which say what the delivery did with them; inspection only.
 import { api } from '../../plugins/translation-services/api.js';
 import { escapeAttr, escapeHtml, formatApiError } from '../../shared/ui-helpers.js';
 
@@ -35,21 +36,33 @@ const number = (value, digits = 2) => (value == null ? '—' : Number(value).toF
 const rectText = (rect) => `${rect.map((value) => number(value, 1)).join(', ')} pt`;
 
 // Every story of the run, keyed by the page that set it and its id: a story's frames may stand
-// on another page than the one that set it (a lane over a page turn).
-function collect(storiesDocument, statusDocument) {
+// on another page than the one that set it (a lane over a page turn). What became of it is the
+// final word of the delivery: a page it stands on withheld (a notice page in its place), the
+// part kept in its source after the fitting, or its page turn held by the export.
+function collect(storiesDocument, statusDocument, turnsDocument) {
   const statuses = new Map((statusDocument?.pages || []).map((page) => [page.page, page]));
+  const turns = turnsDocument?.turns || [];
   return (storiesDocument?.pages || []).flatMap((page) => (page.stories || []).map((record) => {
     const preserved = (statuses.get(page.page)?.diagnostics?.preserved_parts || [])
       .filter((part) => part.unit_id === record.unit_id && cellMatches(part, record));
+    const turn = turns.find((item) => item.tail?.page === page.page && item.tail?.unit_id === record.unit_id);
     const tried = record.attempts.filter((attempt) => attempt.derived).length;
+    const reported = record.chosen ?? Math.max(0, tried - 1);
+    const pages = new Set([page.page, ...record.attempts[reported].requested.thread.frames.map((frame) => frame.page)]);
     return {
       key: `${page.page}:${record.id}`,
       page: page.page,
       record,
-      // What the adapter decided after the fitting: the part kept its source.
-      kept: preserved.map((part) => part.reason),
+      plan: page.placement_plan || null,
+      withheld: [...pages].sort((a, b) => a - b).map((number) => statuses.get(number))
+        .filter((status) => status && status.status !== 'admitted')
+        .map((status) => `page ${status.page} (${status.reason || status.status})`),
+      kept: [
+        ...preserved.map((part) => part.reason),
+        ...(turn?.status === 'source' ? [`page turn not delivered: ${turn.placement?.reason || turn.reason || 'source'}`] : []),
+      ],
       // The attempt the page reports: the chosen one, else the last one set.
-      reported: record.chosen ?? Math.max(0, tried - 1),
+      reported,
     };
   }));
 }
@@ -61,14 +74,18 @@ function cellMatches(part, record) {
   return part.cell_ids.some((id) => selection.includes(String(id)));
 }
 
+// set: delivered; kept: its source stands there; withheld: a notice page stands there instead.
 function outcome(story) {
   const { record } = story;
-  if (record.chosen != null && !story.kept.length) {
-    return { set: true, text: `Set by attempt ${record.chosen + 1} of ${record.attempts.length}` };
+  if (story.withheld.length) {
+    return { state: 'withheld', text: `Withheld at delivery: ${story.withheld.join(', ')}; a notice page stands in its place` };
   }
-  if (record.chosen != null) return { set: false, text: `Fitted by attempt ${record.chosen + 1}, then kept its source: ${story.kept.join(', ')}` };
+  if (record.chosen != null && !story.kept.length) {
+    return { state: 'set', text: `Set by attempt ${record.chosen + 1} of ${record.attempts.length}` };
+  }
+  if (record.chosen != null) return { state: 'kept', text: `Fitted by attempt ${record.chosen + 1}, then kept its source: ${story.kept.join(', ')}` };
   const refusal = record.attempts[story.reported]?.derived?.refusal;
-  return { set: false, text: `Kept its source: ${refusal ? REFUSALS[refusal.reason] || refusal.reason : 'no attempt fitted'}` };
+  return { state: 'kept', text: `Kept its source: ${refusal ? REFUSALS[refusal.reason] || refusal.reason : 'no attempt fitted'}` };
 }
 
 export function createStoryInspector(host) {
@@ -106,7 +123,7 @@ export function createStoryInspector(host) {
       const attempt = attemptOf(story);
       const index = story.record.attempts.indexOf(attempt);
       const chosen = story.key === selected ? ' selected' : '';
-      const state = outcome(story).set ? 'set' : 'kept';
+      const { state } = outcome(story);
       const target = ` data-story="${escapeAttr(story.key)}" tabindex="0" role="button"`;
       const frames = framesOf(attempt);
       frames.forEach((frame, position) => {
@@ -128,15 +145,19 @@ export function createStoryInspector(host) {
         for (const fragment of part.fragments) {
           const frame = frames.find((item) => item.id === fragment.frame);
           if (frame?.page !== pageNo) continue;
-          for (const rect of fragment.source_boxes) parts.sources.push(box(rect, `story-source${chosen}`));
+          for (const quad of fragment.source_quads) {
+            parts.sources.push(`<polygon points="${quad.map(([x, y]) => `${x},${y}`).join(' ')}" class="story-source${chosen}"/>`);
+          }
         }
       }
       const derived = attempt.derived;
       if (derived) {
-        const delivered = index === story.record.chosen && !story.kept.length;
+        const delivered = index === story.record.chosen && state === 'set';
         for (const piece of derived.pieces) {
           if (frames.find((item) => item.id === piece.frame)?.page !== pageNo) continue;
-          for (const line of piece.lines) parts.lines.push(box(line.box, `story-line${delivered ? '' : ' unset'}`));
+          for (const line of piece.initial ? [piece.initial, ...piece.lines] : piece.lines) {
+            parts.lines.push(box(line.box, `story-line${delivered ? '' : ' unset'}`));
+          }
         }
         const refusal = derived.refusal;
         if (refusal) {
@@ -195,6 +216,7 @@ export function createStoryInspector(host) {
     const derived = attempt.derived;
     const thread = requested.thread;
     const sizes = [...new Set((derived?.pieces || []).flatMap((piece) => piece.lines.map((line) => line.size)))];
+    const initial = (derived?.pieces || []).find((piece) => piece.initial)?.initial;
     const rows = record.attempts.map((item, position) => {
       const refusal = item.derived?.refusal;
       const result = !item.derived ? 'not set'
@@ -214,7 +236,7 @@ export function createStoryInspector(host) {
           <dt>Element</dt><dd>${escapeHtml(part.element)}${part.selection.length ? ` · cells ${escapeHtml(part.selection.join(', '))}` : ''}</dd>
           <dt>Geometry</dt><dd>break at ${escapeHtml(part.geometry.break_measure)} · fit by ${escapeHtml(part.geometry.fit)}${part.geometry.lane ? ' · lane' : ' · free, checked against its frame'}</dd>
           <dt>Keeps</dt><dd>${part.whole ? 'whole' : 'may split'}${part.keep_with_next ? ' · with next' : ''}${part.gap_before ? ` · gap ${number(part.gap_before, 1)} pt` : ''}</dd>
-          <dt>Fragments</dt><dd>${part.fragments.map((fragment) => `${escapeHtml(fragment.frame)}${fragment.shift ? ` moved ${number(fragment.shift, 1)} pt` : ''} · ${fragment.source_boxes.length} source box(es)`).join('<br>')}</dd>
+          <dt>Fragments</dt><dd>${part.fragments.map((fragment) => `${escapeHtml(fragment.frame)}${fragment.shift ? ` moved ${number(fragment.shift, 1)} pt` : ''} · ${fragment.source_quads.length} source quad(s) erased`).join('<br>')}</dd>
           ${part.settings.size_scale != null || part.settings.leading_scale != null ? `<dt>Own typography</dt><dd>size ×${number(part.settings.size_scale)} · leading ×${number(part.settings.leading_scale)}</dd>` : ''}
         </dl>
         <p class="story-text-block">${partText(part, derived)}</p>
@@ -223,9 +245,10 @@ export function createStoryInspector(host) {
       <code>${escapeHtml(KINDS[record.kind] || record.kind)} · unit ${escapeHtml(String(record.unit_id))} · set on page ${story.page}</code>
       <dl class="omnidoc-origin">
         <dt>Outcome</dt><dd>${escapeHtml(outcome(story).text)}</dd>
+        ${story.plan ? `<dt>Plan</dt><dd>${escapeHtml(story.plan.id)} · target ${escapeHtml(story.plan.target_revision_id)}</dd>` : ''}
         <dt>Thread</dt><dd>${escapeHtml(thread.id)} · ${escapeHtml(thread.origin)} · ${thread.frames.map((frame, position) => `${position + 1}: ${escapeHtml(frame.id)} (p${frame.page}, ${escapeHtml(frame.origin)}${frame.pinned ? ', pinned' : ''})`).join('<br>')}</dd>
         <dt>Requested</dt><dd>size ×${number(requested.settings.size_scale)} · leading ${requested.settings.leading_scale == null ? 'source' : `×${number(requested.settings.leading_scale)}`} · hyphen rule ${requested.hyphen_rule ? 'on' : 'off'}</dd>
-        <dt>Derived</dt><dd>${derived ? `size ×${number(derived.size_scale)} · leading ×${number(derived.leading_scale)} · lines at ${sizes.map((size) => `${number(size, 1)} pt`).join(', ') || '—'}` : 'not set'}</dd>
+        <dt>Derived</dt><dd>${derived ? `size ×${number(derived.size_scale)} · leading ×${number(derived.leading_scale)} · lines at ${sizes.map((size) => `${number(size, 1)} pt`).join(', ') || '—'}${initial ? ` · initial “${escapeHtml(initial.text)}” at ${number(initial.size, 1)} pt` : ''}` : 'not set'}</dd>
         ${derived?.refusal ? `<dt>Stopped</dt><dd>${escapeHtml(REFUSALS[derived.refusal.reason] || derived.refusal.reason)} · part ${escapeHtml(derived.refusal.part)} at ${derived.refusal.position}${derived.refusal.frame ? ` in ${escapeHtml(derived.refusal.frame)}` : ''}${derived.refusal.detail ? ` · ${escapeHtml(derived.refusal.detail)}` : ''}</dd>` : ''}
       </dl>
       <details open><summary>Fitting · attempt ${index + 1} shown</summary>
@@ -245,14 +268,18 @@ export function createStoryInspector(host) {
     const active = stories.find((story) => story.key === selected) || null;
     const kinds = [...new Set(onPage.map((story) => story.record.kind))]
       .sort((a, b) => Object.keys(KINDS).indexOf(a) - Object.keys(KINDS).indexOf(b));
-    const setCount = onPage.filter((story) => outcome(story).set).length;
+    const states = onPage.map((story) => outcome(story).state);
+    const tally = (state) => states.filter((item) => item === state).length;
     const ownIds = new Set(stories.filter((story) => story.page === pageNo).map((story) => story.record.unit_id));
     const withoutStory = (statusPage?.diagnostics?.preserved_parts || []).filter((part) => !ownIds.has(part.unit_id));
     const imageName = background === 'translated'
       ? `page-${String(pageNo).padStart(3, '0')}`
       : `page-${String(pageNo).padStart(3, '0')}-source`;
+    const withheldNote = statusPage && statusPage.status !== 'admitted' && onPage.length
+      ? `Page withheld at delivery: ${escapeHtml(statusPage.reason || statusPage.status)} · `
+      : '';
     const pageNote = onPage.length
-      ? `${onPage.length} stories · ${setCount} set · ${onPage.length - setCount} kept source`
+      ? `${withheldNote}${onPage.length} stories · ${tally('set')} set · ${tally('kept')} kept source${tally('withheld') ? ` · ${tally('withheld')} withheld` : ''}`
       : statusPage?.diagnostics?.mode === 'bounded-regions'
         ? 'No story on this page'
         : `No story records: ${escapeHtml(statusPage?.diagnostics?.mode || statusPage?.reason || 'not set in bounded areas')}`;
@@ -261,7 +288,7 @@ export function createStoryInspector(host) {
         <label><input type="checkbox" data-kind="${escapeAttr(kind)}" ${hiddenKinds.has(kind) ? '' : 'checked'}> ${escapeHtml(KINDS[kind] || kind)} · ${onPage.filter((story) => story.record.kind === kind).length}</label>
         <ul>${onPage.filter((story) => story.record.kind === kind).map((story) => `
           <li class="${story.key === selected ? 'selected' : ''}"><input type="checkbox" data-hide="${escapeAttr(story.key)}" ${hiddenStories.has(story.key) ? '' : 'checked'} aria-label="Show ${escapeAttr(story.record.id)}">
-            <button type="button" data-choose="${escapeAttr(story.key)}" class="${outcome(story).set ? 'set' : 'kept'}">${escapeHtml(story.record.id)}${story.page !== pageNo ? ` (from p${story.page})` : ''}</button></li>`).join('')}</ul>
+            <button type="button" data-choose="${escapeAttr(story.key)}" class="${outcome(story).state}">${escapeHtml(story.record.id)}${story.page !== pageNo ? ` (from p${story.page})` : ''}</button></li>`).join('')}</ul>
       </div>`).join('');
 
     // The view is built anew on every choice; where the reader had scrolled to stays.
@@ -278,7 +305,7 @@ export function createStoryInspector(host) {
         </select></label>
         ${Object.entries(LAYERS).map(([name, label]) => `<label><input type="checkbox" data-layer="${name}" ${layers[name] ? 'checked' : ''}> ${label}</label>`).join('')}
         <span>${pageNote}</span>
-        <span>Frame colour: kind (red: kept source) · numbers and arrows: thread · dark: source given up · green: set lines (orange: not delivered) · red +: overset · grey dotted: the selected story's other attempts</span>
+        <span>Frame colour: kind (red: kept source · purple: page withheld) · numbers and arrows: thread · dark: source the export erases · green: the translation's set lines (orange: not delivered) · red +: overset · grey dotted: the selected story's other attempts</span>
       </div>
       <div class="omnidoc-body">
         <div class="omnidoc-page-scroll"><div class="omnidoc-page" style="aspect-ratio:${page.width}/${page.height}">
@@ -375,17 +402,19 @@ export function createStoryInspector(host) {
       host.hidden = false;
       host.textContent = 'Loading stories…';
       try {
-        const [loadedSource, loadedStories, loadedStatus] = await Promise.all([
+        const [loadedSource, loadedStories, loadedStatus, loadedTurns] = await Promise.all([
           api.getPdfArtifactJson(id, 'omnidoc', { signal: controller.signal }),
           api.getPdfArtifactJson(id, 'omnidoc-stories', { signal: controller.signal }),
           api.getPdfArtifactJson(id, 'omnidoc-placement-status', { signal: controller.signal }),
+          // A run without a page turn writes no record of them.
+          api.getPdfArtifactJson(id, 'omnidoc-page-turns', { signal: controller.signal }).catch(() => null),
         ]);
         if (current !== generation) return;
         if (!loadedSource.pages?.length) throw new Error('This representation contains no PDF pages.');
         if (!Array.isArray(loadedStories.pages)) throw new Error('This artifact holds no story records.');
         source = loadedSource;
         statusDocument = loadedStatus;
-        stories = collect(loadedStories, loadedStatus);
+        stories = collect(loadedStories, loadedStatus, loadedTurns);
         render();
       } catch (error) {
         if (current === generation && error.name !== 'AbortError') {

@@ -1,6 +1,6 @@
 // The story inspector: a page's stories drawn from the run's story records, each frame along its
 // thread, the lines it holds, the source it gives up and where it stopped; and what the placement
-// decided after a fitting.
+// and the delivery decided after a fitting.
 //
 // Run from the repo root with:  node --test 'tests/js/**/*.test.mjs'
 import test from 'node:test';
@@ -14,6 +14,7 @@ const frame = (id, page, rect) => ({
 });
 
 const line = (box, text = 'Invented words') => ({ text, box, size: 10 });
+const quad = ([left, top, right, bottom]) => [[left, top], [right, top], [right, bottom], [left, bottom]];
 
 // One attempt of a story of one part: its frames, and what its setting derived (null: not set).
 const attempt = (id, frames, derived) => ({
@@ -27,7 +28,7 @@ const attempt = (id, frames, derived) => ({
       geometry: { break_measure: 'source', fit: 'ink', lane: true },
       settings: { size_scale: null, leading_scale: null },
       cursor: { text: 'Invented words that run on', spans: [], position: 0 },
-      fragments: frames.map((item) => ({ frame: item.id, shift: 0, unit_id: 1, source_boxes: [item.rect] })),
+      fragments: frames.map((item) => ({ frame: item.id, shift: 0, unit_id: 1, source_quads: [quad(item.rect)] })),
     }],
   },
   derived,
@@ -37,8 +38,8 @@ const setting = (pieces, refusal = null) => ({
   size_scale: 1, leading_scale: 1, fits: refusal === null, pieces, refusal,
 });
 
-const piece = (part, frameId, lines, start, end) => ({
-  part, frame: frameId, start, end, offset: 0, top: lines[0].box[1], bottom: lines[lines.length - 1].box[3], lines,
+const piece = (part, frameId, lines, start, end, initial = null) => ({
+  part, frame: frameId, start, end, offset: 0, top: lines[0].box[1], bottom: lines[lines.length - 1].box[3], lines, initial,
 });
 
 const lanes = [frame('item-4-lane-0', 1, [50, 100, 250, 140]), frame('item-4-lane-1', 1, [300, 40, 500, 80])];
@@ -56,7 +57,8 @@ const stories = {
     stories: [
       record('item-4', 4, 'running-text', 0, [
         attempt('item-4', lanes, setting([
-          piece('item-4', 'item-4-lane-0', [line([50, 100, 240, 112]), line([50, 112, 240, 124])], 0, 12),
+          piece('item-4', 'item-4-lane-0', [line([70, 100, 240, 112]), line([70, 112, 240, 124])], 0, 12,
+            { text: 'I', box: [50, 98, 66, 124], size: 30 }),
           piece('item-4', 'item-4-lane-1', [line([300, 40, 420, 52])], 12, 26),
         ])),
         { ...attempt('item-4', lanes, null), requested: { ...attempt('item-4', lanes, null).requested, hyphen_rule: false } },
@@ -82,7 +84,7 @@ const stories = {
   }],
 };
 
-const status = {
+const admitted = {
   pages: [{
     page: 1,
     page_id: 'p1',
@@ -111,13 +113,17 @@ function fakeHost() {
   };
 }
 
-async function shown(pages) {
+async function shown(pages, { status = admitted, turns = null } = {}) {
   const original = api.getPdfArtifactJson;
-  api.getPdfArtifactJson = async (_id, name) => ({
-    omnidoc: { pages },
-    'omnidoc-stories': stories,
-    'omnidoc-placement-status': status,
-  })[name];
+  api.getPdfArtifactJson = async (_id, name) => {
+    if (name === 'omnidoc-page-turns' && !turns) throw new Error('404');
+    return ({
+      omnidoc: { pages },
+      'omnidoc-stories': stories,
+      'omnidoc-placement-status': status,
+      'omnidoc-page-turns': turns,
+    })[name];
+  };
   try {
     const host = fakeHost();
     await createStoryInspector(host).show('req_test');
@@ -138,9 +144,10 @@ test('the page draws each story frame along its thread, with its lines and its s
   assert.equal(count(html, /class="story-frame-number">/g), 3);
   assert.equal(count(html, /class="story-thread"/g), 1);
   assert.equal(count(html, /→ p2/g), 1);
-  assert.equal(count(html, /class="story-source"/g), 5);
-  // Delivered lines: item-4's three and item-7's one here; area-5 and area-6 were not delivered.
-  assert.equal(count(html, /class="story-line"/g), 4);
+  assert.equal(count(html, /<polygon points="[^"]+" class="story-source"/g), 5);
+  // Delivered lines: item-4's three and its initial, and item-7's one here; area-5 and area-6
+  // were not delivered.
+  assert.equal(count(html, /class="story-line"/g), 5);
   assert.equal(count(html, /class="story-line unset"/g), 3);
   // Only the overset story carries a mark.
   assert.equal(count(html, /class="story-mark"/g), 1);
@@ -161,4 +168,22 @@ test('a story set on another page is listed on the page its frame stands on', as
   assert.equal(count(html, /class="story-frame /g), 1);
   assert.match(html, /item-7 \(from p1\)/);
   assert.match(html, /page-002-source/);
+});
+
+test('a page withheld at delivery shows its stories withheld, not delivered and not kept', async () => {
+  // A notice page stands where the export held the page: nothing of its stories is delivered,
+  // and neither is its source.
+  const status = { pages: [{ ...admitted.pages[0], status: 'withheld', reason: 'export_held:INVENTED' }] };
+  const html = await shown([{ id: 'p1', index: 0, width: 600, height: 800 }], { status });
+  assert.match(html, /Page withheld at delivery: export_held:INVENTED · 4 stories · 0 set · 0 kept source · 4 withheld/);
+  assert.equal(count(html, /class="story-line"/g), 0);
+  assert.match(html, /class="story-frame kind-running-text withheld"/);
+});
+
+test('a page turn the export held reads as kept, though its story fitted', async () => {
+  const turns = { turns: [{ tail: { page: 1, unit_id: 7 }, head: { page: 2, unit_id: 3 }, status: 'source',
+    placement: { status: 'source', reason: 'export_held' } }] };
+  const html = await shown([{ id: 'p1', index: 0, width: 600, height: 800 }], { turns });
+  assert.match(html, /class="kept">item-7</);
+  assert.match(html, /4 stories · 1 set · 3 kept source/);
 });
