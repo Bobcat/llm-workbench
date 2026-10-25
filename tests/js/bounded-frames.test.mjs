@@ -44,7 +44,6 @@ const boundedPage = {
   },
   diagnostics: {
     mode: 'bounded-regions',
-    typography_profile: 'reference',
     placements: [
       { unit_id: 1, lines_pt: [[50, 39, 210, 53]] },
       { unit_id: 2, lines_pt: [[50, 59, 298, 73], [50, 71, 299, 85], [50, 83, 290, 97], [50, 95, 120, 109]] },
@@ -125,7 +124,7 @@ test('the page draws every frame, source box and set line of the placement statu
     assert.equal(count(/class="bounded-source /g), 7);
     assert.equal(count(/class="bounded-line"/g), 9);
     assert.match(host.innerHTML, /page-001-source/);
-    assert.match(host.innerHTML, /7 areas · 4 set · 1 partly set · 1 kept source ink · profile reference/);
+    assert.match(host.innerHTML, /7 areas · 4 set · 1 partly set · 1 kept source ink</);
   } finally {
     api.getPdfArtifactJson = original;
   }

@@ -3,6 +3,7 @@ import { sharedApi } from '../../shared/api/shared.js';
 import { createOmnidocInspector } from './omnidoc.js';
 import { createPlacementPlanInspector } from './placement-plan.js';
 import { createBoundedFramesInspector } from './bounded-frames.js';
+import { createStoryInspector } from './stories.js';
 import { createLayoutMetricsInspector } from './layout-metrics.js';
 import { escapeAttr, escapeHtml, formatApiError } from '../../shared/ui-helpers.js';
 import { TRANSLATION_LANGUAGES } from '../../shared/translation-languages.js';
@@ -93,6 +94,7 @@ export function createPdfTranslationView() {
                     <div id="pdfOmnidoc" class="omnidoc-inspector" hidden></div>
                     <div id="pdfPlacementPlan" class="omnidoc-inspector" hidden></div>
                     <div id="pdfBoundedFrames" class="omnidoc-inspector" hidden></div>
+                    <div id="pdfStories" class="omnidoc-inspector" hidden></div>
                     <div id="pdfLayoutMetrics" class="omnidoc-inspector" hidden></div>
                     <div id="pdfOutputEmpty" class="translation-preview-empty">No output yet</div>
                     <div id="pdfOutputPending" class="translation-preview-pending" hidden>
@@ -409,6 +411,7 @@ export function createPdfTranslationView() {
   const boundedFramesInspector = createBoundedFramesInspector(
     container.querySelector('#pdfBoundedFrames')
   );
+  const storyInspector = createStoryInspector(container.querySelector('#pdfStories'));
   const outputEmpty = container.querySelector('#pdfOutputEmpty');
   const outputPending = container.querySelector('#pdfOutputPending');
   const outputPendingLabel = container.querySelector('.translation-preview-pending-label');
@@ -1607,6 +1610,7 @@ export function createPdfTranslationView() {
     omnidocInspector.hide();
     placementPlanInspector.hide();
     boundedFramesInspector.hide();
+    storyInspector.hide();
     layoutMetricsInspector.hide();
     outputPreview.hidden = true;
     outputPreview.removeAttribute('src');
@@ -1730,6 +1734,7 @@ export function createPdfTranslationView() {
       || !container.querySelector('#pdfOmnidoc').hidden
       || !container.querySelector('#pdfPlacementPlan').hidden
       || !container.querySelector('#pdfBoundedFrames').hidden
+      || !container.querySelector('#pdfStories').hidden
       || !container.querySelector('#pdfLayoutMetrics').hidden;
   }
 
@@ -1742,6 +1747,7 @@ export function createPdfTranslationView() {
     'omnidoc-layout-metrics-status': 'Omnidoc · layout measurement failed',
     'omnidoc-placement-plan': 'Omnidoc · placement plan',
     'omnidoc-placement-status': 'Omnidoc · bounded frames',
+    'omnidoc-stories': 'Omnidoc · stories',
     'omnidoc-coverage': 'Omnidoc · analysis incomplete',
     rendered: 'Translated PDF',
     doclayout: 'PP-DocLayoutV2',
@@ -1774,13 +1780,14 @@ export function createPdfTranslationView() {
       const artifact = artifacts[name] || {};
       return name === 'omnidoc' || name === 'omnidoc-target' || name === 'omnidoc-placement-plan'
         || name === 'omnidoc-placement-status'
+        || name === 'omnidoc-stories'
         || name === 'omnidoc-layout-metrics'
         || (name === 'omnidoc-layout-metrics-status' && !artifacts['omnidoc-layout-metrics'])
         || (name === 'omnidoc-coverage' && !artifacts.omnidoc)
         || (name !== 'input' && String(artifact.mime_type || '').toLowerCase().includes('pdf'));
     });
     const artifactOrder = [
-      'rendered', 'omnidoc', 'omnidoc-target', 'omnidoc-placement-plan', 'omnidoc-placement-status', 'omnidoc-layout-metrics', 'omnidoc-layout-metrics-status', 'paddleocr-v5', 'doclayout', 'doclayout-plus-l', 'doclayout-v3',
+      'rendered', 'omnidoc', 'omnidoc-target', 'omnidoc-placement-plan', 'omnidoc-placement-status', 'omnidoc-stories', 'omnidoc-layout-metrics', 'omnidoc-layout-metrics-status', 'paddleocr-v5', 'doclayout', 'doclayout-plus-l', 'doclayout-v3',
     ];
     const rank = (name) => {
       const index = artifactOrder.indexOf(name);
@@ -1823,13 +1830,15 @@ export function createPdfTranslationView() {
     omnidocInspector.hide();
     placementPlanInspector.hide();
     boundedFramesInspector.hide();
+    storyInspector.hide();
     layoutMetricsInspector.hide();
     const isOmnidoc = artifactName === 'omnidoc' || artifactName === 'omnidoc-target'
       || artifactName === 'omnidoc-coverage';
     const isPlacementPlan = artifactName === 'omnidoc-placement-plan';
     const isBoundedFrames = artifactName === 'omnidoc-placement-status';
+    const isStories = artifactName === 'omnidoc-stories';
     const isLayoutMetrics = artifactName === 'omnidoc-layout-metrics' || artifactName === 'omnidoc-layout-metrics-status';
-    const isInspector = isOmnidoc || isPlacementPlan || isBoundedFrames || isLayoutMetrics;
+    const isInspector = isOmnidoc || isPlacementPlan || isBoundedFrames || isStories || isLayoutMetrics;
     outputPreview.hidden = isInspector;
     if (isLayoutMetrics) {
       outputPreview.removeAttribute('src');
@@ -1840,6 +1849,9 @@ export function createPdfTranslationView() {
     } else if (isBoundedFrames) {
       outputPreview.removeAttribute('src');
       boundedFramesInspector.show(requestId);
+    } else if (isStories) {
+      outputPreview.removeAttribute('src');
+      storyInspector.show(requestId);
     } else if (isOmnidoc) {
       outputPreview.removeAttribute('src');
       omnidocInspector.show(requestId, {
@@ -1866,7 +1878,9 @@ export function createPdfTranslationView() {
             ? `${base}_omnidoc_placement_plan.json`
             : artifactName === 'omnidoc-placement-status'
               ? `${base}_omnidoc_placement_status.json`
-              : `${base}_${lang}.pdf`;
+              : artifactName === 'omnidoc-stories'
+                ? `${base}_omnidoc_stories.json`
+                : `${base}_${lang}.pdf`;
     downloadLink.setAttribute('download', downloadName);
     downloadLink.textContent = isInspector ? 'Download JSON' : 'Download PDF';
     downloadLink.hidden = false;
@@ -2040,6 +2054,7 @@ export function createPdfTranslationView() {
     omnidocInspector.hide();
     placementPlanInspector.hide();
     boundedFramesInspector.hide();
+    storyInspector.hide();
     layoutMetricsInspector.hide();
     stopPolling();
     if (inputObjectUrl) {
