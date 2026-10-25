@@ -44,8 +44,8 @@ const piece = (part, frameId, lines, start, end, initial = null) => ({
 
 const lanes = [frame('item-4-lane-0', 1, [50, 100, 250, 140]), frame('item-4-lane-1', 1, [300, 40, 500, 80])];
 const turn = [frame('item-7-lane-0', 1, [50, 700, 250, 740]), frame('item-7-lane-1', 2, [50, 40, 250, 80])];
-const record = (id, unitId, kind, chosen, attempts) => ({
-  unit_id: unitId, id, kind, group: null, chosen, saved: false, attempts,
+const record = (id, unitId, kind, chosen, attempts, planGroups = []) => ({
+  unit_id: unitId, id, kind, group: null, chosen, saved: false, attempts, plan_groups: planGroups,
 });
 
 const stories = {
@@ -62,7 +62,7 @@ const stories = {
           piece('item-4', 'item-4-lane-1', [line([300, 40, 420, 52])], 12, 26),
         ])),
         { ...attempt('item-4', lanes, null), requested: { ...attempt('item-4', lanes, null).requested, hyphen_rule: false } },
-      ]),
+      ], [{ erase_box: [50, 98, 500, 124] }]),
       record('area-5', 5, 'running-text', null, [
         attempt('area-5', [frame('area-5', 1, [50, 200, 250, 224])], setting(
           [piece('area-5', 'area-5', [line([50, 200, 240, 212]), line([50, 212, 240, 224])], 0, 14)],
@@ -113,7 +113,7 @@ function fakeHost() {
   };
 }
 
-async function shown(pages, { status = admitted, turns = null } = {}) {
+async function shown(pages, { status = admitted, turns = null, document = null } = {}) {
   const original = api.getPdfArtifactJson;
   api.getPdfArtifactJson = async (_id, name) => {
     if (name === 'omnidoc-page-turns' && !turns) throw new Error('404');
@@ -122,6 +122,7 @@ async function shown(pages, { status = admitted, turns = null } = {}) {
       'omnidoc-stories': stories,
       'omnidoc-placement-status': status,
       'omnidoc-page-turns': turns,
+      document,
     })[name];
   };
   try {
@@ -186,4 +187,17 @@ test('a page turn the export held reads as kept, though its story fitted', async
   const html = await shown([{ id: 'p1', index: 0, width: 600, height: 800 }], { turns });
   assert.match(html, /class="kept">item-7</);
   assert.match(html, /4 stories · 1 set · 3 kept source/);
+});
+
+test('a group the export kept in its source reads as kept for the story it delivers, and no other', async () => {
+  // The export reports such a group by the box of the source it would erase; the record names
+  // the groups that deliver a story by the same box. An unmatched box is counted, not guessed.
+  const document = { pages: [{ page: 1, vector: { groups_held: 2,
+    held_group_boxes_pt: [[50, 98, 500, 124], [10, 10, 20, 20]] } }] };
+  const html = await shown([{ id: 'p1', index: 0, width: 600, height: 800 }], { document });
+  assert.match(html, /class="kept">item-4</);
+  assert.match(html, /class="set">item-7</);
+  assert.match(html, /4 stories · 1 set · 3 kept source · 1 group\(s\) the export kept in source match no story/);
+  // item-4's lines are no longer drawn as delivered: item-7's one line is.
+  assert.equal(count(html, /class="story-line"/g), 1);
 });

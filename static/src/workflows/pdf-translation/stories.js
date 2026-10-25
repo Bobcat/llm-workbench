@@ -1,8 +1,9 @@
 // The stories a bounded page set, over the page: each story's frames numbered along its thread,
 // the lines each frame holds, the source it gives up, where it ran over or was refused, and the
 // attempts of its fitting (translation-services docs/omnidoc/story-design.md §10). Reads the
-// run's story records (`omnidoc-stories`) beside its final placement status and its page turns
-// (`omnidoc-page-turns`), which say what the delivery did with them; inspection only.
+// run's story records (`omnidoc-stories`) beside its final placement status, its page turns
+// (`omnidoc-page-turns`) and the export's report per page (`document`), which say what the
+// delivery did with them; inspection only.
 import { api } from '../../plugins/translation-services/api.js';
 import { escapeAttr, escapeHtml, formatApiError } from '../../shared/ui-helpers.js';
 
@@ -38,8 +39,9 @@ const rectText = (rect) => `${rect.map((value) => number(value, 1)).join(', ')} 
 // Every story of the run, keyed by the page that set it and its id: a story's frames may stand
 // on another page than the one that set it (a lane over a page turn). What became of it is the
 // final word of the delivery: a page it stands on withheld (a notice page in its place), the
-// part kept in its source after the fitting, or its page turn held by the export.
-function collect(storiesDocument, statusDocument, turnsDocument) {
+// part kept in its source after the fitting, its page turn held by the export, or one of its
+// groups kept in its source by the export on a page it otherwise delivered.
+function collect(storiesDocument, statusDocument, turnsDocument, held) {
   const statuses = new Map((statusDocument?.pages || []).map((page) => [page.page, page]));
   const turns = turnsDocument?.turns || [];
   return (storiesDocument?.pages || []).flatMap((page) => (page.stories || []).map((record) => {
@@ -60,11 +62,24 @@ function collect(storiesDocument, statusDocument, turnsDocument) {
       kept: [
         ...preserved.map((part) => part.reason),
         ...(turn?.status === 'source' ? [`page turn not delivered: ${turn.placement?.reason || turn.reason || 'source'}`] : []),
+        ...((record.plan_groups || []).some((group) => (held.get(page.page) || []).some((box) => sameBox(box, group.erase_box)))
+          ? ['held by the export: its source glyphs could not be erased exactly'] : []),
       ],
       // The attempt the page reports: the chosen one, else the last one set.
       reported,
     };
   }));
+}
+
+// The export names a group it kept by the box of the source it would erase, to a tenth of a
+// point; a story's record names the groups that deliver it by the same box.
+function sameBox(a, b) {
+  return Boolean(a && b) && a.every((value, index) => Math.abs(value - b[index]) < 0.05);
+}
+
+// Per page, the boxes of the groups the export kept in their source on a page it exported.
+function heldGroups(documentData) {
+  return new Map((documentData?.pages || []).map((page) => [page.page, page.vector?.held_group_boxes_pt || []]));
 }
 
 // A table's preserved cell names its cells; a story of a cell names them in its selection.
@@ -95,6 +110,7 @@ export function createStoryInspector(host) {
   let source = null;
   let stories = [];
   let statusDocument = null;
+  let held = new Map();
   let pageIndex = 0;
   let selected = '';
   let background = 'source';
@@ -275,11 +291,13 @@ export function createStoryInspector(host) {
     const imageName = background === 'translated'
       ? `page-${String(pageNo).padStart(3, '0')}`
       : `page-${String(pageNo).padStart(3, '0')}-source`;
+    const unmatched = (held.get(pageNo) || []).filter((box) => !stories.some((story) => story.page === pageNo
+      && (story.record.plan_groups || []).some((group) => sameBox(box, group.erase_box))));
     const withheldNote = statusPage && statusPage.status !== 'admitted' && onPage.length
       ? `Page withheld at delivery: ${escapeHtml(statusPage.reason || statusPage.status)} · `
       : '';
     const pageNote = onPage.length
-      ? `${withheldNote}${onPage.length} stories · ${tally('set')} set · ${tally('kept')} kept source${tally('withheld') ? ` · ${tally('withheld')} withheld` : ''}`
+      ? `${withheldNote}${onPage.length} stories · ${tally('set')} set · ${tally('kept')} kept source${tally('withheld') ? ` · ${tally('withheld')} withheld` : ''}${unmatched.length ? ` · ${unmatched.length} group(s) the export kept in source match no story` : ''}`
       : statusPage?.diagnostics?.mode === 'bounded-regions'
         ? 'No story on this page'
         : `No story records: ${escapeHtml(statusPage?.diagnostics?.mode || statusPage?.reason || 'not set in bounded areas')}`;
@@ -387,6 +405,7 @@ export function createStoryInspector(host) {
     source = null;
     stories = [];
     statusDocument = null;
+    held = new Map();
     shown.clear();
   }
 
@@ -402,19 +421,22 @@ export function createStoryInspector(host) {
       host.hidden = false;
       host.textContent = 'Loading stories…';
       try {
-        const [loadedSource, loadedStories, loadedStatus, loadedTurns] = await Promise.all([
+        const [loadedSource, loadedStories, loadedStatus, loadedTurns, loadedDocument] = await Promise.all([
           api.getPdfArtifactJson(id, 'omnidoc', { signal: controller.signal }),
           api.getPdfArtifactJson(id, 'omnidoc-stories', { signal: controller.signal }),
           api.getPdfArtifactJson(id, 'omnidoc-placement-status', { signal: controller.signal }),
           // A run without a page turn writes no record of them.
           api.getPdfArtifactJson(id, 'omnidoc-page-turns', { signal: controller.signal }).catch(() => null),
+          // The export's report per page: the groups it kept in their source.
+          api.getPdfArtifactJson(id, 'document', { signal: controller.signal }).catch(() => null),
         ]);
         if (current !== generation) return;
         if (!loadedSource.pages?.length) throw new Error('This representation contains no PDF pages.');
         if (!Array.isArray(loadedStories.pages)) throw new Error('This artifact holds no story records.');
         source = loadedSource;
         statusDocument = loadedStatus;
-        stories = collect(loadedStories, loadedStatus, loadedTurns);
+        held = heldGroups(loadedDocument);
+        stories = collect(loadedStories, loadedStatus, loadedTurns, held);
         render();
       } catch (error) {
         if (current === generation && error.name !== 'AbortError') {
