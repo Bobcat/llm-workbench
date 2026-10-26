@@ -264,18 +264,18 @@ export function createStoryInspector(host) {
           <dt>Element</dt><dd>${escapeHtml(part.element)}${part.selection.length ? ` · cells ${escapeHtml(part.selection.join(', '))}` : ''}</dd>
           <dt>Geometry</dt><dd>break at ${escapeHtml(part.geometry.break_measure)} · fit by ${escapeHtml(part.geometry.fit)}${part.geometry.lane ? ' · lane' : ' · free, checked against its frame'}</dd>
           <dt>Keeps</dt><dd>${part.whole ? 'whole' : 'may split'}${part.keep_with_next ? ' · with next' : ''}${part.gap_before ? ` · gap ${number(part.gap_before, 1)} pt` : ''}</dd>
-          <dt>Fragments</dt><dd>${part.fragments.map((fragment) => `${escapeHtml(fragment.frame)}${fragment.shift ? ` moved ${number(fragment.shift, 1)} pt` : ''} · ${fragment.source_quads.length} source quad(s) erased`).join('<br>')}</dd>
+          <dt>Fragments</dt><dd>${part.fragments.map((fragment) => `${escapeHtml(fragment.frame)}${fragment.shift ? ` moved ${number(fragment.shift, 1)} pt` : ''}${fragment.room ? ` · room ${escapeHtml(rectText(fragment.room))}` : ''} · ${fragment.source_quads.length} source quad(s) erased`).join('<br>')}</dd>
           ${part.settings.size_scale != null || part.settings.leading_scale != null ? `<dt>Own typography</dt><dd>size ×${number(part.settings.size_scale)} · leading ×${number(part.settings.leading_scale)}</dd>` : ''}
         </dl>
         <p class="story-text-block">${partText(part, derived)}</p>
       </details>`).join('');
     return `<strong>${escapeHtml(record.id)}</strong>
-      <code>${escapeHtml(KINDS[record.kind] || record.kind)} · unit ${escapeHtml(String(record.unit_id))} · set on page ${story.page}</code>
+      <code>${escapeHtml(KINDS[record.kind] || record.kind)} · ${record.unit_id == null ? `${requested.parts.length} part(s)` : `unit ${escapeHtml(String(record.unit_id))}`} · set on page ${story.page}</code>
       <dl class="omnidoc-origin">
         <dt>Outcome</dt><dd>${escapeHtml(outcome(story).text)}</dd>
         ${story.plan ? `<dt>Plan</dt><dd>${escapeHtml(story.plan.id)} · target ${escapeHtml(story.plan.target_revision_id)}</dd>` : ''}
-        <dt>Thread</dt><dd>${escapeHtml(thread.id)} · ${escapeHtml(thread.origin)} · ${thread.frames.map((frame, position) => `${position + 1}: ${escapeHtml(frame.id)} (p${frame.page}, ${escapeHtml(frame.origin)}${frame.pinned ? ', pinned' : ''})`).join('<br>')}</dd>
-        <dt>Requested</dt><dd>size ×${number(requested.settings.size_scale)} · leading ${requested.settings.leading_scale == null ? 'source' : `×${number(requested.settings.leading_scale)}`} · hyphen rule ${requested.hyphen_rule ? 'on' : 'off'}</dd>
+        <dt>Thread</dt><dd>${escapeHtml(thread.id)} · ${escapeHtml(thread.origin)} · ${thread.frames.map((frame, position) => `${position + 1}: ${escapeHtml(frame.id)} (p${frame.page}, ${escapeHtml(frame.origin)}${frame.pinned ? ', pinned' : ''}${frame.cut_at?.length ? `, cut from ${escapeHtml(frame.column)} at ${escapeHtml(frame.cut_at.join(', '))}` : ''})`).join('<br>')}</dd>
+        <dt>Requested</dt><dd>size ×${number(requested.settings.size_scale)} · leading ${requested.settings.leading_scale == null ? 'source' : `×${number(requested.settings.leading_scale)}`} · hyphen rule ${requested.hyphen_rule ? 'on' : 'off'}${requested.source_positions === undefined ? '' : ` · parts ${requested.source_positions ? 'keep their source positions' : 'stacked'}`}${requested.continuation === undefined ? '' : ` · goes on ${requested.continuation === 'own' ? 'only in its own frames' : 'in any frame'}`}</dd>
         <dt>Derived</dt><dd>${derived ? `size ×${number(derived.size_scale)} · leading ×${number(derived.leading_scale)} · lines at ${sizes.map((size) => `${number(size, 1)} pt`).join(', ') || '—'}${initial ? ` · initial “${escapeHtml(initial.text)}” at ${number(initial.size, 1)} pt` : ''}` : 'not set'}</dd>
         ${derived?.refusal ? `<dt>Stopped</dt><dd>${escapeHtml(REFUSALS[derived.refusal.reason] || derived.refusal.reason)} · part ${escapeHtml(derived.refusal.part)} at ${derived.refusal.position}${derived.refusal.frame ? ` in ${escapeHtml(derived.refusal.frame)}` : ''}${derived.refusal.detail ? ` · ${escapeHtml(derived.refusal.detail)}` : ''}</dd>` : ''}
       </dl>
@@ -424,6 +424,7 @@ export function createStoryInspector(host) {
 
   return {
     hide,
+    select,
     async show(id) {
       hide();
       requestId = id;

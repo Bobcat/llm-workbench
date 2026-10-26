@@ -227,3 +227,45 @@ test('a group the export kept is counted on a page without a story', async () =>
   const html = await shown([{ id: 'p3', index: 2, width: 600, height: 800 }], { document, status });
   assert.match(html, /No story on this page · 1 group\(s\) the export kept in source match no story/);
 });
+
+test('a thread shows its parts, the settings its story keeps, its rooms and its cut frames', async () => {
+  // A column's thread (translation-services story-s4-design §6): two parts in rooms of one
+  // frame, the second frame cut below a part held in source.
+  const column = { ...frame('column-1-0', 1, [50, 100, 250, 400]), column: null, cut_at: [] };
+  const below = { ...frame('column-1-0/below-area-9', 1, [50, 300, 250, 400]), column: 'column-1-0', cut_at: ['area-9'] };
+  const base = attempt('thread-1-0', [column, below], setting([
+    piece('area-1', 'column-1-0', [line([50, 100, 240, 112])], 0, 14),
+  ])).requested;
+  const parts = ['area-1', 'area-2'].map((id, index) => ({
+    ...base.parts[0], id, element: `element-${id}`,
+    fragments: [{ frame: index ? below.id : column.id, shift: 0, unit_id: index + 1,
+      room: index ? [50, 300, 250, 320] : [50, 100, 250, 120], source_quads: [] }],
+  }));
+  const threaded = record('thread-1-0', null, 'running-text', 0, [{
+    requested: { ...base, source_positions: true, continuation: 'own', thread: { id: 'thread-1-0', origin: 'plan', frames: [column, below] }, parts },
+    derived: setting([piece('area-1', 'column-1-0', [line([50, 100, 240, 112])], 0, 14)]),
+  }]);
+  const original = api.getPdfArtifactJson;
+  api.getPdfArtifactJson = async (_id, name) => {
+    if (name === 'omnidoc-page-turns') throw new Error('404');
+    return ({
+      omnidoc: { pages: [{ id: 'p1', index: 0, width: 600, height: 800 }] },
+      'omnidoc-stories': { version: 1, coordinates: 'page-pt', pages: [{ page: 1, page_id: 'p1', stories: [threaded] }] },
+      'omnidoc-placement-status': { pages: [{ page: 1, page_id: 'p1', status: 'admitted', diagnostics: { preserved_parts: [] } }] },
+      document: null,
+    })[name];
+  };
+  try {
+    const host = fakeHost();
+    const inspector = createStoryInspector(host);
+    await inspector.show('req_test');
+    inspector.select('1:thread-1-0');
+    const html = host.innerHTML;
+    assert.match(html, /Running text · 2 part\(s\) · set on page 1/);
+    assert.match(html, /parts keep their source positions · goes on only in its own frames/);
+    assert.match(html, /room 50\.0, 100\.0, 250\.0, 120\.0 pt/);
+    assert.match(html, /cut from column-1-0 at area-9/);
+  } finally {
+    api.getPdfArtifactJson = original;
+  }
+});
