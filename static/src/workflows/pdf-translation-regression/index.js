@@ -167,8 +167,9 @@ export function createPdfTranslationRegressionView() {
       return '<div class="pdf-reg-settings"><span class="pdf-reg-none">'
         + 'captured before the settings were recorded</span></div>';
     }
-    // The ones that decide which code runs lead; the rest keep their own order.
-    const lead = ['page_scale', 'analysis_dpi', 'erase_fill_mode', 'pdf_structure_mode'];
+    // The ones that decide which code runs lead, the type scale with whether the document chose
+    // it (size_floors); the rest keep their own order.
+    const lead = ['page_scale', 'size_floors', 'analysis_dpi', 'erase_fill_mode', 'pdf_structure_mode'];
     const ordered = [
       ...lead.filter((k) => k in captured),
       ...keys.filter((k) => !lead.includes(k)),

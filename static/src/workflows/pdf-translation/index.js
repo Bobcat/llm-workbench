@@ -130,7 +130,8 @@ export function createPdfTranslationView() {
                 </label>
                 <label class="translation-prompts-field">
                   <span>Page scale</span>
-                  <select id="pdfPageScale" title="The Omnidoc type size as a fraction of the source's own. Smaller type gives longer translations more room. The caller's selected scale is the upper bound; placement does not multiply it by another hidden scale.">
+                  <select id="pdfPageScale" title="The Omnidoc type size as a fraction of the source's own. Smaller type gives longer translations more room. The caller's selected scale is the upper bound; placement does not multiply it by another hidden scale. auto lets the document choose one step from 1.00 to 0.85 for every page before any text is shortened; the result names the scale it chose.">
+                    <option value="auto">auto — the document chooses, 1.00 to 0.85</option>
                     <option value="1.0" selected>1.00 — the source's own size</option>
                     <option value="0.97">0.97</option>
                     <option value="0.94">0.94</option>
@@ -489,7 +490,7 @@ export function createPdfTranslationView() {
       erase_fill_mode: String(eraseFillModeSelect.value || 'inpaint'),
       pdf_output_mode: String(outputModeSelect.value || 'vector'),
       pdf_structure_mode: String(structureModeSelect.value || 'source_only'),
-      page_scale: Number(pageScaleSelect.value || 1),
+      page_scale: pageScaleSelect.value === 'auto' ? 'auto' : Number(pageScaleSelect.value || 1),
       doclayout_overlay: String(doclayoutOverlaySelect.value || 'off') === 'on',
       paddleocr_v5_overlay: String(paddleocrV5OverlaySelect.value || 'off') === 'on',
     };
@@ -547,13 +548,17 @@ export function createPdfTranslationView() {
     setSelectValue(eraseFillModeSelect, options?.erase_fill_mode || 'inpaint');
     setSelectValue(outputModeSelect, options?.pdf_output_mode || 'vector');
     setSelectValue(structureModeSelect, options?.pdf_structure_mode || 'source_only');
-    const pageScale = Number(options?.page_scale ?? 1);
-    setSelectValue(
-      pageScaleSelect,
-      Number.isFinite(pageScale) ? String(pageScale) : '1',
-      `${Number.isFinite(pageScale) ? pageScale.toFixed(2) : '1.00'} — from request`,
-      true,
-    );
+    if (options?.page_scale === 'auto') {
+      setSelectValue(pageScaleSelect, 'auto');
+    } else {
+      const pageScale = Number(options?.page_scale ?? 1);
+      setSelectValue(
+        pageScaleSelect,
+        Number.isFinite(pageScale) ? String(pageScale) : '1',
+        `${Number.isFinite(pageScale) ? pageScale.toFixed(2) : '1.00'} — from request`,
+        true,
+      );
+    }
     setSelectValue(doclayoutOverlaySelect, options?.doclayout_overlay ? 'on' : 'off');
     setSelectValue(paddleocrV5OverlaySelect, options?.paddleocr_v5_overlay ? 'on' : 'off');
     lastTargetLang = String(options?.target_lang_code || '');
@@ -583,6 +588,21 @@ export function createPdfTranslationView() {
     }
     return row('Output', detail, 'trt-l1',
       'How the document was delivered. vector hands you the exported PDF, whose pages keep their own content with the translation written as real text; raster hands you that same document rasterized one bitmap per page. The counts are what the exporter wrote: text lines it authored, and the local images it placed over erased areas on a scanned page.');
+  }
+
+  // The type scale the pages were set at: the one asked for, or where auto was asked, the step
+  // the document chose.
+  function pageScaleText(result) {
+    const scale = result?.response?.metadata?.page_scale;
+    if (typeof scale !== 'number') return '';
+    return pageScaleSelect.value === 'auto' ? `auto → ${scale.toFixed(2)}` : scale.toFixed(2);
+  }
+
+  function pageScaleRow(result, row) {
+    const text = pageScaleText(result);
+    if (!text) return '';
+    return row('Page scale', escapeHtml(text), 'trt-l1',
+      'The type scale every page was set at: the one asked for, or where auto was asked, the step of 1.00 to 0.85 the document chose before any text was shortened.');
   }
 
   // What the source asked for and the delivered document does not carry. It is a
@@ -782,7 +802,7 @@ export function createPdfTranslationView() {
         } else if (isRerendering) {
           isRerendering = false;
           setStatus(String(result?.state) === 'completed'
-            ? `Re-rendered (scale ${String(pageScaleSelect.value)}, ${String(eraseFillModeSelect.value)}).`
+            ? `Re-rendered (scale ${pageScaleText(result) || String(pageScaleSelect.value)}, ${String(eraseFillModeSelect.value)}).`
             : `Re-render ${String(result?.state || 'ended')}.`);
         } else {
           loadRecentRequests(`current:${currentRequestId}`);
@@ -1329,6 +1349,7 @@ export function createPdfTranslationView() {
         row('Pages', typeof m.page_count === 'number' ? String(m.page_count) : '—', 'trt-l1'),
         row('Page concurrency', typeof m.page_concurrency === 'number' ? String(m.page_concurrency) : '—', 'trt-l1'),
         outputRouteRow(result, row),
+        pageScaleRow(result, row),
         surrenderedProtectionsRow(result, row),
         note(`Pages run in parallel, so the rows below add up to more than the elapsed document total. Their percentages are shares of that sum and add up to 100%.${effective !== null
           ? ' Neither multiplier is a speed-up: the raw one grows with the queue, and <strong>working</strong> grows with per-page slowdown under contention — both rise as the GPU gets more congested. To know what page concurrency actually buys, compare the document total against a run at page concurrency 1.'
