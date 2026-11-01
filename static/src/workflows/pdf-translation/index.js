@@ -629,8 +629,12 @@ export function createPdfTranslationView() {
     const fitting = metadata.fitting || {};
     const body = fitting.body_pt;
     const leading = fitting.leading_scale;
+    const bodyLeading = fitting.body_leading;
     let leadingText = '—';
-    if (typeof leading === 'number') leadingText = leading === 1 ? '1.00 — the source\'s own' : `${leading.toFixed(2)} of the source's`;
+    if (typeof leading === 'number') {
+      leadingText = `step ${leading.toFixed(2)}`;
+      if (bodyLeading) leadingText = `${bodyLeading.source.toFixed(2)} → ${bodyLeading.set.toFixed(2)} · ${leadingText}`;
+    }
     let shortenedText = '—';
     if (typeof fitting.shortened_parts === 'number') {
       shortenedText = fitting.shortened_parts
@@ -643,7 +647,7 @@ export function createPdfTranslationView() {
       row('Body text', body ? `${body.source.toFixed(2)} pt → ${body.set.toFixed(2)} pt` : '—', 'trt-l1',
         'The running text\'s size in the source and as set, on most pages: its size times the page scale, and where auto chose the scale, no smaller than 7.5 pt.'),
       row('Leading', escapeHtml(leadingText), 'trt-l1',
-        'The running text\'s leading as a share of the source\'s own: one step of 1.00, 0.95 or 0.90 for the whole document, chosen from the pages\' placements before any text was shortened.'),
+        'The running text\'s line spacing as a multiple of its type size, in the source and as set, the one most of its lines take; then the step the document chose for it: 1.00, 0.95 or 0.90 of the source\'s spacing, never closer than 1.15 times the size, chosen from the pages\' placements before any text was shortened.'),
       row('Shortened', escapeHtml(shortenedText), 'trt-l1',
         'What the revision shortened to make the text fit: the texts it changed and the characters they lost against their first translations.'),
       row('Kept in source', typeof held === 'number' ? (held ? `${held} parts` : 'none') : '—', 'trt-l1',
