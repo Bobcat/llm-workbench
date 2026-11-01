@@ -169,6 +169,14 @@ export function createPdfTranslationView() {
                 </label>
               </div>
             </details>
+            <!-- What the document chose as it was set: response.metadata's page_scale and
+                 fitting. -->
+            <details class="translation-prompts-system-details translation-requests-details">
+              <summary>Choices</summary>
+              <div class="translation-requests-details-body">
+                <div class="translation-requests-timings" id="pdfChoices"></div>
+              </div>
+            </details>
             <details class="translation-prompts-system-details translation-requests-details">
               <summary>Settings</summary>
               <div class="translation-requests-details-body">
@@ -404,6 +412,7 @@ export function createPdfTranslationView() {
   const benchmarkBtn = container.querySelector('#pdfBenchmarkBtn');
   const timingsScopeField = container.querySelector('#pdfTimingsScopeField');
   const timingsScope = container.querySelector('#pdfTimingsScope');
+  const choicesEl = container.querySelector('#pdfChoices');
   const timingsEl = container.querySelector('#pdfTimings');
   const callsDetails = container.querySelector('#pdfCallsDetails');
   const callsPageSelect = container.querySelector('#pdfCallsPage');
@@ -603,6 +612,43 @@ export function createPdfTranslationView() {
     if (!text) return '';
     return row('Page scale', escapeHtml(text), 'trt-l1',
       'The type scale every page was set at: the one asked for, or where auto was asked, the step of 1.00 to 0.85 the document chose before any text was shortened.');
+  }
+
+  // What the document chose as it was set: its type scale, its running text's size and leading,
+  // and what it shortened or kept in the source for length (response.metadata.fitting).
+  function syncChoices(result) {
+    const metadata = result?.response?.metadata;
+    if (!metadata) {
+      const text = isInspectingHistory
+        ? 'Choices are not available for previous requests.'
+        : 'Run a request to see the choices made.';
+      choicesEl.innerHTML = `<div class="trt-row trt-placeholder"><span>${text}</span></div>`;
+      return;
+    }
+    const row = (label, value, cls = '', title = '') => `<div class="trt-row ${cls}"${title ? ` title="${escapeAttr(title)}"` : ''}><span>${label}</span><strong>${value}</strong></div>`;
+    const fitting = metadata.fitting || {};
+    const body = fitting.body_pt;
+    const leading = fitting.leading_scale;
+    let leadingText = '—';
+    if (typeof leading === 'number') leadingText = leading === 1 ? '1.00 — the source\'s own' : `${leading.toFixed(2)} of the source's`;
+    let shortenedText = '—';
+    if (typeof fitting.shortened_parts === 'number') {
+      shortenedText = fitting.shortened_parts
+        ? `${fitting.shortened_parts} parts, ${fitting.shortened_chars} characters`
+        : 'none';
+    }
+    const held = fitting.held_parts;
+    choicesEl.innerHTML = [
+      pageScaleRow(result, row),
+      row('Body text', body ? `${body.source.toFixed(2)} pt → ${body.set.toFixed(2)} pt` : '—', 'trt-l1',
+        'The running text\'s size in the source and as set, on most pages: its size times the page scale, and where auto chose the scale, no smaller than 7.5 pt.'),
+      row('Leading', escapeHtml(leadingText), 'trt-l1',
+        'The running text\'s leading as a share of the source\'s own: one step of 1.00, 0.95 or 0.90 for the whole document, chosen from the pages\' placements before any text was shortened.'),
+      row('Shortened', escapeHtml(shortenedText), 'trt-l1',
+        'What the revision shortened to make the text fit: the texts it changed and the characters they lost against their first translations.'),
+      row('Kept in source', typeof held === 'number' ? (held ? `${held} parts` : 'none') : '—', 'trt-l1',
+        'The parts whose translation still did not fit after the revision: they show their source text.'),
+    ].join('');
   }
 
   // What the source asked for and the delivered document does not carry. It is a
@@ -1176,6 +1222,7 @@ export function createPdfTranslationView() {
     timingsScope.innerHTML = '';
     timingsScopeField.hidden = true;
     timingsEl.innerHTML = '<div class="trt-row trt-placeholder"><span>Timings are not available for previous requests.</span></div>';
+    syncChoices(null);
   }
 
   function syncResultTimings(result) {
@@ -1185,6 +1232,7 @@ export function createPdfTranslationView() {
   }
 
   function syncTimingsSection(result) {
+    syncChoices(result);
     lastTimingsResult = result;
     const pages = result?.response?.document?.pages || [];
     const total = result?.response?.metrics?.translate_pdf_total_wall_ms;
@@ -1349,7 +1397,6 @@ export function createPdfTranslationView() {
         row('Pages', typeof m.page_count === 'number' ? String(m.page_count) : '—', 'trt-l1'),
         row('Page concurrency', typeof m.page_concurrency === 'number' ? String(m.page_concurrency) : '—', 'trt-l1'),
         outputRouteRow(result, row),
-        pageScaleRow(result, row),
         surrenderedProtectionsRow(result, row),
         note(`Pages run in parallel, so the rows below add up to more than the elapsed document total. Their percentages are shares of that sum and add up to 100%.${effective !== null
           ? ' Neither multiplier is a speed-up: the raw one grows with the queue, and <strong>working</strong> grows with per-page slowdown under contention — both rise as the GPU gets more congested. To know what page concurrency actually buys, compare the document total against a run at page concurrency 1.'
@@ -1970,6 +2017,7 @@ export function createPdfTranslationView() {
     clearCallFields();
     timingsScope.innerHTML = '';
     timingsEl.innerHTML = '';
+    choicesEl.innerHTML = '';
     lastTimingsResult = null;
     if (draft) applyControlState(draft);
     updateInputPreview();
