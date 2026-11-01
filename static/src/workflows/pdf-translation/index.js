@@ -647,7 +647,7 @@ export function createPdfTranslationView() {
       row('Body text', body ? `${body.source.toFixed(2)} pt → ${body.set.toFixed(2)} pt` : '—', 'trt-l1',
         'The running text\'s size in the source and as set, on most pages: its size times the page scale, and where auto chose the scale, no smaller than 7.5 pt.'),
       row('Leading', escapeHtml(leadingText), 'trt-l1',
-        'The running text\'s line spacing as a multiple of its type size, in the source and as set, the one most of its lines take; then the step the document chose for it: 1.00, 0.95 or 0.90 of the source\'s spacing, never closer than 1.15 times the size, chosen from the pages\' placements before any text was shortened.'),
+        'The running text\'s line spacing as a multiple of its type size, in the source and as set, the pair most of its lines take. Then the step the document chose, from the pages\' placements before any text was shortened: 1.00, 0.95 or 0.90 of the spacing the setting starts from, which after a change of script is the target face\'s own. A lowered step stops at 1.15 times the size; a source already closer keeps its own spacing.'),
       row('Shortened', escapeHtml(shortenedText), 'trt-l1',
         'What the revision shortened to make the text fit: the texts it changed and the characters they lost against their first translations.'),
       row('Kept in source', typeof held === 'number' ? (held ? `${held} parts` : 'none') : '—', 'trt-l1',
