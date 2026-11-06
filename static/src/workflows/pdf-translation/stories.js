@@ -254,7 +254,7 @@ export function createStoryInspector(host) {
       return `<tr data-attempt="${position}" class="${position === index ? 'shown' : ''}${position === record.chosen ? ' chosen' : ''}">
         <td>${position + 1}</td><td>${escapeHtml(measures)}</td>
         <td>×${number(item.requested.settings.size_scale)}</td>
-        <td>${item.requested.hyphen_rule ? 'yes' : 'no'}</td>
+        <td>${item.requested.foot_lines} · ${item.requested.head_lines}</td>
         <td>${escapeHtml(framesOf(item).map((frame) => rectText(frame.rect)).join(' → '))}</td>
         <td>${result}</td></tr>`;
     }).join('');
@@ -263,7 +263,7 @@ export function createStoryInspector(host) {
         <dl class="omnidoc-origin">
           <dt>Element</dt><dd>${escapeHtml(part.element)}${part.selection.length ? ` · cells ${escapeHtml(part.selection.join(', '))}` : ''}</dd>
           <dt>Geometry</dt><dd>break at ${escapeHtml(part.geometry.break_measure)} · fit by ${escapeHtml(part.geometry.fit)}${part.geometry.lane ? ' · lane' : ' · free, checked against its frame'}</dd>
-          <dt>Keeps</dt><dd>${part.whole ? 'whole' : 'may split'}${part.keep_with_next ? ' · with next' : ''}${part.gap_before ? ` · gap ${number(part.gap_before, 1)} pt` : ''}</dd>
+          <dt>Keeps</dt><dd>${part.whole ? 'whole' : 'may split'}${part.keep_with_next ? ' · with next' : ''}${part.gap_before ? ` · gap ${number(part.gap_before, 1)} pt` : ''}${part.looseness ? ` · a line ${part.looseness < 0 ? 'shorter' : 'longer'}` : ''}</dd>
           <dt>Fragments</dt><dd>${part.fragments.map((fragment) => `${escapeHtml(fragment.frame)}${fragment.shift ? ` moved ${number(fragment.shift, 1)} pt` : ''}${fragment.room ? ` · room ${escapeHtml(rectText(fragment.room))}` : ''} · ${fragment.source_quads.length} source quad(s) erased`).join('<br>')}</dd>
           ${part.settings.size_scale != null || part.settings.leading_scale != null ? `<dt>Own typography</dt><dd>size ×${number(part.settings.size_scale)} · leading ×${number(part.settings.leading_scale)}</dd>` : ''}
         </dl>
@@ -275,12 +275,12 @@ export function createStoryInspector(host) {
         <dt>Outcome</dt><dd>${escapeHtml(outcome(story).text)}</dd>
         ${story.plan ? `<dt>Plan</dt><dd>${escapeHtml(story.plan.id)} · target ${escapeHtml(story.plan.target_revision_id)}</dd>` : ''}
         <dt>Thread</dt><dd>${escapeHtml(thread.id)} · ${escapeHtml(thread.origin)} · ${thread.frames.map((frame, position) => `${position + 1}: ${escapeHtml(frame.id)} (p${frame.page}, ${escapeHtml(frame.origin)}${frame.pinned ? ', pinned' : ''}${frame.cut_at?.length ? `, cut from ${escapeHtml(frame.column)} at ${escapeHtml(frame.cut_at.join(', '))}` : ''})`).join('<br>')}</dd>
-        <dt>Requested</dt><dd>size ×${number(requested.settings.size_scale)} · leading ${requested.settings.leading_scale == null ? 'source' : `×${number(requested.settings.leading_scale)}`} · hyphen rule ${requested.hyphen_rule ? 'on' : 'off'}${requested.source_positions === undefined ? '' : ` · parts ${requested.source_positions ? 'keep their source positions' : 'stacked'}`}${requested.continuation === undefined ? '' : ` · goes on ${requested.continuation === 'own' ? 'only in its own frames' : 'in any frame'}`}</dd>
-        <dt>Derived</dt><dd>${derived ? `size ×${number(derived.size_scale)} · leading ×${number(derived.leading_scale)} · lines at ${sizes.map((size) => `${number(size, 1)} pt`).join(', ') || '—'}${initial ? ` · initial “${escapeHtml(initial.text)}” at ${number(initial.size, 1)} pt` : ''}` : 'not set'}</dd>
+        <dt>Requested</dt><dd>size ×${number(requested.settings.size_scale)} · leading ${requested.settings.leading_scale == null ? 'source' : `×${number(requested.settings.leading_scale)}`} · lines at a turn ${requested.foot_lines} at the foot, ${requested.head_lines} at the head${requested.source_positions === undefined ? '' : ` · parts ${requested.source_positions ? 'keep their source positions' : 'stacked'}`}${requested.continuation === undefined ? '' : ` · goes on ${requested.continuation === 'own' ? 'only in its own frames' : 'in any frame'}`}</dd>
+        <dt>Derived</dt><dd>${derived ? `size ×${number(derived.size_scale)} · leading ×${number(derived.leading_scale)} · lines at ${sizes.map((size) => `${number(size, 1)} pt`).join(', ') || '—'}${initial ? ` · initial “${escapeHtml(initial.text)}” at ${number(initial.size, 1)} pt` : ''}${derived.short_turns?.length ? ` · frame short for its lines: ${derived.short_turns.map((turn) => `${escapeHtml(turn.frame)} (${escapeHtml(turn.part)})`).join(', ')}` : ''}` : 'not set'}</dd>
         ${derived?.refusal ? `<dt>Stopped</dt><dd>${escapeHtml(REFUSALS[derived.refusal.reason] || derived.refusal.reason)} · part ${escapeHtml(derived.refusal.part)} at ${derived.refusal.position}${derived.refusal.frame ? ` in ${escapeHtml(derived.refusal.frame)}` : ''}${derived.refusal.detail ? ` · ${escapeHtml(derived.refusal.detail)}` : ''}</dd>` : ''}
       </dl>
       <details open><summary>Fitting · attempt ${index + 1} shown</summary>
-        <table class="story-attempts"><thead><tr><th>#</th><th>break</th><th>size</th><th>hyphen rule</th><th>frames</th><th>outcome</th></tr></thead><tbody>${rows}</tbody></table>
+        <table class="story-attempts"><thead><tr><th>#</th><th>break</th><th>size</th><th>lines</th><th>frames</th><th>outcome</th></tr></thead><tbody>${rows}</tbody></table>
       </details>
       <h4>Parts</h4>${parts}
       <details><summary>Record</summary><pre>${escapeHtml(JSON.stringify(record, null, 2))}</pre></details>`;
